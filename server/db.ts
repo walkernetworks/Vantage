@@ -7,6 +7,7 @@ import {
   countEntries,
   countSessions,
   items,
+  priceHistory,
   users,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -323,6 +324,129 @@ export async function removeRecipeItem(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.delete(cateringRecipeItems).where(eq(cateringRecipeItems.id, id));
+}
+
+// ─── PFG Import & Price History ─────────────────────────────────────────────────────
+
+export type PfgImportRow = {
+  pfgProductNumber: string;
+  name: string;
+  brand: string;
+  category: string;
+  vendor: string;
+  packSize: string;
+  unitOfMeasure: string;
+  price: string;
+  isAlcohol: boolean;
+  alcoholCategory?: string;
+  storageArea?: string;
+};
+
+export type PfgImportResult = {
+  created: number;
+  updated: number;
+  unchanged: number;
+  priceChanges: Array<{
+    itemId: number;
+    name: string;
+    brand: string;
+    oldPrice: string;
+    newPrice: string;
+    diff: string;
+    pctChange: string;
+  }>;
+};
+
+export async function importPfgItems(rows: PfgImportRow[]): Promise<PfgImportResult> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  let created = 0;
+  let updated = 0;
+  let unchanged = 0;
+  const priceChanges: PfgImportResult["priceChanges"] = [];
+
+  for (const row of rows) {
+    // Look up by PFG product number first, then fall back to name match
+    const existing = await db
+      .select()
+      .from(items)
+      .where(eq(items.pfgProductNumber, row.pfgProductNumber))
+      .limit(1);
+
+    if (existing.length === 0) {
+      // New item — create it
+      await db.insert(items).values({
+        name: row.name,
+        brand: row.brand,
+        category: row.category,
+        vendor: "PFG",
+        packSize: row.packSize,
+        unitOfMeasure: row.unitOfMeasure,
+        price: row.price,
+        parLevel: "0",
+        storageArea: row.storageArea ?? "Dry Storage",
+        isAlcohol: row.isAlcohol,
+        alcoholCategory: row.alcoholCategory ?? null,
+        pfgProductNumber: row.pfgProductNumber,
+        isActive: true,
+      });
+      created++;
+    } else {
+      const item = existing[0];
+      const oldPrice = item.price ?? "0";
+      const newPrice = row.price;
+
+      if (parseFloat(oldPrice) !== parseFloat(newPrice)) {
+        // Price changed — record history and update
+        await db.insert(priceHistory).values({
+          itemId: item.id,
+          oldPrice,
+          newPrice,
+          importSource: "PFG",
+        });
+
+        const diff = parseFloat(newPrice) - parseFloat(oldPrice);
+        const pct = oldPrice !== "0" ? (diff / parseFloat(oldPrice)) * 100 : 0;
+
+        priceChanges.push({
+          itemId: item.id,
+          name: item.name,
+          brand: item.brand ?? row.brand,
+          oldPrice,
+          newPrice,
+          diff: diff.toFixed(2),
+          pctChange: pct.toFixed(1),
+        });
+
+        await db
+          .update(items)
+          .set({ price: newPrice, brand: row.brand, packSize: row.packSize, updatedAt: new Date() })
+          .where(eq(items.id, item.id));
+        updated++;
+      } else {
+        // Price unchanged — still update brand/packSize in case they changed
+        await db
+          .update(items)
+          .set({ brand: row.brand, packSize: row.packSize, updatedAt: new Date() })
+          .where(eq(items.id, item.id));
+        unchanged++;
+      }
+    }
+  }
+
+  return { created, updated, unchanged, priceChanges };
+}
+
+export async function getPriceHistory(itemId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(priceHistory)
+    .where(eq(priceHistory.itemId, itemId))
+    .orderBy(desc(priceHistory.importedAt))
+    .limit(20);
 }
 
 export async function calculateShortfall(recipeId: number, orderVolume: number) {

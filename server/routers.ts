@@ -20,14 +20,17 @@ import {
   getCountEntries,
   getCountSession,
   getItemById,
+  getPriceHistory,
   getRecipeItems,
   getSessionWithEntries,
+  importPfgItems,
   listCateringRecipes,
   listCountSessions,
   removeRecipeItem,
   updateCateringRecipe,
   updateItem,
   upsertCountEntry,
+  type PfgImportRow,
 } from "./db";
 
 // ─── Shared Zod Schemas ───────────────────────────────────────────────────────
@@ -95,6 +98,32 @@ const itemsRouter = router({
       await bulkCreateItems(input.items);
       return { imported: input.items.length };
     }),
+
+  importPfg: adminProcedure
+    .input(
+      z.object({
+        rows: z.array(
+          z.object({
+            pfgProductNumber: z.string(),
+            name: z.string(),
+            brand: z.string(),
+            category: z.string(),
+            vendor: z.string(),
+            packSize: z.string(),
+            unitOfMeasure: z.string(),
+            price: z.string(),
+            isAlcohol: z.boolean(),
+            alcoholCategory: z.string().optional(),
+            storageArea: z.string().optional(),
+          })
+        ),
+      })
+    )
+    .mutation(async ({ input }) => importPfgItems(input.rows as PfgImportRow[])),
+
+  getPriceHistory: protectedProcedure
+    .input(z.object({ itemId: z.number() }))
+    .query(({ input }) => getPriceHistory(input.itemId)),
 
   updateParLevel: adminProcedure
     .input(z.object({ id: z.number(), parLevel: z.string() }))

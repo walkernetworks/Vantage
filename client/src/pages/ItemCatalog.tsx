@@ -3,16 +3,23 @@ import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { CATEGORIES, CATEGORY_ICONS, STORAGE_AREAS, UNITS, VENDOR_COLORS, VENDORS } from "../../../shared/constants";
 import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  CheckCircle2,
   Edit2,
   Filter,
+  Minus,
   Package,
   Plus,
   Search,
   Trash2,
+  TrendingDown,
+  TrendingUp,
   Upload,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 type ItemForm = {
@@ -42,6 +49,180 @@ const emptyForm: ItemForm = {
   alcoholCategory: "",
   notes: "",
 };
+
+// ── PFG Category → Internal Category mapping ──────────────────────────────────
+const PFG_CATEGORY_MAP: Record<string, string> = {
+  "ALCOHOL-BEVERAGES": "Alcohol - 100",
+  "ALCOHOL-DRY FOODS": "Alcohol - 130",
+  "BEIGNETS & FOOD-DRY FOODS": "Bakery",
+  "BEIGNETS & FOOD-FROZEN": "Bakery",
+  "BEIGNETS & FOOD-REFRIG": "Bakery",
+  "BEIGNETS & FOOD-DAIRY": "Dairy",
+  "BEIGNETS & FOOD-PRODUCE": "Produce",
+  "BEIGNETS & FOOD-CHICKEN": "Protein",
+  "BEIGNETS & FOOD-STEAK/POR": "Protein",
+  "BEIGNETS & FOOD-PAPER": "Paper Goods",
+  "COFFEE-BEVERAGES": "Coffee",
+  "COFFEE-DRY FOODS": "Coffee",
+  "COFFEE-DAIRY": "Dairy",
+  "COFFEE-PRODUCE": "Produce",
+  "COFFEE-PAPER": "Paper Goods",
+  "NA BEVERAGES": "Coffee",
+  "NA BEVERAGES-FROZEN": "Coffee",
+  "NA BEVERAGES-PRODUCE": "Produce",
+  "CHEMICALS": "Supplies",
+  "CHEMICALS-PAPER": "Supplies",
+};
+
+const PFG_STORAGE_MAP: Record<string, string> = {
+  "ALCOHOL-BEVERAGES": "Bar",
+  "ALCOHOL-DRY FOODS": "Bar",
+  "BEIGNETS & FOOD-FROZEN": "Freezer",
+  "BEIGNETS & FOOD-REFRIG": "Walk-In",
+  "BEIGNETS & FOOD-DAIRY": "Walk-In",
+  "COFFEE-DAIRY": "Walk-In",
+  "BEIGNETS & FOOD-PRODUCE": "Walk-In",
+  "COFFEE-PRODUCE": "Walk-In",
+  "NA BEVERAGES-FROZEN": "Freezer",
+  "NA BEVERAGES-PRODUCE": "Walk-In",
+};
+
+type PfgRow = {
+  pfgProductNumber: string;
+  name: string;
+  brand: string;
+  category: string;
+  vendor: string;
+  packSize: string;
+  unitOfMeasure: string;
+  price: string;
+  isAlcohol: boolean;
+  alcoholCategory?: string;
+  storageArea?: string;
+  pfgCategory: string; // raw PFG category for display
+};
+
+type PriceChange = {
+  itemId: number;
+  name: string;
+  brand: string;
+  oldPrice: string;
+  newPrice: string;
+  diff: string;
+  pctChange: string;
+};
+
+type ImportResult = {
+  created: number;
+  updated: number;
+  unchanged: number;
+  priceChanges: PriceChange[];
+};
+
+// ── Parse PFG CSV ──────────────────────────────────────────────────────────────
+function parsePfgCsv(text: string): PfgRow[] {
+  // Strip BOM
+  const cleaned = text.replace(/^\uFEFF/, "").trim();
+  const lines = cleaned.split(/\r?\n/);
+  if (lines.length < 2) return [];
+
+  // Parse header (handle quoted fields)
+  function parseLine(line: string): string[] {
+    const result: string[] = [];
+    let current = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        inQuotes = !inQuotes;
+      } else if (ch === "," && !inQuotes) {
+        result.push(current.trim());
+        current = "";
+      } else {
+        current += ch;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  }
+
+  const headers = parseLine(lines[0]).map((h) => h.toLowerCase().replace(/\s+/g, " ").trim());
+
+  // Find column indices
+  const idx = {
+    categoryName: headers.indexOf("category name"),
+    customDesc: headers.indexOf("custom product description"),
+    productDesc: headers.indexOf("product description"),
+    brand: headers.indexOf("brand"),
+    productNumber: headers.indexOf("product number"),
+    packSize: headers.indexOf("pack size"),
+    uom: headers.indexOf("uom"),
+    price: headers.indexOf("price"),
+  };
+
+  const rows: PfgRow[] = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const cols = parseLine(line);
+
+    const pfgCategory = (cols[idx.categoryName] ?? "").trim().toUpperCase();
+    // Use Custom Product Description if available, otherwise Product Description
+    const customDesc = (cols[idx.customDesc] ?? "").trim();
+    const productDesc = (cols[idx.productDesc] ?? "").trim();
+    const rawName = customDesc || productDesc;
+    if (!rawName) continue;
+
+    // Clean up the name: title-case and strip excessive noise
+    const name = rawName
+      .replace(/\b0 GRAMS TRANS FAT PER SERVING\b/gi, "")
+      .replace(/\bUNITED_STATES_DEPT_AGRICULTURE SHIELD\b/gi, "")
+      .replace(/\bULTRA-HIGH-TEMPERATURE STABILIZED\b/gi, "")
+      .replace(/\bULTRA PASTEURIZED\b/gi, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      // Convert ALL_CAPS to Title Case
+      .split(" ")
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(" ");
+
+    const brand = (cols[idx.brand] ?? "").trim();
+    const pfgProductNumber = (cols[idx.productNumber] ?? "").trim();
+    const packSize = (cols[idx.packSize] ?? "").trim();
+    const unitOfMeasure = (cols[idx.uom] ?? "CS").trim();
+    const rawPrice = (cols[idx.price] ?? "").trim().replace(/[$,]/g, "");
+    const price = rawPrice ? parseFloat(rawPrice).toFixed(2) : "0.00";
+
+    const internalCategory = PFG_CATEGORY_MAP[pfgCategory] ?? "Other";
+    const storageArea = PFG_STORAGE_MAP[pfgCategory] ?? "Dry Storage";
+    const isAlcohol = internalCategory.startsWith("Alcohol");
+    const alcoholCategory = internalCategory === "Alcohol - 100"
+      ? "100"
+      : internalCategory === "Alcohol - 130"
+        ? "130"
+        : undefined;
+
+    rows.push({
+      pfgProductNumber,
+      name,
+      brand,
+      category: internalCategory,
+      vendor: "PFG",
+      packSize,
+      unitOfMeasure,
+      price,
+      isAlcohol,
+      alcoholCategory,
+      storageArea,
+      pfgCategory,
+    });
+  }
+
+  return rows;
+}
+
+// ── Main Page ──────────────────────────────────────────────────────────────────
 
 export default function ItemCatalog() {
   const { user } = useAuth();
@@ -93,10 +274,11 @@ export default function ItemCatalog() {
     onError: (e) => toast.error(e.message),
   });
 
-  const filtered = items.filter((item) =>
-    item.name.toLowerCase().includes(search.toLowerCase()) ||
-    item.category.toLowerCase().includes(search.toLowerCase()) ||
-    item.vendor.toLowerCase().includes(search.toLowerCase())
+  const filtered = items.filter(
+    (item) =>
+      item.name.toLowerCase().includes(search.toLowerCase()) ||
+      item.category.toLowerCase().includes(search.toLowerCase()) ||
+      item.vendor.toLowerCase().includes(search.toLowerCase())
   );
 
   function openEdit(item: (typeof items)[0]) {
@@ -158,12 +340,16 @@ export default function ItemCatalog() {
             <button
               onClick={() => setShowImport(true)}
               className="p-3 rounded-xl bg-secondary text-secondary-foreground hover:bg-muted transition-colors active:scale-95"
-              title="Import CSV"
+              title="Import PFG Order Guide"
             >
               <Upload size={20} />
             </button>
             <button
-              onClick={() => { setForm(emptyForm); setEditId(null); setShowForm(true); }}
+              onClick={() => {
+                setForm(emptyForm);
+                setEditId(null);
+                setShowForm(true);
+              }}
               className="btn-big bg-primary text-primary-foreground flex items-center gap-2 shadow-sm"
             >
               <Plus size={20} />
@@ -196,7 +382,7 @@ export default function ItemCatalog() {
             onClick={() => setShowFilters(!showFilters)}
             className={cn(
               "flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-colors",
-              (filterVendor || filterCategory)
+              filterVendor || filterCategory
                 ? "bg-primary text-primary-foreground border-primary"
                 : "bg-card text-foreground border-border hover:bg-muted"
             )}
@@ -211,7 +397,10 @@ export default function ItemCatalog() {
           </button>
           {(filterVendor || filterCategory) && (
             <button
-              onClick={() => { setFilterVendor(""); setFilterCategory(""); }}
+              onClick={() => {
+                setFilterVendor("");
+                setFilterCategory("");
+              }}
               className="px-4 py-2.5 rounded-xl border border-border bg-card text-sm font-semibold text-muted-foreground hover:bg-muted"
             >
               Clear
@@ -280,7 +469,11 @@ export default function ItemCatalog() {
           <p className="text-muted-foreground font-medium">No items found</p>
           {isAdmin && (
             <button
-              onClick={() => { setForm(emptyForm); setEditId(null); setShowForm(true); }}
+              onClick={() => {
+                setForm(emptyForm);
+                setEditId(null);
+                setShowForm(true);
+              }}
               className="btn-big bg-primary text-primary-foreground mx-auto flex items-center gap-2"
             >
               <Plus size={18} /> Add First Item
@@ -289,81 +482,95 @@ export default function ItemCatalog() {
         </div>
       ) : (
         <div className="space-y-4">
-          {Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([category, catItems]) => (
-            <div key={category}>
-              <div className="flex items-center gap-2 mb-2 px-1">
-                <span className="text-lg">{CATEGORY_ICONS[category] ?? "📋"}</span>
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                  {category}
-                </h3>
-                <span className="text-xs text-muted-foreground">({catItems.length})</span>
-              </div>
-              <div className="space-y-2">
-                {catItems.map((item) => (
-                  <div
-                    key={item.id}
-                    className="bg-card rounded-2xl border border-border p-4 shadow-sm"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-foreground truncate">{item.name}</p>
-                        <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                          <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full", VENDOR_COLORS[item.vendor] ?? "bg-gray-100 text-gray-700")}>
-                            {item.vendor}
-                          </span>
-                          {item.packSize && (
-                            <span className="text-xs text-muted-foreground">{item.packSize}</span>
+          {Object.entries(grouped)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([category, catItems]) => (
+              <div key={category}>
+                <div className="flex items-center gap-2 mb-2 px-1">
+                  <span className="text-lg">{CATEGORY_ICONS[category] ?? "📋"}</span>
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                    {category}
+                  </h3>
+                  <span className="text-xs text-muted-foreground">({catItems.length})</span>
+                </div>
+                <div className="space-y-2">
+                  {catItems.map((item) => (
+                    <div key={item.id} className="bg-card rounded-2xl border border-border p-4 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-foreground truncate">{item.name}</p>
+                          {(item as any).brand && (
+                            <p className="text-xs text-muted-foreground mt-0.5">{(item as any).brand}</p>
                           )}
-                          {item.unitOfMeasure && (
-                            <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
-                              {item.unitOfMeasure}
+                          <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                            <span
+                              className={cn(
+                                "text-xs font-semibold px-2 py-0.5 rounded-full",
+                                VENDOR_COLORS[item.vendor] ?? "bg-gray-100 text-gray-700"
+                              )}
+                            >
+                              {item.vendor}
                             </span>
-                          )}
+                            {item.packSize && (
+                              <span className="text-xs text-muted-foreground">{item.packSize}</span>
+                            )}
+                            {item.unitOfMeasure && (
+                              <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
+                                {item.unitOfMeasure}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 mt-2">
+                            {item.price && (
+                              <span className="text-sm font-semibold text-foreground">
+                                ${parseFloat(item.price).toFixed(2)}
+                              </span>
+                            )}
+                            {item.parLevel && parseFloat(item.parLevel) > 0 && (
+                              <span className="text-xs text-muted-foreground">
+                                Par: {item.parLevel} {item.unitOfMeasure}
+                              </span>
+                            )}
+                            {item.storageArea && (
+                              <span className="text-xs text-muted-foreground">{item.storageArea}</span>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-3 mt-2">
-                          {item.price && (
-                            <span className="text-sm font-semibold text-foreground">
-                              ${parseFloat(item.price).toFixed(2)}
-                            </span>
-                          )}
-                          {item.parLevel && parseFloat(item.parLevel) > 0 && (
-                            <span className="text-xs text-muted-foreground">
-                              Par: {item.parLevel} {item.unitOfMeasure}
-                            </span>
-                          )}
-                          {item.storageArea && (
-                            <span className="text-xs text-muted-foreground">{item.storageArea}</span>
-                          )}
-                        </div>
+                        {isAdmin && (
+                          <div className="flex gap-2 shrink-0">
+                            <button
+                              onClick={() => openEdit(item)}
+                              className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center hover:bg-secondary transition-colors active:scale-95"
+                            >
+                              <Edit2 size={16} className="text-foreground" />
+                            </button>
+                            <button
+                              onClick={() => setDeleteConfirm(item.id)}
+                              className="w-9 h-9 rounded-xl bg-destructive/10 flex items-center justify-center hover:bg-destructive/20 transition-colors active:scale-95"
+                            >
+                              <Trash2 size={16} className="text-destructive" />
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      {isAdmin && (
-                        <div className="flex gap-2 shrink-0">
-                          <button
-                            onClick={() => openEdit(item)}
-                            className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center hover:bg-secondary transition-colors active:scale-95"
-                          >
-                            <Edit2 size={16} className="text-foreground" />
-                          </button>
-                          <button
-                            onClick={() => setDeleteConfirm(item.id)}
-                            className="w-9 h-9 rounded-xl bg-destructive/10 flex items-center justify-center hover:bg-destructive/20 transition-colors active:scale-95"
-                          >
-                            <Trash2 size={16} className="text-destructive" />
-                          </button>
-                        </div>
-                      )}
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
         </div>
       )}
 
       {/* ── Add/Edit Item Modal ── */}
       {showForm && (
-        <Modal title={editId ? "Edit Item" : "Add New Item"} onClose={() => { setShowForm(false); setEditId(null); setForm(emptyForm); }}>
+        <Modal
+          title={editId ? "Edit Item" : "Add New Item"}
+          onClose={() => {
+            setShowForm(false);
+            setEditId(null);
+            setForm(emptyForm);
+          }}
+        >
           <div className="space-y-4">
             <FormField label="Item Name *">
               <input
@@ -385,14 +592,17 @@ export default function ItemCatalog() {
                       ...form,
                       category: cat,
                       isAlcohol: cat.startsWith("Alcohol"),
-                      alcoholCategory: cat === "Alcohol - 100" ? "100" : cat === "Alcohol - 130" ? "130" : "",
+                      alcoholCategory:
+                        cat === "Alcohol - 100" ? "100" : cat === "Alcohol - 130" ? "130" : "",
                     });
                   }}
                   className="form-input"
                 >
                   <option value="">Select…</option>
                   {CATEGORIES.map((c) => (
-                    <option key={c} value={c}>{c}</option>
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
                   ))}
                 </select>
               </FormField>
@@ -405,7 +615,9 @@ export default function ItemCatalog() {
                 >
                   <option value="">Select…</option>
                   {VENDORS.map((v) => (
-                    <option key={v} value={v}>{v}</option>
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
                   ))}
                 </select>
               </FormField>
@@ -421,7 +633,6 @@ export default function ItemCatalog() {
                   className="form-input"
                 />
               </FormField>
-
               <FormField label="Unit of Measure">
                 <select
                   value={form.unitOfMeasure}
@@ -429,7 +640,9 @@ export default function ItemCatalog() {
                   className="form-input"
                 >
                   {UNITS.map((u) => (
-                    <option key={u} value={u}>{u}</option>
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
                   ))}
                 </select>
               </FormField>
@@ -446,7 +659,6 @@ export default function ItemCatalog() {
                   className="form-input"
                 />
               </FormField>
-
               <FormField label="Par Level">
                 <input
                   type="number"
@@ -467,7 +679,9 @@ export default function ItemCatalog() {
               >
                 <option value="">Select…</option>
                 {STORAGE_AREAS.map((s) => (
-                  <option key={s} value={s}>{s}</option>
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
                 ))}
               </select>
             </FormField>
@@ -484,7 +698,11 @@ export default function ItemCatalog() {
 
             <div className="flex gap-3 pt-2">
               <button
-                onClick={() => { setShowForm(false); setEditId(null); setForm(emptyForm); }}
+                onClick={() => {
+                  setShowForm(false);
+                  setEditId(null);
+                  setForm(emptyForm);
+                }}
                 className="flex-1 btn-big bg-muted text-foreground"
               >
                 Cancel
@@ -496,7 +714,9 @@ export default function ItemCatalog() {
               >
                 {createMutation.isPending || updateMutation.isPending
                   ? "Saving…"
-                  : editId ? "Save Changes" : "Add Item"}
+                  : editId
+                    ? "Save Changes"
+                    : "Add Item"}
               </button>
             </div>
           </div>
@@ -510,7 +730,10 @@ export default function ItemCatalog() {
             This item will be deactivated and hidden from all views. Historical count data is preserved.
           </p>
           <div className="flex gap-3">
-            <button onClick={() => setDeleteConfirm(null)} className="flex-1 btn-big bg-muted text-foreground">
+            <button
+              onClick={() => setDeleteConfirm(null)}
+              className="flex-1 btn-big bg-muted text-foreground"
+            >
               Cancel
             </button>
             <button
@@ -524,184 +747,306 @@ export default function ItemCatalog() {
         </Modal>
       )}
 
-      {/* ── CSV Import Modal ── */}
-      {showImport && <CSVImportModal onClose={() => setShowImport(false)} />}
+      {/* ── PFG Import Modal ── */}
+      {showImport && (
+        <PfgImportModal
+          onClose={() => {
+            setShowImport(false);
+            utils.items.list.invalidate();
+          }}
+        />
+      )}
     </div>
   );
 }
 
-// ── CSV Import Modal ───────────────────────────────────────────────────────────
+// ── PFG Import Modal ───────────────────────────────────────────────────────────
 
-function CSVImportModal({ onClose }: { onClose: () => void }) {
-  const utils = trpc.useUtils();
-  const [source, setSource] = useState<"GA-001" | "Webstaurant" | "PFG">("GA-001");
-  const [csvText, setCsvText] = useState("");
-  const [preview, setPreview] = useState<any[]>([]);
-  const [step, setStep] = useState<"upload" | "preview" | "done">("upload");
+function PfgImportModal({ onClose }: { onClose: () => void }) {
+  const [step, setStep] = useState<"upload" | "preview" | "result">("upload");
+  const [rows, setRows] = useState<PfgRow[]>([]);
+  const [result, setResult] = useState<ImportResult | null>(null);
+  const [filterCat, setFilterCat] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const importMutation = trpc.items.importCSV.useMutation({
+  const importMutation = trpc.items.importPfg.useMutation({
     onSuccess: (res) => {
-      utils.items.list.invalidate();
-      setStep("done");
-      toast.success(`Imported ${res.imported} items from ${source}`);
+      setResult(res as ImportResult);
+      setStep("result");
     },
     onError: (e) => toast.error(e.message),
   });
-
-  function parseCSV(text: string) {
-    const lines = text.trim().split("\n");
-    if (lines.length < 2) return [];
-    const headers = lines[0].split(",").map((h) => h.trim().replace(/"/g, "").toLowerCase());
-    return lines.slice(1).map((line) => {
-      const vals = line.split(",").map((v) => v.trim().replace(/"/g, ""));
-      const obj: Record<string, string> = {};
-      headers.forEach((h, i) => { obj[h] = vals[i] ?? ""; });
-      return obj;
-    }).filter((row) => row["name"] || row["item name"] || row["item"]);
-  }
-
-  function mapRow(row: Record<string, string>) {
-    const name = row["name"] || row["item name"] || row["item"] || row["description"] || "";
-    const category = row["category"] || "Other";
-    const vendor = source === "PFG" ? "PFG" : source === "Webstaurant" ? "Webstaurant" : (row["vendor"] || "Other");
-    const packSize = row["pack size"] || row["packsize"] || row["pack"] || "";
-    const unitOfMeasure = row["uom"] || row["unit"] || row["unit of measure"] || "CS";
-    const price = row["price"] || row["unit price"] || row["cost"] || "";
-    const parLevel = row["par"] || row["par level"] || "0";
-    const storageArea = row["storage area"] || row["storage"] || row["location"] || "";
-    return { name, category, vendor, packSize, unitOfMeasure, price, parLevel, storageArea, isAlcohol: category.startsWith("Alcohol"), alcoholCategory: category === "Alcohol - 100" ? "100" : category === "Alcohol - 130" ? "130" : undefined };
-  }
-
-  function handleParse() {
-    const rows = parseCSV(csvText);
-    const mapped = rows.map(mapRow).filter((r) => r.name);
-    setPreview(mapped);
-    setStep("preview");
-  }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => setCsvText(ev.target?.result as string ?? "");
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string ?? "";
+      const parsed = parsePfgCsv(text);
+      if (parsed.length === 0) {
+        toast.error("No valid rows found. Make sure this is a PFG Order Guide CSV.");
+        return;
+      }
+      setRows(parsed);
+      setStep("preview");
+    };
     reader.readAsText(file);
   }
 
+  function handleImport() {
+    importMutation.mutate({ rows });
+  }
+
+  const uniqueCats = Array.from(new Set(rows.map((r) => r.pfgCategory))).sort();
+  const displayRows = filterCat ? rows.filter((r) => r.pfgCategory === filterCat) : rows;
+
   return (
-    <Modal title="Import from CSV" onClose={onClose}>
+    <Modal title="Import PFG Order Guide" onClose={onClose}>
+      {/* ── Step 1: Upload ── */}
       {step === "upload" && (
+        <div className="space-y-5">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800 space-y-1">
+            <p className="font-semibold flex items-center gap-2">
+              <Upload size={16} /> PFG Order Guide CSV
+            </p>
+            <p>Upload your PFG Order Guide export. The system will automatically map all columns and categories.</p>
+            <p className="text-xs text-amber-700 mt-1">
+              Expected columns: <span className="font-mono">Category Name, Product Description, Brand, Product Number, Pack Size, UOM, Price</span>
+            </p>
+          </div>
+
+          <input ref={fileRef} type="file" accept=".csv,.txt" onChange={handleFileChange} className="hidden" />
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="w-full h-32 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 flex flex-col items-center justify-center gap-3 hover:bg-primary/10 transition-colors active:scale-[0.98]"
+          >
+            <Upload size={32} className="text-primary" />
+            <div className="text-center">
+              <p className="font-semibold text-foreground">Tap to select PFG CSV file</p>
+              <p className="text-sm text-muted-foreground">Supports .csv and .txt files</p>
+            </div>
+          </button>
+
+          <button onClick={onClose} className="w-full btn-big bg-muted text-foreground">
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* ── Step 2: Preview ── */}
+      {step === "preview" && (
         <div className="space-y-4">
-          <div>
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 block">
-              Import Source
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {(["GA-001", "Webstaurant", "PFG"] as const).map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setSource(s)}
-                  className={cn(
-                    "py-3 rounded-xl text-sm font-semibold border transition-colors",
-                    source === s
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-muted text-foreground border-border hover:bg-secondary"
-                  )}
-                >
-                  {s}
-                </button>
-              ))}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-semibold text-foreground">{rows.length} items found</p>
+              <p className="text-sm text-muted-foreground">
+                New items will be created. Existing items (matched by Product #) will have pricing updated.
+              </p>
             </div>
           </div>
 
-          <div>
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 block">
-              Upload CSV File
-            </label>
-            <input ref={fileRef} type="file" accept=".csv,.txt" onChange={handleFileChange} className="hidden" />
+          {/* Category filter chips */}
+          <div className="flex gap-2 flex-wrap">
             <button
-              onClick={() => fileRef.current?.click()}
-              className="w-full h-24 rounded-xl border-2 border-dashed border-border bg-muted/50 flex flex-col items-center justify-center gap-2 hover:bg-muted transition-colors"
+              onClick={() => setFilterCat("")}
+              className={cn(
+                "px-3 py-1 rounded-lg text-xs font-semibold transition-colors",
+                !filterCat ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
+              )}
             >
-              <Upload size={24} className="text-muted-foreground" />
-              <span className="text-sm text-muted-foreground font-medium">
-                {csvText ? "File loaded — click to replace" : "Tap to select CSV file"}
-              </span>
+              All ({rows.length})
             </button>
+            {uniqueCats.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setFilterCat(filterCat === cat ? "" : cat)}
+                className={cn(
+                  "px-3 py-1 rounded-lg text-xs font-semibold transition-colors",
+                  filterCat === cat ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
+                )}
+              >
+                {cat.split("-")[0]} ({rows.filter((r) => r.pfgCategory === cat).length})
+              </button>
+            ))}
           </div>
 
-          <div>
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 block">
-              Or Paste CSV Text
-            </label>
-            <textarea
-              value={csvText}
-              onChange={(e) => setCsvText(e.target.value)}
-              placeholder="name,category,vendor,price,parLevel,storageArea&#10;House Blend,Coffee,PFG,24.99,2,Dry Storage"
-              rows={4}
-              className="form-input resize-none font-mono text-xs"
-            />
-          </div>
-
-          <div className="bg-muted/50 rounded-xl p-3 text-xs text-muted-foreground">
-            <p className="font-semibold mb-1">Expected columns:</p>
-            <p>name, category, vendor, pack size, uom, price, par level, storage area</p>
-          </div>
-
-          <div className="flex gap-3">
-            <button onClick={onClose} className="flex-1 btn-big bg-muted text-foreground">Cancel</button>
-            <button
-              onClick={handleParse}
-              disabled={!csvText.trim()}
-              className="flex-1 btn-big bg-primary text-primary-foreground disabled:opacity-60"
-            >
-              Preview Import
-            </button>
-          </div>
-        </div>
-      )}
-
-      {step === "preview" && (
-        <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Found <strong>{preview.length} items</strong> from {source}. Review before importing:
-          </p>
-          <div className="max-h-64 overflow-y-auto space-y-2 rounded-xl border border-border p-2">
-            {preview.slice(0, 20).map((item, i) => (
-              <div key={i} className="flex items-center justify-between py-2 px-3 rounded-lg bg-muted/50 text-sm">
-                <div>
-                  <p className="font-semibold text-foreground">{item.name}</p>
-                  <p className="text-xs text-muted-foreground">{item.category} · {item.vendor}</p>
+          {/* Preview table */}
+          <div className="max-h-72 overflow-y-auto rounded-xl border border-border divide-y divide-border">
+            {displayRows.map((row, i) => (
+              <div key={i} className="flex items-center justify-between px-3 py-2.5 text-sm bg-card">
+                <div className="flex-1 min-w-0 mr-3">
+                  <p className="font-semibold text-foreground truncate">{row.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {row.brand} · #{row.pfgProductNumber} · {row.packSize}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    → <span className="font-medium text-foreground">{row.category}</span>
+                    {row.storageArea && <span> · {row.storageArea}</span>}
+                  </p>
                 </div>
-                {item.price && <span className="text-sm font-semibold">${parseFloat(item.price || "0").toFixed(2)}</span>}
+                <span className="font-bold text-foreground shrink-0">${row.price}</span>
               </div>
             ))}
-            {preview.length > 20 && (
-              <p className="text-xs text-center text-muted-foreground py-2">
-                +{preview.length - 20} more items…
-              </p>
-            )}
           </div>
+
           <div className="flex gap-3">
-            <button onClick={() => setStep("upload")} className="flex-1 btn-big bg-muted text-foreground">Back</button>
             <button
-              onClick={() => importMutation.mutate({ source, items: preview })}
+              onClick={() => setStep("upload")}
+              className="flex-1 btn-big bg-muted text-foreground"
+            >
+              Back
+            </button>
+            <button
+              onClick={handleImport}
               disabled={importMutation.isPending}
               className="flex-1 btn-big bg-primary text-primary-foreground disabled:opacity-60"
             >
-              {importMutation.isPending ? "Importing…" : `Import ${preview.length} Items`}
+              {importMutation.isPending ? "Importing…" : `Import ${rows.length} Items`}
             </button>
           </div>
         </div>
       )}
 
-      {step === "done" && (
-        <div className="text-center space-y-4 py-4">
-          <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto">
-            <span className="text-3xl">✓</span>
+      {/* ── Step 3: Result ── */}
+      {step === "result" && result && (
+        <div className="space-y-5">
+          {/* Summary cards */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-green-700">{result.created}</p>
+              <p className="text-xs font-semibold text-green-600 mt-0.5">New Items</p>
+            </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-blue-700">{result.updated}</p>
+              <p className="text-xs font-semibold text-blue-600 mt-0.5">Price Updated</p>
+            </div>
+            <div className="bg-muted border border-border rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-muted-foreground">{result.unchanged}</p>
+              <p className="text-xs font-semibold text-muted-foreground mt-0.5">Unchanged</p>
+            </div>
           </div>
-          <p className="font-semibold text-foreground">Import Complete!</p>
-          <button onClick={onClose} className="btn-big bg-primary text-primary-foreground w-full">Done</button>
+
+          {/* Price variance report */}
+          {result.priceChanges.length > 0 ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={16} className="text-amber-500" />
+                <p className="font-semibold text-foreground text-sm">
+                  Price Changes Detected ({result.priceChanges.length})
+                </p>
+              </div>
+              <div className="rounded-xl border border-border divide-y divide-border overflow-hidden">
+                {/* Table header */}
+                <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 px-3 py-2 bg-muted text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  <span>Item</span>
+                  <span className="text-right">Old</span>
+                  <span className="text-right">New</span>
+                  <span className="text-right">$ Diff</span>
+                  <span className="text-right">%</span>
+                </div>
+                {result.priceChanges.map((change) => {
+                  const diff = parseFloat(change.diff);
+                  const pct = parseFloat(change.pctChange);
+                  const isUp = diff > 0;
+                  return (
+                    <div
+                      key={change.itemId}
+                      className={cn(
+                        "grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 px-3 py-3 items-center text-sm",
+                        isUp ? "bg-red-50/50" : "bg-green-50/50"
+                      )}
+                    >
+                      <div className="min-w-0">
+                        <p className="font-semibold text-foreground truncate text-xs">{change.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">{change.brand}</p>
+                      </div>
+                      <span className="text-muted-foreground font-mono text-xs text-right">
+                        ${parseFloat(change.oldPrice).toFixed(2)}
+                      </span>
+                      <span className="font-bold font-mono text-xs text-right">
+                        ${parseFloat(change.newPrice).toFixed(2)}
+                      </span>
+                      {/* Dollar diff badge */}
+                      <span
+                        className={cn(
+                          "text-xs font-bold font-mono px-1.5 py-0.5 rounded-md text-right",
+                          isUp
+                            ? "bg-red-100 text-red-700"
+                            : "bg-green-100 text-green-700"
+                        )}
+                      >
+                        {isUp ? "+" : ""}${Math.abs(diff).toFixed(2)}
+                      </span>
+                      {/* Percent badge */}
+                      <span
+                        className={cn(
+                          "text-xs font-bold px-1.5 py-0.5 rounded-md flex items-center gap-0.5 justify-end",
+                          isUp
+                            ? "bg-red-100 text-red-700"
+                            : "bg-green-100 text-green-700"
+                        )}
+                      >
+                        {isUp ? (
+                          <ArrowUp size={10} />
+                        ) : (
+                          <ArrowDown size={10} />
+                        )}
+                        {Math.abs(pct).toFixed(1)}%
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Net impact summary */}
+              <div className="bg-card border border-border rounded-xl p-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                  Net Price Impact
+                </p>
+                {(() => {
+                  const increases = result.priceChanges.filter((c) => parseFloat(c.diff) > 0);
+                  const decreases = result.priceChanges.filter((c) => parseFloat(c.diff) < 0);
+                  const totalIncrease = increases.reduce((s, c) => s + parseFloat(c.diff), 0);
+                  const totalDecrease = decreases.reduce((s, c) => s + parseFloat(c.diff), 0);
+                  return (
+                    <div className="space-y-1.5">
+                      {increases.length > 0 && (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="flex items-center gap-1.5 text-red-600">
+                            <TrendingUp size={14} />
+                            {increases.length} price increase{increases.length !== 1 ? "s" : ""}
+                          </span>
+                          <span className="font-bold text-red-600">+${totalIncrease.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {decreases.length > 0 && (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="flex items-center gap-1.5 text-green-600">
+                            <TrendingDown size={14} />
+                            {decreases.length} price decrease{decreases.length !== 1 ? "s" : ""}
+                          </span>
+                          <span className="font-bold text-green-600">${totalDecrease.toFixed(2)}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl p-4">
+              <CheckCircle2 size={20} className="text-green-600 shrink-0" />
+              <div>
+                <p className="font-semibold text-green-800 text-sm">No price changes detected</p>
+                <p className="text-xs text-green-700">All existing item prices match the imported guide.</p>
+              </div>
+            </div>
+          )}
+
+          <button onClick={onClose} className="w-full btn-big bg-primary text-primary-foreground">
+            Done
+          </button>
         </div>
       )}
     </Modal>
@@ -710,7 +1055,15 @@ function CSVImportModal({ onClose }: { onClose: () => void }) {
 
 // ── Shared Components ──────────────────────────────────────────────────────────
 
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function Modal({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="absolute inset-0 bg-foreground/40 backdrop-blur-sm" onClick={onClose} />

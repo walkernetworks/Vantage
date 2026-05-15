@@ -55,6 +55,16 @@
 - [x] Shortfall detection: compare needed vs current stock
 - [x] Highlight shortfall items in red with exact deficit and progress bar
 
+## Phase 10: PFG Import Enhancement
+- [x] Parse PFG CSV exact columns: Category Name, Custom Product Description, Product Description, Brand, Product Number, Pack Size, UOM, Price
+- [x] Map PFG Category Name to internal categories (ALCOHOL-BEVERAGES → Alcohol-100, COFFEE-DRY FOODS → Coffee, etc.)
+- [x] Use Product Number as stable unique key for upsert logic
+- [x] On re-import: detect price changes, store old price, show variance table (item, old price, new price, $ diff, % diff)
+- [x] Add pfgProductNumber field to items table for stable matching
+- [x] Add priceHistory table to record price changes per import
+- [x] Build PFG-specific import modal with preview and variance report
+- [x] Show green/red variance badges in import results
+
 ## Phase 9: Polish & Tests
 - [x] Mobile-first responsive audit (all pages)
 - [x] Big-button UI audit (min 44px tap targets via btn-big / count-input)

@@ -65,11 +65,17 @@ export const items = mysqlTable(
     isAlcohol: boolean("isAlcohol").default(false).notNull(),
     alcoholCategory: varchar("alcoholCategory", { length: 16 }),
     isActive: boolean("isActive").default(true).notNull(),
+    pfgProductNumber: varchar("pfgProductNumber", { length: 32 }),
+    brand: varchar("brand", { length: 128 }),
     notes: text("notes"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },
-  (t) => [index("idx_items_category").on(t.category), index("idx_items_vendor").on(t.vendor)]
+  (t) => [
+    index("idx_items_category").on(t.category),
+    index("idx_items_vendor").on(t.vendor),
+    index("idx_items_pfg_product_number").on(t.pfgProductNumber),
+  ]
 );
 
 export type Item = typeof items.$inferSelect;
@@ -152,3 +158,23 @@ export const cateringRecipeItems = mysqlTable(
 
 export type CateringRecipeItem = typeof cateringRecipeItems.$inferSelect;
 export type InsertCateringRecipeItem = typeof cateringRecipeItems.$inferInsert;
+
+// ─── Price History ────────────────────────────────────────────────────────────
+
+export const priceHistory = mysqlTable(
+  "price_history",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    itemId: int("itemId")
+      .notNull()
+      .references(() => items.id),
+    oldPrice: decimal("oldPrice", { precision: 10, scale: 2 }),
+    newPrice: decimal("newPrice", { precision: 10, scale: 2 }).notNull(),
+    importSource: varchar("importSource", { length: 32 }).notNull().default("PFG"),
+    importedAt: timestamp("importedAt").defaultNow().notNull(),
+  },
+  (t) => [index("idx_price_history_item").on(t.itemId)]
+);
+
+export type PriceHistory = typeof priceHistory.$inferSelect;
+export type InsertPriceHistory = typeof priceHistory.$inferInsert;
