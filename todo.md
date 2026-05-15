@@ -86,9 +86,9 @@
 - [x] Seed default categories, vendors, storage areas from existing hardcoded constants
 
 ## Round 4 Features
-- [ ] Count Sheet: dual Case + Each count inputs per item; Each input only shown when item has caseQty > 1
-- [ ] Count Sheet: combined value = (cases × casePrice) + (eaches × eachPrice); total stock in cases shown
-- [ ] Order Dashboard: cases needed always rounded up (Math.ceil), never decimals
-- [ ] Order Dashboard: add orderThreshold field per item (default 50%) — only show item if stock < threshold% of par
-- [ ] Par Levels page: add orderThreshold column (editable %, default 50)
-- [ ] DB schema: add orderThreshold column to items table (decimal, default 0.5)
+- [x] Count Sheet: dual Case + Each count inputs per item; Each input only shown when item has caseQty > 1
+- [x] Count Sheet: combined value = (cases × casePrice) + (eaches × eachPrice); total stock in cases shown
+- [x] Order Dashboard: cases needed always rounded up (Math.ceil), never decimals
+- [x] Order Dashboard: add orderThreshold field per item (default 50%) — only show item if stock < threshold% of par
+- [x] Par Levels page: add orderThreshold column (editable, default blank = 50% of par)
+- [x] DB schema: add orderThreshold column to items table (decimal, default 0.5)

@@ -55,7 +55,7 @@ const itemInputSchema = z.object({
   unitOfMeasure: z.string().optional(),
   price: z.string().optional(),
   parLevel: z.string().optional(),
-  orderThreshold: z.string().optional(), // fraction 0.0–1.0, e.g. "0.50" = 50%
+  orderThreshold: z.string().optional(), // absolute case count trigger; blank = default to 50% of par
   storageArea: z.string().optional(),
   isAlcohol: z.boolean().optional(),
   alcoholCategory: z.string().optional(),

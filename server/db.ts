@@ -297,13 +297,14 @@ export async function getBelowParItems(vendor?: string) {
     .map((item) => {
       const currentStock = parseFloat(entryMap.get(item.id) ?? "0");
       const parLevel = parseFloat(item.parLevel ?? "0");
-      // orderThreshold: fraction of par below which ordering is triggered (default 0.5 = 50%)
-      const threshold = parseFloat(item.orderThreshold ?? "0.50");
-      const triggerLevel = parLevel * threshold;
+      // orderThreshold: absolute case count below which ordering is triggered.
+      // If not set, default to 50% of par level.
+      const thresholdRaw = item.orderThreshold ? parseFloat(item.orderThreshold) : null;
+      const triggerLevel = thresholdRaw !== null ? thresholdRaw : parLevel * 0.5;
       const casesNeededRaw = Math.max(0, parLevel - currentStock);
       // Always round up — you can't order half a case
       const casesNeeded = Math.ceil(casesNeededRaw);
-      const needsOrder = parLevel > 0 && currentStock < triggerLevel;
+      const needsOrder = parLevel > 0 && currentStock <= triggerLevel;
       return { ...item, currentStock: String(currentStock), casesNeeded, needsOrder };
     })
     .filter((item) => item.needsOrder);
