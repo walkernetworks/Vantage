@@ -187,6 +187,11 @@ export async function completeCountSession(id: number) {
   if (!db) throw new Error("DB not available");
   await db.update(countSessions).set({ completedAt: new Date() }).where(eq(countSessions.id, id));
 }
+export async function reopenCountSession(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(countSessions).set({ completedAt: null }).where(eq(countSessions.id, id));
+}
 
 // ─── Count Entries ────────────────────────────────────────────────────────────
 
@@ -250,25 +255,20 @@ export async function getSessionWithEntries(sessionId: number) {
 
 export async function getBelowParItems(vendor?: string) {
   const db = await getDb();
-  if (!db) return [];
-
+  if (!db) return { session: null, items: [] };
   // Get latest count session
   const sessions = await db
     .select()
     .from(countSessions)
     .orderBy(desc(countSessions.createdAt))
     .limit(1);
-
-  const latestSession = sessions[0];
-
+  const latestSession = sessions[0] ?? null;
   const conditions = [eq(items.isActive, true)];
   if (vendor) conditions.push(eq(items.vendor, vendor));
-
   const allItems = await db.select().from(items).where(and(...conditions));
-
   if (!latestSession) {
     // No count session yet — show all items with par > 0 as needing a full order
-    return allItems
+    const orderItems = allItems
       .filter((item) => parseFloat(item.parLevel ?? "0") > 0)
       .map((item) => ({
         ...item,
@@ -276,11 +276,10 @@ export async function getBelowParItems(vendor?: string) {
         casesNeeded: Math.ceil(parseFloat(item.parLevel ?? "0")),
         needsOrder: true,
       }));
+    return { session: null, items: orderItems };
   }
-
   const itemIds = allItems.map((i) => i.id);
-  if (itemIds.length === 0) return [];
-
+  if (itemIds.length === 0) return { session: latestSession, items: [] };
   const entries = await db
     .select()
     .from(countEntries)
@@ -290,24 +289,20 @@ export async function getBelowParItems(vendor?: string) {
         inArray(countEntries.itemId, itemIds)
       )
     );
-
   const entryMap = new Map(entries.map((e) => [e.itemId, e.quantity]));
-
-  return allItems
+  const orderItems = allItems
     .map((item) => {
       const currentStock = parseFloat(entryMap.get(item.id) ?? "0");
       const parLevel = parseFloat(item.parLevel ?? "0");
-      // orderThreshold: absolute case count below which ordering is triggered.
-      // If not set, default to 50% of par level.
       const thresholdRaw = item.orderThreshold ? parseFloat(item.orderThreshold) : null;
       const triggerLevel = thresholdRaw !== null ? thresholdRaw : parLevel * 0.5;
       const casesNeededRaw = Math.max(0, parLevel - currentStock);
-      // Always round up — you can't order half a case
       const casesNeeded = Math.ceil(casesNeededRaw);
       const needsOrder = parLevel > 0 && currentStock <= triggerLevel;
       return { ...item, currentStock: String(currentStock), casesNeeded, needsOrder };
     })
     .filter((item) => item.needsOrder);
+  return { session: latestSession, items: orderItems };
 }
 
 // ─── Catering ─────────────────────────────────────────────────────────────────

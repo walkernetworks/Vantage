@@ -62,6 +62,15 @@ export default function CountSheet() {
     },
   });
 
+  const reopenMutation = trpc.counts.reopenSession.useMutation({
+    onSuccess: () => {
+      refetchSessions();
+      refetchSession();
+      toast.success("Count re-opened for editing");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const completeMutation = trpc.counts.completeSession.useMutation({
     onSuccess: () => {
       refetchSessions();
@@ -250,25 +259,30 @@ export default function CountSheet() {
 
       {/* Session Selector */}
       {sessions.length > 0 && (
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-          {sessions.slice(0, 5).map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setActiveSessionId(s.id)}
-              className={cn(
-                "shrink-0 px-4 py-2 rounded-xl text-sm font-semibold border transition-colors whitespace-nowrap",
-                activeSessionId === s.id
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "bg-card text-foreground border-border hover:bg-muted"
-              )}
-            >
-              {s.name ?? "Count"} ·{" "}
-              {new Date(s.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-              {!s.completedAt && (
-                <span className="ml-1.5 w-2 h-2 rounded-full bg-amber-400 inline-block" />
-              )}
-            </button>
-          ))}
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Previous Counts</p>
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+            {sessions.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => setActiveSessionId(s.id)}
+                className={cn(
+                  "shrink-0 px-4 py-2 rounded-xl text-sm font-semibold border transition-colors whitespace-nowrap",
+                  activeSessionId === s.id
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-card text-foreground border-border hover:bg-muted"
+                )}
+              >
+                {s.name ?? "Count"} ·{" "}
+                {new Date(s.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                {!s.completedAt ? (
+                  <span className="ml-1.5 w-2 h-2 rounded-full bg-amber-400 inline-block" title="In progress" />
+                ) : (
+                  <span className="ml-1.5 w-2 h-2 rounded-full bg-green-500 inline-block" title="Completed" />
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -299,7 +313,7 @@ export default function CountSheet() {
               <Layers size={15} /> Category
             </button>
           </div>
-          {!isCompleted && (
+          {!isCompleted ? (
             <button
               onClick={() => completeMutation.mutate({ id: activeSessionId })}
               disabled={completeMutation.isPending}
@@ -307,6 +321,15 @@ export default function CountSheet() {
             >
               <CheckCircle size={16} />
               {completeMutation.isPending ? "Completing…" : "Complete"}
+            </button>
+          ) : (
+            <button
+              onClick={() => reopenMutation.mutate({ id: activeSessionId })}
+              disabled={reopenMutation.isPending}
+              className="ml-auto flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 transition-colors active:scale-95 disabled:opacity-60"
+            >
+              <RefreshCw size={16} />
+              {reopenMutation.isPending ? "Re-opening…" : "Re-open to Edit"}
             </button>
           )}
         </div>

@@ -12,6 +12,7 @@ import {
   bulkCreateItems,
   calculateShortfall,
   completeCountSession,
+  reopenCountSession,
   createCateringRecipe,
   createCountSession,
   createItem,
@@ -181,6 +182,9 @@ const countsRouter = router({
   completeSession: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(({ input }) => completeCountSession(input.id)),
+  reopenSession: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(({ input }) => reopenCountSession(input.id)),
 
   getEntries: protectedProcedure
     .input(z.object({ sessionId: z.number() }))

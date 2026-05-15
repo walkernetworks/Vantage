@@ -92,3 +92,12 @@
 - [x] Order Dashboard: add orderThreshold field per item (default 50%) — only show item if stock < threshold% of par
 - [x] Par Levels page: add orderThreshold column (editable, default blank = 50% of par)
 - [x] DB schema: add orderThreshold column to items table (decimal, default 0.5)
+
+## Round 5 Features
+- [x] Count Sheet: add "Load Previous Count" button that opens a session picker and loads that session's quantities for editing
+- [x] Count Sheet: when editing a previous session, show a banner indicating which date/session is loaded
+- [x] Order Dashboard: show which count session the below-par data is based on (date + session name)
+- [x] Order Dashboard: show product number (pfgProductNumber or custom) on each item card
+- [x] Order Dashboard: Export to CSV button — downloads vendor-grouped spreadsheet with item name, product#, pack size, cases needed, unit price, total cost
+- [x] Order Dashboard: Export to PDF button — generates a printable vendor order sheet with the same columns
+- [x] Backend: add getSessionWithEntries procedure that returns a session with all its count entries for loading into Count Sheet

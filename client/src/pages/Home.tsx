@@ -19,13 +19,18 @@ export default function Home() {
 
   const { data: allItems } = trpc.items.list.useQuery(undefined);
   const { data: sessions } = trpc.counts.listSessions.useQuery();
-  const { data: belowPar } = trpc.orders.getBelowPar.useQuery(undefined, {
+  const { data: belowParResult } = trpc.orders.getBelowPar.useQuery(undefined, {
     enabled: isAdmin,
   });
 
+  // getBelowPar now returns { session, items } — extract the items array
+  const belowParItems = Array.isArray(belowParResult)
+    ? belowParResult
+    : (belowParResult?.items ?? []);
+
   const totalItems = allItems?.length ?? 0;
   const totalSessions = sessions?.length ?? 0;
-  const belowParCount = belowPar?.length ?? 0;
+  const belowParCount = belowParItems.length;
 
   const latestSession = sessions?.[0];
 
