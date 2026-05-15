@@ -101,3 +101,15 @@
 - [x] Order Dashboard: Export to CSV button — downloads vendor-grouped spreadsheet with item name, product#, pack size, cases needed, unit price, total cost
 - [x] Order Dashboard: Export to PDF button — generates a printable vendor order sheet with the same columns
 - [x] Backend: add getSessionWithEntries procedure that returns a session with all its count entries for loading into Count Sheet
+
+## User Management (Admin)
+- [x] DB: add `isActive` boolean column to users table (default true); migration SQL applied
+- [x] Backend: add `admin.listUsers` procedure (admin-only) — returns all users with id, name, email, role, isActive, lastSignedIn
+- [x] Backend: add `admin.setRole` procedure (admin-only) — updates role for a given userId
+- [x] Backend: add `admin.setActive` procedure (admin-only) — toggles isActive for a given userId
+- [x] Backend: enforce isActive check in auth context so deactivated users get 401
+- [x] Frontend: build /admin/users page with user list (name, email, role badge, last sign-in, active status)
+- [x] Frontend: role toggle button (Admin ↔ Employee) on each user row
+- [x] Frontend: deactivate/reactivate toggle on each user row
+- [x] Frontend: add "Users" nav item to admin sidebar (admin-only)
+- [x] Frontend: route /admin/users registered in App.tsx

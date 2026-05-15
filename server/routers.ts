@@ -43,6 +43,9 @@ import {
   updateStorageArea,
   updateVendor,
   upsertCountEntry,
+  listAllUsers,
+  setUserRole,
+  setUserActive,
   type PfgImportRow,
 } from "./db";
 
@@ -334,6 +337,34 @@ const settingsRouter = router({
     .mutation(({ input }) => deleteStorageArea(input.id)),
 });
 
+// ─── Admin Users Router ─────────────────────────────────────────────────────
+
+const adminUsersRouter = router({
+  list: adminProcedure.query(() => listAllUsers()),
+
+  setRole: adminProcedure
+    .input(z.object({ userId: z.number(), role: z.enum(["user", "admin"]) }))
+    .mutation(async ({ input, ctx }) => {
+      // Prevent an admin from demoting themselves
+      if (input.userId === ctx.user.id && input.role !== "admin") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "You cannot demote yourself" });
+      }
+      await setUserRole(input.userId, input.role);
+      return { success: true };
+    }),
+
+  setActive: adminProcedure
+    .input(z.object({ userId: z.number(), isActive: z.boolean() }))
+    .mutation(async ({ input, ctx }) => {
+      // Prevent an admin from deactivating themselves
+      if (input.userId === ctx.user.id && !input.isActive) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "You cannot deactivate yourself" });
+      }
+      await setUserActive(input.userId, input.isActive);
+      return { success: true };
+    }),
+});
+
 // ─── App Router ────────────────────────────────────────────────────────────────────
 
 export const appRouter = router({
@@ -352,6 +383,7 @@ export const appRouter = router({
   alcohol: alcoholRouter,
   catering: cateringRouter,
   settings: settingsRouter,
+  adminUsers: adminUsersRouter,
 });
 
 export type AppRouter = typeof appRouter;

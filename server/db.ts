@@ -96,6 +96,35 @@ export async function getUserByOpenId(openId: string) {
   return result[0];
 }
 
+export async function listAllUsers() {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      role: users.role,
+      isActive: users.isActive,
+      lastSignedIn: users.lastSignedIn,
+      createdAt: users.createdAt,
+    })
+    .from(users)
+    .orderBy(desc(users.lastSignedIn));
+}
+
+export async function setUserRole(userId: number, role: "user" | "admin") {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ role }).where(eq(users.id, userId));
+}
+
+export async function setUserActive(userId: number, isActive: boolean) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ isActive }).where(eq(users.id, userId));
+}
+
 // ─── Items ────────────────────────────────────────────────────────────────────
 
 export async function getAllItems(filters?: { vendor?: string; category?: string; isAlcohol?: boolean }) {

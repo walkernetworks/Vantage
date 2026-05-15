@@ -15,6 +15,7 @@ import {
   Settings,
   ShoppingCart,
   SlidersHorizontal,
+  Users,
   X,
 } from "lucide-react";
 import { useState } from "react";
@@ -83,6 +84,13 @@ const navItems: NavItem[] = [
     icon: <SlidersHorizontal size={22} />,
     adminOnly: true,
     description: "Set reorder thresholds",
+  },
+  {
+    href: "/admin/users",
+    label: "Users",
+    icon: <Users size={22} />,
+    adminOnly: true,
+    description: "Manage accounts & roles",
   },
   {
     href: "/settings",

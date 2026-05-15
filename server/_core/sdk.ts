@@ -301,6 +301,11 @@ class SDKServer {
       throw ForbiddenError("User not found");
     }
 
+    // Block deactivated accounts
+    if (user.isActive === false) {
+      throw ForbiddenError("Account deactivated. Contact an admin.");
+    }
+
     await db.upsertUser({
       openId: user.openId,
       lastSignedIn: signedInAt,
