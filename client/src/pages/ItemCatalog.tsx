@@ -19,7 +19,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 type ItemForm = {
@@ -239,10 +239,11 @@ export default function ItemCatalog() {
   const [showFilters, setShowFilters] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
 
-  const { data: items = [], isLoading } = trpc.items.list.useQuery({
-    vendor: filterVendor || undefined,
-    category: filterCategory || undefined,
-  });
+  const queryInput = useMemo(
+    () => ({ vendor: filterVendor || undefined, category: filterCategory || undefined }),
+    [filterVendor, filterCategory]
+  );
+  const { data: items = [], isLoading } = trpc.items.list.useQuery(queryInput);
 
   const createMutation = trpc.items.create.useMutation({
     onSuccess: () => {

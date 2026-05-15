@@ -55,6 +55,9 @@
 - [x] Shortfall detection: compare needed vs current stock
 - [x] Highlight shortfall items in red with exact deficit and progress bar
 
+## Bug Fixes
+- [x] Fix pencil/edit button in Item Catalog — clicking it does nothing, form does not open
+
 ## Phase 10: PFG Import Enhancement
 - [x] Parse PFG CSV exact columns: Category Name, Custom Product Description, Product Description, Brand, Product Number, Pack Size, UOM, Price
 - [x] Map PFG Category Name to internal categories (ALCOHOL-BEVERAGES → Alcohol-100, COFFEE-DRY FOODS → Coffee, etc.)
