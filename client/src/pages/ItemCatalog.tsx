@@ -240,6 +240,7 @@ export default function ItemCatalog() {
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState<ItemForm>(emptyForm);
   const [showImport, setShowImport] = useState(false);
+  const [showWebstaurantImport, setShowWebstaurantImport] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
 
@@ -352,6 +353,13 @@ export default function ItemCatalog() {
               onClick={() => setShowImport(true)}
               className="p-3 rounded-xl bg-secondary text-secondary-foreground hover:bg-muted transition-colors active:scale-95"
               title="Import PFG Order Guide"
+            >
+              <Upload size={20} />
+            </button>
+            <button
+              onClick={() => setShowWebstaurantImport(true)}
+              className="p-3 rounded-xl bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors active:scale-95"
+              title="Import Webstaurant Order Guide"
             >
               <Upload size={20} />
             </button>
@@ -772,6 +780,16 @@ export default function ItemCatalog() {
           }}
         />
       )}
+
+      {/* ── Webstaurant Import Modal ── */}
+      {showWebstaurantImport && (
+        <WebstaurantImportModal
+          onClose={() => {
+            setShowWebstaurantImport(false);
+            utils.items.list.invalidate();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1125,5 +1143,391 @@ function FormField({ label, children }: { label: string; children: React.ReactNo
       </label>
       {children}
     </div>
+  );
+}
+
+// ── Webstaurant CSV Parser ─────────────────────────────────────────────────────
+// CSV format: header row 1 is ",Order Guide,,," (skip)
+// header row 2: "Item Number,Name,Vendor,Quantity,Base Price/Unit*"
+// Last row has "*Add items to your cart..." — skip it
+
+type WebstaurantRow = {
+  webstaurantItemNumber: string;
+  rawName: string;
+  cleanName: string;
+  brand: string;
+  packSize: string;
+  price: string;
+};
+
+function parseWebstaurantCsv(text: string): WebstaurantRow[] {
+  const cleaned = text.replace(/^\uFEFF/, "").trim();
+  const lines = cleaned.split(/\r?\n/);
+  if (lines.length < 3) return [];
+
+  function parseLine(line: string): string[] {
+    const result: string[] = [];
+    let current = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { inQuotes = !inQuotes; }
+      else if (ch === "," && !inQuotes) { result.push(current.trim()); current = ""; }
+      else { current += ch; }
+    }
+    result.push(current.trim());
+    return result;
+  }
+
+  // Find the real header row (contains "Item Number")
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(5, lines.length); i++) {
+    if (lines[i].toLowerCase().includes("item number")) { headerIdx = i; break; }
+  }
+  if (headerIdx === -1) return [];
+
+  const headers = parseLine(lines[headerIdx]).map((h) => h.toLowerCase().replace(/\s+/g, " ").trim());
+  const idxItemNum = headers.findIndex((h) => h.includes("item number"));
+  const idxName = headers.findIndex((h) => h === "name");
+  const idxVendor = headers.findIndex((h) => h === "vendor");
+  const idxPrice = headers.findIndex((h) => h.includes("price"));
+
+  const rows: WebstaurantRow[] = [];
+
+  for (let i = headerIdx + 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const cols = parseLine(line);
+
+    const itemNumber = (cols[idxItemNum] ?? "").trim();
+    const fullName = (cols[idxName] ?? "").trim();
+    const brand = (cols[idxVendor] ?? "").trim();
+    const rawPriceStr = (cols[idxPrice] ?? "").trim().replace(/[$,*]/g, "");
+
+    // Skip footer row
+    if (!itemNumber || fullName.toLowerCase().includes("add items to your cart")) continue;
+    if (!fullName) continue;
+
+    const price = rawPriceStr && !isNaN(parseFloat(rawPriceStr))
+      ? parseFloat(rawPriceStr).toFixed(2)
+      : "0.00";
+
+    // Extract pack size from name (e.g. "- 25/Case", "- 500/Case", "- 6/Case")
+    const packMatch = fullName.match(/[-–]\s*([\d,]+\s*\/\s*\w+)\s*$/);
+    const packSize = packMatch ? packMatch[1].replace(/,/g, "") : "";
+
+    // Clean name: strip trailing pack size descriptor
+    const nameWithoutPack = fullName.replace(/\s*[-–]\s*[\d,]+\s*\/\s*\w+\s*$/, "").trim();
+
+    // Simple title-case clean name (AI will improve this server-side)
+    const cleanName = nameWithoutPack
+      .split(" ")
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(" ");
+
+    rows.push({
+      webstaurantItemNumber: itemNumber,
+      rawName: fullName,
+      cleanName,
+      brand,
+      packSize,
+      price,
+    });
+  }
+
+  return rows;
+}
+
+// ── Webstaurant Import Modal ───────────────────────────────────────────────────
+
+type WebstaurantImportResult = {
+  created: number;
+  updated: number;
+  unchanged: number;
+  priceChanges: Array<{
+    itemId: number;
+    name: string;
+    oldPrice: string;
+    newPrice: string;
+    diff: string;
+    pctChange: string;
+  }>;
+};
+
+function WebstaurantImportModal({ onClose }: { onClose: () => void }) {
+  const [step, setStep] = useState<"upload" | "preview" | "generating" | "result">("upload");
+  const [rows, setRows] = useState<WebstaurantRow[]>([]);
+  const [result, setResult] = useState<WebstaurantImportResult | null>(null);
+  const [aiProgress, setAiProgress] = useState(0);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const generateCleanName = trpc.items.generateCleanName.useMutation();
+
+  const importMutation = trpc.items.importWebstaurant.useMutation({
+    onSuccess: (res) => {
+      setResult(res as WebstaurantImportResult);
+      setStep("result");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = (ev.target?.result as string) ?? "";
+      const parsed = parseWebstaurantCsv(text);
+      if (parsed.length === 0) {
+        toast.error("No valid rows found. Make sure this is a Webstaurant Order Guide CSV.");
+        return;
+      }
+      setRows(parsed);
+      setStep("preview");
+    };
+    reader.readAsText(file);
+  }
+
+  async function handleImportWithAI() {
+    setStep("generating");
+    setAiProgress(0);
+    const enhanced: WebstaurantRow[] = [];
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      try {
+        const aiName = await generateCleanName.mutateAsync({
+          rawName: row.rawName,
+          brand: row.brand,
+          packSize: row.packSize,
+        });
+        enhanced.push({ ...row, cleanName: typeof aiName === "string" ? aiName : row.cleanName });
+      } catch {
+        enhanced.push(row);
+      }
+      setAiProgress(Math.round(((i + 1) / rows.length) * 100));
+    }
+    importMutation.mutate({ rows: enhanced });
+  }
+
+  return (
+    <Modal title="Import Webstaurant Order Guide" onClose={onClose}>
+      {/* Step 1: Upload */}
+      {step === "upload" && (
+        <div className="space-y-5">
+          <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-sm text-purple-800 space-y-1">
+            <p className="font-semibold flex items-center gap-2">
+              <Upload size={16} /> Webstaurant Order Guide CSV
+            </p>
+            <p>Export your order guide from WebstaurantStore (Saved Lists → Export CSV) then upload here.</p>
+            <p className="text-xs text-purple-700 mt-1">
+              Expected columns: <span className="font-mono">Item Number, Name, Vendor, Quantity, Base Price/Unit</span>
+            </p>
+            <p className="text-xs text-purple-700">
+              Re-uploading will update prices and track changes. Historical price data is preserved.
+            </p>
+          </div>
+
+          <input ref={fileRef} type="file" accept=".csv,.txt" onChange={handleFileChange} className="hidden" />
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="w-full h-32 rounded-2xl border-2 border-dashed border-purple-400/50 bg-purple-50 flex flex-col items-center justify-center gap-3 hover:bg-purple-100 transition-colors active:scale-[0.98]"
+          >
+            <Upload size={32} className="text-purple-600" />
+            <div className="text-center">
+              <p className="font-semibold text-foreground">Tap to select Webstaurant CSV</p>
+              <p className="text-sm text-muted-foreground">Supports .csv and .txt files</p>
+            </div>
+          </button>
+
+          <button onClick={onClose} className="w-full btn-big bg-muted text-foreground">
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* Step 2: Preview */}
+      {step === "preview" && (
+        <div className="space-y-4">
+          <div>
+            <p className="font-semibold text-foreground">{rows.length} items found</p>
+            <p className="text-sm text-muted-foreground">
+              AI will generate clean names for each item. New items will be created; existing items (matched by Item #) will have prices updated.
+            </p>
+          </div>
+
+          <div className="max-h-72 overflow-y-auto rounded-xl border border-border divide-y divide-border">
+            {rows.map((row, i) => (
+              <div key={i} className="px-3 py-2.5 text-sm bg-card">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    {/* Proposed AI clean name */}
+                    <p className="font-semibold text-foreground text-xs">{row.cleanName}</p>
+                    {/* Original vendor description */}
+                    <p className="text-xs text-muted-foreground truncate mt-0.5 italic">{row.rawName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {row.brand} · #{row.webstaurantItemNumber}
+                      {row.packSize && ` · ${row.packSize}`}
+                    </p>
+                  </div>
+                  <span className="font-bold text-foreground shrink-0">${row.price}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
+            <strong>AI Name Generation:</strong> The bold name shown is a preliminary guess. Clicking Import will send each item to the AI to generate the final clean, concise internal name. The italic line below is the original vendor description that will be preserved as reference.
+          </div>
+
+          <div className="flex gap-3">
+            <button onClick={() => setStep("upload")} className="flex-1 btn-big bg-muted text-foreground">
+              Back
+            </button>
+            <button
+              onClick={handleImportWithAI}
+              className="flex-1 btn-big bg-purple-600 text-white disabled:opacity-60"
+            >
+              Import {rows.length} Items (with AI Names)
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 3: AI Generation in progress */}
+      {step === "generating" && (
+        <div className="space-y-5 py-4 text-center">
+          <div className="w-16 h-16 rounded-full bg-purple-100 flex items-center justify-center mx-auto">
+            <Upload size={28} className="text-purple-600 animate-bounce" />
+          </div>
+          <div>
+            <p className="font-semibold text-foreground">Generating AI Names…</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Processing item {Math.round((aiProgress / 100) * rows.length)} of {rows.length}
+            </p>
+          </div>
+          <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
+            <div
+              className="h-full bg-purple-500 rounded-full transition-all duration-300"
+              style={{ width: `${aiProgress}%` }}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">{aiProgress}% complete</p>
+        </div>
+      )}
+
+      {/* Step 4: Result */}
+      {step === "result" && result && (
+        <div className="space-y-5">
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-green-700">{result.created}</p>
+              <p className="text-xs font-semibold text-green-600 mt-0.5">New Items</p>
+            </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-blue-700">{result.updated}</p>
+              <p className="text-xs font-semibold text-blue-600 mt-0.5">Price Updated</p>
+            </div>
+            <div className="bg-muted border border-border rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-muted-foreground">{result.unchanged}</p>
+              <p className="text-xs font-semibold text-muted-foreground mt-0.5">Unchanged</p>
+            </div>
+          </div>
+
+          {result.priceChanges.length > 0 ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={16} className="text-amber-500" />
+                <p className="font-semibold text-foreground text-sm">
+                  Price Changes Detected ({result.priceChanges.length})
+                </p>
+              </div>
+              <div className="rounded-xl border border-border divide-y divide-border overflow-hidden">
+                <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 px-3 py-2 bg-muted text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  <span>Item</span>
+                  <span className="text-right">Old</span>
+                  <span className="text-right">New</span>
+                  <span className="text-right">$ Diff</span>
+                  <span className="text-right">%</span>
+                </div>
+                {result.priceChanges.map((change) => {
+                  const diff = parseFloat(change.diff);
+                  const pct = parseFloat(change.pctChange);
+                  const isUp = diff > 0;
+                  return (
+                    <div
+                      key={change.itemId}
+                      className={cn(
+                        "grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 px-3 py-3 items-center text-sm",
+                        isUp ? "bg-red-50/50" : "bg-green-50/50"
+                      )}
+                    >
+                      <div className="min-w-0">
+                        <p className="font-semibold text-foreground truncate text-xs">{change.name}</p>
+                      </div>
+                      <span className="text-muted-foreground font-mono text-xs text-right">
+                        ${parseFloat(change.oldPrice).toFixed(2)}
+                      </span>
+                      <span className="font-bold font-mono text-xs text-right">
+                        ${parseFloat(change.newPrice).toFixed(2)}
+                      </span>
+                      <span className={cn("text-xs font-bold font-mono px-1.5 py-0.5 rounded-md text-right", isUp ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700")}>
+                        {isUp ? "+" : ""}${Math.abs(diff).toFixed(2)}
+                      </span>
+                      <span className={cn("text-xs font-bold px-1.5 py-0.5 rounded-md flex items-center gap-0.5 justify-end", isUp ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700")}>
+                        {isUp ? <ArrowUp size={10} /> : <ArrowDown size={10} />}
+                        {Math.abs(pct).toFixed(1)}%
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="bg-card border border-border rounded-xl p-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Net Price Impact</p>
+                {(() => {
+                  const increases = result.priceChanges.filter((c) => parseFloat(c.diff) > 0);
+                  const decreases = result.priceChanges.filter((c) => parseFloat(c.diff) < 0);
+                  const totalIncrease = increases.reduce((s, c) => s + parseFloat(c.diff), 0);
+                  const totalDecrease = decreases.reduce((s, c) => s + parseFloat(c.diff), 0);
+                  return (
+                    <div className="space-y-1.5">
+                      {increases.length > 0 && (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="flex items-center gap-1.5 text-red-600">
+                            <TrendingUp size={14} />
+                            {increases.length} price increase{increases.length !== 1 ? "s" : ""}
+                          </span>
+                          <span className="font-bold text-red-600">+${totalIncrease.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {decreases.length > 0 && (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="flex items-center gap-1.5 text-green-600">
+                            <TrendingDown size={14} />
+                            {decreases.length} price decrease{decreases.length !== 1 ? "s" : ""}
+                          </span>
+                          <span className="font-bold text-green-600">${totalDecrease.toFixed(2)}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl p-4">
+              <CheckCircle2 size={20} className="text-green-600 shrink-0" />
+              <div>
+                <p className="font-semibold text-green-800 text-sm">No price changes detected</p>
+                <p className="text-xs text-green-700">All existing item prices match the imported guide.</p>
+              </div>
+            </div>
+          )}
+
+          <button onClick={onClose} className="w-full btn-big bg-primary text-primary-foreground">
+            Done
+          </button>
+        </div>
+      )}
+    </Modal>
   );
 }

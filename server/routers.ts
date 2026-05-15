@@ -34,6 +34,9 @@ import {
   getStorageAreas,
   getVendors,
   importPfgItems,
+  importWebstaurantItems,
+  generateCleanItemName,
+  bulkUpdateParLevels,
   listCateringRecipes,
   listCountSessions,
   removeRecipeItem,
@@ -47,6 +50,7 @@ import {
   setUserRole,
   setUserActive,
   type PfgImportRow,
+  type WebstaurantImportRow,
 } from "./db";
 
 // ─── Shared Zod Schemas ───────────────────────────────────────────────────────
@@ -145,9 +149,37 @@ const itemsRouter = router({
   updateParLevel: adminProcedure
     .input(z.object({ id: z.number(), parLevel: z.string() }))
     .mutation(({ input }) => updateItem(input.id, { parLevel: input.parLevel })),
+
   updateOrderThreshold: adminProcedure
     .input(z.object({ id: z.number(), orderThreshold: z.string() }))
     .mutation(({ input }) => updateItem(input.id, { orderThreshold: input.orderThreshold })),
+
+  bulkUpdateParLevels: adminProcedure
+    .input(z.object({ updates: z.array(z.object({ id: z.number(), parLevel: z.string() })) }))
+    .mutation(({ input }) => bulkUpdateParLevels(input.updates)),
+
+  importWebstaurant: adminProcedure
+    .input(
+      z.object({
+        rows: z.array(
+          z.object({
+            webstaurantItemNumber: z.string(),
+            rawName: z.string(),
+            cleanName: z.string(),
+            brand: z.string(),
+            packSize: z.string(),
+            price: z.string(),
+          })
+        ),
+      })
+    )
+    .mutation(({ input }) => importWebstaurantItems(input.rows as WebstaurantImportRow[])),
+
+  generateCleanName: adminProcedure
+    .input(z.object({ rawName: z.string(), brand: z.string().optional(), packSize: z.string().optional() }))
+    .mutation(({ input }) =>
+      generateCleanItemName(input.rawName, input.brand ?? null, input.packSize ?? null)
+    ),
 });
 
 // ─── Counts Router ────────────────────────────────────────────────────────────

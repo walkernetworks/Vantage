@@ -14,6 +14,7 @@ import {
   users,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+import { invokeLLM } from "./_core/llm";
 
 // ─── Pack Size Parsing ────────────────────────────────────────────────────────
 // Parses "6/24oz", "12/2 LB", "1/50 LB", "4/1 GA" etc. and returns the case qty
@@ -655,4 +656,157 @@ export async function deleteStorageArea(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.delete(settingsStorageAreas).where(eq(settingsStorageAreas.id, id));
+}
+
+// ─── AI Item Name Generation ──────────────────────────────────────────────────
+
+/**
+ * Uses the LLM to generate a clean, concise internal item name from raw vendor data.
+ * e.g. "COFFEE CREAMER FRENCH VANILLA 6/32OZ" + brand "International Delight" → "French Vanilla Coffee Creamer"
+ * Falls back to the rawName if the LLM call fails.
+ */
+export async function generateCleanItemName(
+  rawName: string,
+  brand: string | null,
+  packSize: string | null
+): Promise<string> {
+  try {
+    const result = await invokeLLM({
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a food & beverage inventory naming assistant. Given a raw vendor product description, brand, and pack size, return ONLY a clean, concise internal item name (2–6 words, title case, no pack size, no vendor jargon). Examples: 'French Vanilla Coffee Creamer', 'Orange Bitters 5oz', 'N2O Cream Chargers 24pk', 'Blood Orange Syrup 750ml'. Return ONLY the name, nothing else.",
+        },
+        {
+          role: "user",
+          content: `Raw description: ${rawName}\nBrand: ${brand ?? "unknown"}\nPack size: ${packSize ?? "unknown"}`,
+        },
+      ],
+      max_tokens: 32,
+    });
+    const name = (result.choices[0]?.message?.content as string)?.trim();
+    return name && name.length > 0 && name.length < 120 ? name : rawName;
+  } catch {
+    return rawName;
+  }
+}
+
+// ─── Webstaurant Import ───────────────────────────────────────────────────────
+
+export type WebstaurantImportRow = {
+  webstaurantItemNumber: string;
+  rawName: string;          // original vendor description
+  cleanName: string;        // AI-generated clean name
+  brand: string;
+  packSize: string;
+  price: string;
+};
+
+export type WebstaurantImportResult = {
+  created: number;
+  updated: number;
+  unchanged: number;
+  priceChanges: Array<{
+    itemId: number;
+    name: string;
+    oldPrice: string;
+    newPrice: string;
+    diff: string;
+    pctChange: string;
+  }>;
+};
+
+export async function importWebstaurantItems(
+  rows: WebstaurantImportRow[]
+): Promise<WebstaurantImportResult> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  let created = 0;
+  let updated = 0;
+  let unchanged = 0;
+  const priceChanges: WebstaurantImportResult["priceChanges"] = [];
+
+  for (const row of rows) {
+    const existing = await db
+      .select()
+      .from(items)
+      .where(eq(items.webstaurantItemNumber, row.webstaurantItemNumber))
+      .limit(1);
+
+    const caseQty = parsePackSizeQty(row.packSize);
+    const eachPrice = computeEachPrice(row.price, caseQty);
+
+    if (existing.length === 0) {
+      await db.insert(items).values({
+        name: row.cleanName,
+        brand: row.brand || null,
+        category: "Other",
+        vendor: "Webstaurant",
+        packSize: row.packSize || null,
+        unitOfMeasure: "Case",
+        price: row.price,
+        caseQty,
+        eachPrice,
+        parLevel: "0",
+        storageArea: "Dry Storage",
+        isAlcohol: false,
+        webstaurantItemNumber: row.webstaurantItemNumber,
+        isActive: true,
+      });
+      created++;
+    } else {
+      const item = existing[0];
+      const oldPrice = item.price ?? "0";
+      const newPrice = row.price;
+
+      if (parseFloat(oldPrice) !== parseFloat(newPrice)) {
+        await db.insert(priceHistory).values({
+          itemId: item.id,
+          oldPrice,
+          newPrice,
+          importSource: "Webstaurant",
+        });
+        const diff = parseFloat(newPrice) - parseFloat(oldPrice);
+        const pct = parseFloat(oldPrice) !== 0 ? (diff / parseFloat(oldPrice)) * 100 : 0;
+        priceChanges.push({
+          itemId: item.id,
+          name: item.name,
+          oldPrice,
+          newPrice,
+          diff: diff.toFixed(2),
+          pctChange: pct.toFixed(1),
+        });
+        await db
+          .update(items)
+          .set({ price: newPrice, packSize: row.packSize, caseQty, eachPrice, updatedAt: new Date() })
+          .where(eq(items.id, item.id));
+        updated++;
+      } else {
+        await db
+          .update(items)
+          .set({ packSize: row.packSize, caseQty, eachPrice, updatedAt: new Date() })
+          .where(eq(items.id, item.id));
+        unchanged++;
+      }
+    }
+  }
+
+  return { created, updated, unchanged, priceChanges };
+}
+
+// ─── Bulk Par Level Update ────────────────────────────────────────────────────
+
+export async function bulkUpdateParLevels(
+  updates: Array<{ id: number; parLevel: string }>
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  for (const u of updates) {
+    await db
+      .update(items)
+      .set({ parLevel: u.parLevel, updatedAt: new Date() })
+      .where(eq(items.id, u.id));
+  }
 }

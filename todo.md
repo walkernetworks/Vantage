@@ -113,3 +113,33 @@
 - [x] Frontend: deactivate/reactivate toggle on each user row
 - [x] Frontend: add "Users" nav item to admin sidebar (admin-only)
 - [x] Frontend: route /admin/users registered in App.tsx
+
+## Round 6 Features
+
+### AI Item Name Generation
+- [x] Backend: add `cleanItemName(rawName, brand, packSize)` LLM helper that returns a concise internal name
+- [x] Backend: call cleanItemName during Webstaurant import for each row before upsert
+- [x] Frontend: show AI-generated name alongside original vendor description in import preview table
+
+### Webstaurant CSV Import
+- [x] Parse Webstaurant CSV format: skip header rows, columns = Item Number, Name, Vendor, Quantity, Base Price/Unit
+- [x] Strip "$" and "*" from price field; parse pack size from Name field (e.g. "- 25/Case" → packSize)
+- [x] Use Item Number as stable upsert key (webstaurantItemNumber field on items table)
+- [x] DB: add `webstaurantItemNumber` varchar column to items table; migration applied
+- [x] Track price history on re-import (same priceHistory table used by PFG)
+- [x] Show variance report after import (same pattern as PFG: old price, new price, $ diff, % diff)
+- [x] Frontend: add Webstaurant import modal in Item Catalog with CSV upload + AI name generation + preview + variance report
+
+### Bulk Edit — Par Levels
+- [x] Par Levels page: add checkbox column for multi-select rows
+- [x] "Select All" / "Deselect All" toggle in header
+- [x] "Copy Down" button: fills all selected rows with the par value from the first selected row
+- [x] "Set All" button: opens a small input, applies typed value to all selected rows in one mutation
+- [x] Bulk save sends a single `items.bulkUpdateParLevels` mutation with array of {id, parLevel}
+
+### Bulk Edit — Count Sheet
+- [x] Count Sheet: add multi-select mode toggle button
+- [x] When in multi-select mode: each item row shows a checkbox
+- [x] "Fill All Cases" button: opens input, applies same case count to all selected items
+- [x] "Copy Down Cases" button: copies first selected item's case count to all other selected items
+- [x] Bulk save sends array of upsertEntry mutations in parallel

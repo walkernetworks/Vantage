@@ -1,7 +1,17 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { Search, Filter, Save, ChevronDown } from "lucide-react";
+import {
+  ArrowDownToLine,
+  CheckSquare,
+  ChevronDown,
+  Filter,
+  Save,
+  Search,
+  Square,
+  SlidersHorizontal,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type Item = {
   id: number;
@@ -18,20 +28,37 @@ type Item = {
   eachPrice: string | null;
 };
 
-// Debounced save indicator
+// ─── Single-row par input ─────────────────────────────────────────────────────
+
 function ParInput({
   item,
   onSave,
   onSaveThreshold,
+  bulkMode,
+  selected,
+  onToggleSelect,
+  overrideValue,
 }: {
   item: Item;
   onSave: (id: number, val: string) => void;
   onSaveThreshold: (id: number, val: string) => void;
+  bulkMode: boolean;
+  selected: boolean;
+  onToggleSelect: (id: number) => void;
+  overrideValue?: string; // when set externally by bulk fill
 }) {
   const [parValue, setParValue] = useState(item.parLevel ?? "0");
   const [thresholdValue, setThresholdValue] = useState(item.orderThreshold ?? "");
   const [parDirty, setParDirty] = useState(false);
   const [thresholdDirty, setThresholdDirty] = useState(false);
+  const prevOverride = useRef<string | undefined>(undefined);
+
+  // Apply external override (bulk fill)
+  if (overrideValue !== undefined && overrideValue !== prevOverride.current) {
+    prevOverride.current = overrideValue;
+    setParValue(overrideValue);
+    setParDirty(true);
+  }
 
   function handleParChange(v: string) {
     setParValue(v);
@@ -60,14 +87,35 @@ function ParInput({
   const anyDirty = parDirty || thresholdDirty;
 
   return (
-    <div className="px-4 py-3 border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
+    <div
+      className={cn(
+        "px-4 py-3 border-b border-border last:border-0 transition-colors",
+        selected ? "bg-primary/5" : "hover:bg-muted/20"
+      )}
+    >
       <div className="flex items-start gap-3">
+        {/* Checkbox (bulk mode only) */}
+        {bulkMode && (
+          <button
+            onClick={() => onToggleSelect(item.id)}
+            className="mt-1 shrink-0 text-muted-foreground hover:text-primary transition-colors"
+          >
+            {selected ? (
+              <CheckSquare size={18} className="text-primary" />
+            ) : (
+              <Square size={18} />
+            )}
+          </button>
+        )}
+
         {/* Item info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-foreground truncate">{item.name}</span>
             {anyDirty && (
-              <span className="flex-shrink-0 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">unsaved</span>
+              <span className="flex-shrink-0 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                unsaved
+              </span>
             )}
           </div>
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
@@ -75,51 +123,60 @@ function ParInput({
             <span className="text-xs text-muted-foreground">·</span>
             <span className="text-xs text-muted-foreground">{item.vendor}</span>
             {item.packSize && (
-              <><span className="text-xs text-muted-foreground">·</span>
-              <span className="text-xs text-muted-foreground">{item.packSize}</span></>
+              <>
+                <span className="text-xs text-muted-foreground">·</span>
+                <span className="text-xs text-muted-foreground">{item.packSize}</span>
+              </>
             )}
             {casePrice !== null && (
-              <><span className="text-xs text-muted-foreground">·</span>
-              <span className="text-xs text-muted-foreground">
-                ${casePrice.toFixed(2)}/case{eachPrice !== null && ` · $${eachPrice.toFixed(2)}/each`}
-              </span></>
+              <>
+                <span className="text-xs text-muted-foreground">·</span>
+                <span className="text-xs text-muted-foreground">
+                  ${casePrice.toFixed(2)}/case
+                  {eachPrice !== null && ` · $${eachPrice.toFixed(2)}/each`}
+                </span>
+              </>
             )}
           </div>
         </div>
 
         {/* Par + Threshold inputs */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Par level */}
           <div className="flex flex-col items-center gap-0.5">
             <span className="text-xs text-muted-foreground">Par</span>
             <input
-              type="number" min="0" step="1"
+              type="number"
+              min="0"
+              step="1"
               value={parValue}
               onChange={(e) => handleParChange(e.target.value)}
               onBlur={handleParBlur}
               onKeyDown={handleKeyDown}
-              className={`w-16 h-10 text-center rounded-xl border text-sm font-semibold focus:outline-none focus:ring-2 transition-colors ${
+              className={cn(
+                "w-16 h-10 text-center rounded-xl border text-sm font-semibold focus:outline-none focus:ring-2 transition-colors",
                 parDirty
                   ? "border-amber-400 bg-amber-50 text-amber-900 focus:ring-amber-300"
                   : "border-border bg-background text-foreground focus:ring-primary/30"
-              }`}
+              )}
             />
           </div>
-          {/* Order threshold */}
           <div className="flex flex-col items-center gap-0.5">
             <span className="text-xs text-amber-600 font-medium">Order ≤</span>
             <input
-              type="number" min="0" step="1"
+              type="number"
+              min="0"
+              step="1"
               value={thresholdValue}
               onChange={(e) => handleThresholdChange(e.target.value)}
               onBlur={handleThresholdBlur}
               onKeyDown={handleKeyDown}
               placeholder="—"
-              className={`w-16 h-10 text-center rounded-xl border text-sm font-semibold focus:outline-none focus:ring-2 transition-colors ${
+              className={cn(
+                "w-16 h-10 text-center rounded-xl border text-sm font-semibold focus:outline-none focus:ring-2 transition-colors",
                 thresholdDirty
                   ? "border-amber-400 bg-amber-50 text-amber-900 focus:ring-amber-300"
                   : "border-border bg-background text-foreground focus:ring-primary/30"
-              }`}
+              )}
             />
           </div>
           {anyDirty && (
@@ -140,17 +197,24 @@ function ParInput({
   );
 }
 
+// ─── Main page ────────────────────────────────────────────────────────────────
+
 export default function ParLevels() {
   const [search, setSearch] = useState("");
   const [filterVendor, setFilterVendor] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
   const [showOnlyUnset, setShowOnlyUnset] = useState(false);
 
+  // Bulk edit state
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [setAllInput, setSetAllInput] = useState("");
+  const [showSetAll, setShowSetAll] = useState(false);
+  // Map of itemId → override value applied by bulk fill (copy-down or set-all)
+  const [overrides, setOverrides] = useState<Record<number, string>>({});
+
   const queryInput = useMemo(
-    () => ({
-      vendor: filterVendor || undefined,
-      category: filterCategory || undefined,
-    }),
+    () => ({ vendor: filterVendor || undefined, category: filterCategory || undefined }),
     [filterVendor, filterCategory]
   );
 
@@ -169,17 +233,30 @@ export default function ParLevels() {
     onError: (e) => toast.error(e.message),
   });
 
+  const bulkUpdateParLevels = trpc.items.bulkUpdateParLevels.useMutation({
+    onSuccess: (_data, vars) => {
+      utils.items.list.invalidate();
+      toast.success(`${vars.updates.length} par level${vars.updates.length !== 1 ? "s" : ""} saved`);
+      setOverrides({});
+      setSelectedIds(new Set());
+      setBulkMode(false);
+      setShowSetAll(false);
+      setSetAllInput("");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const handleSave = useCallback(
-    (id: number, parLevel: string) => { updateParLevel.mutate({ id, parLevel }); },
+    (id: number, parLevel: string) => updateParLevel.mutate({ id, parLevel }),
     [updateParLevel]
   );
 
   const handleSaveThreshold = useCallback(
-    (id: number, orderThreshold: string) => { updateOrderThreshold.mutate({ id, orderThreshold }); },
+    (id: number, orderThreshold: string) => updateOrderThreshold.mutate({ id, orderThreshold }),
     [updateOrderThreshold]
   );
 
-  const items = useMemo(() => {
+  const filteredItems = useMemo(() => {
     let list = allItems as Item[];
     if (search) {
       const q = search.toLowerCase();
@@ -200,20 +277,118 @@ export default function ParLevels() {
     () => (allItems as Item[]).filter((i) => !i.parLevel || parseFloat(i.parLevel) === 0).length,
     [allItems]
   );
-
   const setCount = useMemo(
     () => (allItems as Item[]).filter((i) => i.parLevel && parseFloat(i.parLevel) > 0).length,
     [allItems]
   );
 
+  const allFilteredSelected =
+    filteredItems.length > 0 && filteredItems.every((i) => selectedIds.has(i.id));
+
+  function toggleSelectAll() {
+    if (allFilteredSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        filteredItems.forEach((i) => next.delete(i.id));
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        filteredItems.forEach((i) => next.add(i.id));
+        return next;
+      });
+    }
+  }
+
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  /** Copy-down: fill all selected rows with the par value of the first selected item */
+  function handleCopyDown() {
+    const selected = filteredItems.filter((i) => selectedIds.has(i.id));
+    if (selected.length < 2) {
+      toast.error("Select at least 2 items to copy down");
+      return;
+    }
+    const sourceValue = overrides[selected[0].id] ?? selected[0].parLevel ?? "0";
+    const newOverrides: Record<number, string> = { ...overrides };
+    selected.slice(1).forEach((i) => { newOverrides[i.id] = sourceValue; });
+    setOverrides(newOverrides);
+    toast.info(`Copied ${sourceValue} to ${selected.length - 1} item${selected.length > 2 ? "s" : ""}. Click Save All to confirm.`);
+  }
+
+  /** Set all: apply typed value to all selected rows */
+  function handleSetAll() {
+    const val = setAllInput.trim();
+    if (!val || isNaN(parseFloat(val))) {
+      toast.error("Enter a valid number first");
+      return;
+    }
+    const selected = filteredItems.filter((i) => selectedIds.has(i.id));
+    if (selected.length === 0) {
+      toast.error("Select at least one item");
+      return;
+    }
+    const newOverrides: Record<number, string> = { ...overrides };
+    selected.forEach((i) => { newOverrides[i.id] = val; });
+    setOverrides(newOverrides);
+    toast.info(`Set ${val} on ${selected.length} item${selected.length !== 1 ? "s" : ""}. Click Save All to confirm.`);
+    setShowSetAll(false);
+    setSetAllInput("");
+  }
+
+  /** Commit all pending overrides to the backend */
+  function handleSaveAll() {
+    const updates = Object.entries(overrides).map(([id, parLevel]) => ({
+      id: parseInt(id),
+      parLevel,
+    }));
+    if (updates.length === 0) {
+      toast.error("No pending changes to save");
+      return;
+    }
+    bulkUpdateParLevels.mutate({ updates });
+  }
+
+  function exitBulkMode() {
+    setBulkMode(false);
+    setSelectedIds(new Set());
+    setOverrides({});
+    setShowSetAll(false);
+    setSetAllInput("");
+  }
+
+  const pendingCount = Object.keys(overrides).length;
+
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Par Levels</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          <strong>Par</strong> is your target stock level. <strong>Order ≤</strong> is the trigger — when stock drops to or below this number, the item appears on the Order Dashboard. Leave Order ≤ blank to default to 50% of par.
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Par Levels</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            <strong>Par</strong> is your target stock level.{" "}
+            <strong>Order ≤</strong> is the trigger — when stock drops to or below this, the item appears on the Order Dashboard.
+          </p>
+        </div>
+        <button
+          onClick={() => (bulkMode ? exitBulkMode() : setBulkMode(true))}
+          className={cn(
+            "shrink-0 flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold border transition-colors active:scale-95",
+            bulkMode
+              ? "bg-primary text-primary-foreground border-primary"
+              : "bg-background border-border text-foreground hover:bg-muted"
+          )}
+        >
+          <SlidersHorizontal size={15} />
+          {bulkMode ? "Exit Bulk" : "Bulk Edit"}
+        </button>
       </div>
 
       {/* Stats */}
@@ -228,9 +403,74 @@ export default function ParLevels() {
         </div>
       </div>
 
+      {/* Bulk action bar */}
+      {bulkMode && (
+        <div className="bg-primary/5 border border-primary/20 rounded-2xl p-3 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-primary">
+              {selectedIds.size} selected
+            </span>
+
+            {/* Copy Down */}
+            <button
+              onClick={handleCopyDown}
+              disabled={selectedIds.size < 2}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-background border border-border hover:bg-muted disabled:opacity-40 transition-colors active:scale-95"
+            >
+              <ArrowDownToLine size={13} />
+              Copy Down
+            </button>
+
+            {/* Set All toggle */}
+            <button
+              onClick={() => setShowSetAll(!showSetAll)}
+              disabled={selectedIds.size === 0}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-background border border-border hover:bg-muted disabled:opacity-40 transition-colors active:scale-95"
+            >
+              <SlidersHorizontal size={13} />
+              Set All
+            </button>
+
+            {/* Save All */}
+            {pendingCount > 0 && (
+              <button
+                onClick={handleSaveAll}
+                disabled={bulkUpdateParLevels.isPending}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors active:scale-95"
+              >
+                <Save size={13} />
+                Save {pendingCount} change{pendingCount !== 1 ? "s" : ""}
+              </button>
+            )}
+          </div>
+
+          {/* Set All input row */}
+          {showSetAll && (
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={setAllInput}
+                onChange={(e) => setSetAllInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSetAll()}
+                placeholder="Enter par value…"
+                className="h-9 w-36 px-3 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                autoFocus
+              />
+              <button
+                onClick={handleSetAll}
+                className="h-9 px-4 rounded-xl bg-primary text-primary-foreground text-sm font-semibold active:scale-95 transition-transform"
+              >
+                Apply
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Filters */}
       <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
-        {/* Search */}
         <div className="relative">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -243,7 +483,6 @@ export default function ParLevels() {
         </div>
 
         <div className="flex gap-2 flex-wrap">
-          {/* Vendor filter */}
           <div className="relative flex-1 min-w-[140px]">
             <select
               value={filterVendor}
@@ -258,7 +497,6 @@ export default function ParLevels() {
             <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           </div>
 
-          {/* Category filter */}
           <div className="relative flex-1 min-w-[140px]">
             <select
               value={filterCategory}
@@ -273,14 +511,14 @@ export default function ParLevels() {
             <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           </div>
 
-          {/* Show only unset */}
           <button
             onClick={() => setShowOnlyUnset(!showOnlyUnset)}
-            className={`h-10 px-4 rounded-xl border text-sm font-medium flex items-center gap-2 transition-colors active:scale-95 ${
+            className={cn(
+              "h-10 px-4 rounded-xl border text-sm font-medium flex items-center gap-2 transition-colors active:scale-95",
               showOnlyUnset
                 ? "bg-amber-100 border-amber-300 text-amber-800"
                 : "border-border bg-background text-muted-foreground"
-            }`}
+            )}
           >
             <Filter size={14} />
             Unset only
@@ -291,15 +529,30 @@ export default function ParLevels() {
       {/* Items list */}
       <div className="bg-card border border-border rounded-2xl overflow-hidden">
         <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
-          <span className="text-sm font-semibold text-foreground">
-            {items.length} item{items.length !== 1 ? "s" : ""}
-          </span>
-          <span className="text-xs text-muted-foreground">Par = target stock · Order ≤ = trigger level</span>
+          <div className="flex items-center gap-3">
+            {bulkMode && (
+              <button
+                onClick={toggleSelectAll}
+                className="text-muted-foreground hover:text-primary transition-colors"
+                title={allFilteredSelected ? "Deselect all" : "Select all"}
+              >
+                {allFilteredSelected ? (
+                  <CheckSquare size={16} className="text-primary" />
+                ) : (
+                  <Square size={16} />
+                )}
+              </button>
+            )}
+            <span className="text-sm font-semibold text-foreground">
+              {filteredItems.length} item{filteredItems.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+          <span className="text-xs text-muted-foreground">Par = target · Order ≤ = trigger</span>
         </div>
 
         {isLoading ? (
           <div className="py-12 text-center text-muted-foreground text-sm">Loading items…</div>
-        ) : items.length === 0 ? (
+        ) : filteredItems.length === 0 ? (
           <div className="py-12 text-center text-muted-foreground text-sm">
             {search || filterVendor || filterCategory || showOnlyUnset
               ? "No items match your filters"
@@ -307,8 +560,17 @@ export default function ParLevels() {
           </div>
         ) : (
           <div>
-            {items.map((item) => (
-              <ParInput key={item.id} item={item} onSave={handleSave} onSaveThreshold={handleSaveThreshold} />
+            {filteredItems.map((item) => (
+              <ParInput
+                key={item.id}
+                item={item}
+                onSave={handleSave}
+                onSaveThreshold={handleSaveThreshold}
+                bulkMode={bulkMode}
+                selected={selectedIds.has(item.id)}
+                onToggleSelect={toggleSelect}
+                overrideValue={overrides[item.id]}
+              />
             ))}
           </div>
         )}

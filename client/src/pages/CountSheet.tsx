@@ -3,7 +3,9 @@ import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { CATEGORY_ICONS, STORAGE_AREAS } from "../../../shared/constants";
 import {
+  ArrowDownToLine,
   CheckCircle,
+  CheckSquare,
   ChevronDown,
   ChevronRight,
   ClipboardList,
@@ -12,6 +14,8 @@ import {
   MapPin,
   Plus,
   RefreshCw,
+  SlidersHorizontal,
+  Square,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -32,6 +36,12 @@ export default function CountSheet() {
   // localEachCounts stores the EACH count for items that have caseQty > 1
   const [localEachCounts, setLocalEachCounts] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState<Record<number, boolean>>({});
+
+  // Bulk mode state
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [showFillAll, setShowFillAll] = useState(false);
+  const [fillAllValue, setFillAllValue] = useState("");
 
   const { data: sessions = [], refetch: refetchSessions } = trpc.counts.listSessions.useQuery();
   const { data: allItems = [] } = trpc.items.list.useQuery(undefined);
@@ -164,6 +174,51 @@ export default function CountSheet() {
     return map;
   }, [entryMap, localCounts]);
 
+  // ─── Bulk helpers ──────────────────────────────────────────────────────────
+  function toggleSelectItem(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function handleBulkCopyDown() {
+    const visible = countableItems.filter((i) => selectedIds.has(i.id));
+    if (visible.length < 2) { toast.error("Select at least 2 items to copy down"); return; }
+    const sourceVal = localCounts[visible[0].id] ?? "0";
+    const newCounts: Record<number, string> = { ...localCounts };
+    visible.slice(1).forEach((i) => { newCounts[i.id] = sourceVal; });
+    setLocalCounts(newCounts);
+    // Persist each
+    if (activeSessionId) {
+      visible.slice(1).forEach((i) => {
+        const total = computeTotalCases(i.id, i.caseQty, sourceVal, localEachCounts[i.id] ?? "");
+        upsertEntryMutation.mutate({ sessionId: activeSessionId, itemId: i.id, quantity: total });
+      });
+    }
+    toast.success(`Copied ${sourceVal} cases to ${visible.length - 1} item${visible.length > 2 ? "s" : ""}`);
+  }
+
+  function handleBulkFillAll() {
+    const val = fillAllValue.trim();
+    if (!val || isNaN(parseFloat(val))) { toast.error("Enter a valid number"); return; }
+    const visible = countableItems.filter((i) => selectedIds.has(i.id));
+    if (visible.length === 0) { toast.error("Select at least one item"); return; }
+    const newCounts: Record<number, string> = { ...localCounts };
+    visible.forEach((i) => { newCounts[i.id] = val; });
+    setLocalCounts(newCounts);
+    if (activeSessionId) {
+      visible.forEach((i) => {
+        const total = computeTotalCases(i.id, i.caseQty, val, localEachCounts[i.id] ?? "");
+        upsertEntryMutation.mutate({ sessionId: activeSessionId, itemId: i.id, quantity: total });
+      });
+    }
+    toast.success(`Set ${val} cases on ${visible.length} item${visible.length !== 1 ? "s" : ""}`);
+    setShowFillAll(false);
+    setFillAllValue("");
+  }
+
   // Only show items with a par level assigned (> 0)
   const countableItems = useMemo(
     () => allItems.filter((item) => item.parLevel && parseFloat(item.parLevel) > 0),
@@ -223,13 +278,34 @@ export default function CountSheet() {
             </p>
           )}
         </div>
-        <button
-          onClick={() => setShowNewSession(true)}
-          className="btn-big bg-primary text-primary-foreground flex items-center gap-2 shadow-sm"
-        >
-          <Plus size={18} />
-          New Count
-        </button>
+        <div className="flex items-center gap-2">
+          {activeSessionId && !isCompleted && (
+            <button
+              onClick={() => {
+                setBulkMode(!bulkMode);
+                setSelectedIds(new Set());
+                setShowFillAll(false);
+                setFillAllValue("");
+              }}
+              className={cn(
+                "flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold border transition-colors active:scale-95",
+                bulkMode
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background border-border text-foreground hover:bg-muted"
+              )}
+            >
+              <SlidersHorizontal size={15} />
+              {bulkMode ? "Exit Bulk" : "Bulk Fill"}
+            </button>
+          )}
+          <button
+            onClick={() => setShowNewSession(true)}
+            className="btn-big bg-primary text-primary-foreground flex items-center gap-2 shadow-sm"
+          >
+            <Plus size={18} />
+            New Count
+          </button>
+        </div>
       </div>
 
       {/* Total Value Banner */}
@@ -252,6 +328,57 @@ export default function CountSheet() {
             <div className="mt-3 flex items-center gap-2 text-primary-foreground/80 text-sm">
               <CheckCircle size={16} />
               <span>Session completed</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Bulk action bar */}
+      {bulkMode && activeSessionId && !isCompleted && (
+        <div className="bg-primary/5 border border-primary/20 rounded-2xl p-3 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-primary">
+              {selectedIds.size} selected
+            </span>
+
+            <button
+              onClick={handleBulkCopyDown}
+              disabled={selectedIds.size < 2}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-background border border-border hover:bg-muted disabled:opacity-40 transition-colors active:scale-95"
+            >
+              <ArrowDownToLine size={13} />
+              Copy Down Cases
+            </button>
+
+            <button
+              onClick={() => setShowFillAll(!showFillAll)}
+              disabled={selectedIds.size === 0}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-background border border-border hover:bg-muted disabled:opacity-40 transition-colors active:scale-95"
+            >
+              <SlidersHorizontal size={13} />
+              Fill All Cases
+            </button>
+          </div>
+
+          {showFillAll && (
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={fillAllValue}
+                onChange={(e) => setFillAllValue(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleBulkFillAll()}
+                placeholder="Enter case count…"
+                className="h-9 w-36 px-3 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                autoFocus
+              />
+              <button
+                onClick={handleBulkFillAll}
+                className="h-9 px-4 rounded-xl bg-primary text-primary-foreground text-sm font-semibold active:scale-95 transition-transform"
+              >
+                Apply
+              </button>
             </div>
           )}
         </div>
@@ -410,8 +537,18 @@ export default function CountSheet() {
                       const value = parseFloat(casesVal || "0") * casePrice + (hasEach ? parseFloat(eachesVal || "0") * eachPrice : 0);
                       const isSaving = saving[item.id];
                       return (
-                        <div key={item.id} className="p-4">
+                        <div key={item.id} className={cn("p-4", bulkMode && selectedIds.has(item.id) && "bg-primary/5")}>
                           <div className="flex items-center justify-between gap-3 mb-3">
+                            {bulkMode && (
+                              <button
+                                onClick={() => toggleSelectItem(item.id)}
+                                className="shrink-0 text-muted-foreground hover:text-primary transition-colors"
+                              >
+                                {selectedIds.has(item.id)
+                                  ? <CheckSquare size={18} className="text-primary" />
+                                  : <Square size={18} />}
+                              </button>
+                            )}
                             <div className="flex-1 min-w-0">
                               <p className="font-semibold text-foreground text-sm leading-tight">{item.name}</p>
                               <p className="text-xs text-muted-foreground mt-0.5">
