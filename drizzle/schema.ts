@@ -29,7 +29,8 @@ export type InsertUser = typeof users.$inferInsert;
 
 // ─── Item Catalog ─────────────────────────────────────────────────────────────
 
-export const CATEGORIES = [
+// Default seed values (used for initial DB seeding)
+export const DEFAULT_CATEGORIES = [
   "Alcohol - 100",
   "Alcohol - 130",
   "Coffee",
@@ -42,13 +43,41 @@ export const CATEGORIES = [
   "Syrups",
   "Supplies",
   "Other",
-] as const;
+];
 
-export const VENDORS = ["PFG", "Webstaurant", "Savannah Distributing", "Other"] as const;
+export const DEFAULT_VENDORS = ["PFG", "Webstaurant", "Savannah Distributing", "Other"];
 
-export const STORAGE_AREAS = ["Dry Storage", "Walk-In", "Freezer", "Bar", "Other"] as const;
+export const DEFAULT_STORAGE_AREAS = ["Dry Storage", "Walk-In", "Freezer", "Bar", "Other"];
 
-export const UNITS = ["CS", "EACH", "LB", "OZ", "GAL", "BTL", "BAG", "BOX", "PKG"] as const;
+// Simplified UOM: only Case and Each
+export const UNITS = ["Case", "Each"] as const;
+
+// ─── Settings Tables ──────────────────────────────────────────────────────────
+
+export const settingsCategories = mysqlTable("settings_categories", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 128 }).notNull().unique(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const settingsVendors = mysqlTable("settings_vendors", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 128 }).notNull().unique(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const settingsStorageAreas = mysqlTable("settings_storage_areas", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 128 }).notNull().unique(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type SettingsCategory = typeof settingsCategories.$inferSelect;
+export type SettingsVendor = typeof settingsVendors.$inferSelect;
+export type SettingsStorageArea = typeof settingsStorageAreas.$inferSelect;
 
 export const items = mysqlTable(
   "items",
@@ -67,6 +96,10 @@ export const items = mysqlTable(
     isActive: boolean("isActive").default(true).notNull(),
     pfgProductNumber: varchar("pfgProductNumber", { length: 32 }),
     brand: varchar("brand", { length: 128 }),
+    // Pack size parsing: caseQty is extracted from packSize (e.g. "6/24oz" -> 6)
+    // eachPrice = price / caseQty when UOM is Each
+    caseQty: int("caseQty"),
+    eachPrice: decimal("eachPrice", { precision: 10, scale: 4 }),
     notes: text("notes"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

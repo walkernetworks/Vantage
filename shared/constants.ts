@@ -34,17 +34,7 @@ export const STORAGE_AREAS = [
 
 export type StorageArea = (typeof STORAGE_AREAS)[number];
 
-export const UNITS = [
-  "CS",
-  "EACH",
-  "LB",
-  "OZ",
-  "GAL",
-  "BTL",
-  "BAG",
-  "BOX",
-  "PKG",
-] as const;
+export const UNITS = ["Case", "Each"] as const;
 
 export type Unit = (typeof UNITS)[number];
 

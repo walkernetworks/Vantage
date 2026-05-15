@@ -74,3 +74,13 @@
 - [x] 19 vitest unit tests covering all modules and RBAC
 - [x] TypeScript strict check passes (0 errors)
 - [x] Final checkpoint and delivery
+
+## Round 3 Features
+- [x] Add settings tables (categories, vendors, storage areas) to DB schema
+- [x] Build admin Settings page to add/edit/delete categories, vendors, storage areas
+- [x] Parse pack size (e.g. "6/24oz" → quantity=6) to compute EACH unit price = case price ÷ quantity
+- [x] Store computed eachPrice on items; display in catalog and count sheet
+- [x] Simplify UOM to only two options: Case and Each
+- [x] Add dedicated "Par Levels" tab in Item Catalog with bulk-edit grid
+- [x] Filter Count Sheet to only show items that have a par level > 0 assigned
+- [x] Seed default categories, vendors, storage areas from existing hardcoded constants

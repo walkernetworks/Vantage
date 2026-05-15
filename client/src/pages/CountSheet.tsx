@@ -119,25 +119,34 @@ export default function CountSheet() {
     return map;
   }, [entryMap, localCounts]);
 
-  // Calculate total inventory value
+  // Only show items with a par level assigned (> 0)
+  const countableItems = useMemo(
+    () => allItems.filter((item) => item.parLevel && parseFloat(item.parLevel) > 0),
+    [allItems]
+  );
+
+  // Calculate total inventory value (across all countable items)
   const totalValue = useMemo(() => {
-    return allItems.reduce((sum, item) => {
+    return countableItems.reduce((sum, item) => {
       const qty = parseFloat(effectiveCounts.get(item.id) ?? "0");
-      const price = parseFloat(item.price ?? "0");
-      return sum + qty * price;
+      const isEach = item.unitOfMeasure?.toLowerCase() === "each";
+      const unitPrice = isEach && item.eachPrice
+        ? parseFloat(item.eachPrice)
+        : parseFloat(item.price ?? "0");
+      return sum + qty * unitPrice;
     }, 0);
-  }, [allItems, effectiveCounts]);
+  }, [countableItems, effectiveCounts]);
 
   // Group items
   const grouped = useMemo(() => {
     const groups: Record<string, typeof allItems> = {};
-    allItems.forEach((item) => {
+    countableItems.forEach((item) => {
       const key = viewMode === "storage" ? (item.storageArea ?? "Other") : item.category;
       if (!groups[key]) groups[key] = [];
       groups[key].push(item);
     });
     return groups;
-  }, [allItems, viewMode]);
+  }, [countableItems, viewMode]);
 
   const groupKeys = useMemo(() => {
     if (viewMode === "storage") {
@@ -292,8 +301,11 @@ export default function CountSheet() {
             const isCollapsed = collapsed[groupKey];
             const groupValue = groupItems.reduce((sum, item) => {
               const qty = parseFloat(effectiveCounts.get(item.id) ?? "0");
-              const price = parseFloat(item.price ?? "0");
-              return sum + qty * price;
+              const isEach = item.unitOfMeasure?.toLowerCase() === "each";
+              const unitPrice = isEach && item.eachPrice
+                ? parseFloat(item.eachPrice)
+                : parseFloat(item.price ?? "0");
+              return sum + qty * unitPrice;
             }, 0);
             const countedItems = groupItems.filter((i) => parseFloat(effectiveCounts.get(i.id) ?? "0") > 0).length;
 
@@ -328,12 +340,15 @@ export default function CountSheet() {
                 {/* Group Items */}
                 {!isCollapsed && (
                   <div className="border-t border-border divide-y divide-border">
-                    {groupItems.map((item) => {
+                                        {groupItems.map((item) => {
                       const qty = effectiveCounts.get(item.id) ?? "";
-                      const price = parseFloat(item.price ?? "0");
-                      const value = parseFloat(qty || "0") * price;
+                      // Use eachPrice when UOM is Each, otherwise case price
+                      const isEach = item.unitOfMeasure?.toLowerCase() === "each";
+                      const unitPrice = isEach && item.eachPrice
+                        ? parseFloat(item.eachPrice)
+                        : parseFloat(item.price ?? "0");
+                      const value = parseFloat(qty || "0") * unitPrice;
                       const isSaving = saving[item.id];
-
                       return (
                         <div key={item.id} className="p-4">
                           <div className="flex items-center justify-between gap-3 mb-2">
@@ -342,7 +357,9 @@ export default function CountSheet() {
                               <p className="text-xs text-muted-foreground mt-0.5">
                                 {item.packSize && <span>{item.packSize} · </span>}
                                 {item.unitOfMeasure && <span>{item.unitOfMeasure}</span>}
-                                {item.price && <span> · ${parseFloat(item.price).toFixed(2)}/unit</span>}
+                                {isEach && item.eachPrice
+                                  ? <span> · ${parseFloat(item.eachPrice).toFixed(2)}/each</span>
+                                  : item.price && <span> · ${parseFloat(item.price).toFixed(2)}/case</span>}
                               </p>
                             </div>
                             <div className="text-right shrink-0">

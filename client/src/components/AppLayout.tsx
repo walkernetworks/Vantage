@@ -12,7 +12,9 @@ import {
   LogOut,
   Menu,
   Package,
+  Settings,
   ShoppingCart,
+  SlidersHorizontal,
   X,
 } from "lucide-react";
 import { useState } from "react";
@@ -74,6 +76,20 @@ const navItems: NavItem[] = [
     icon: <History size={22} />,
     adminOnly: true,
     description: "Past inventory sessions",
+  },
+  {
+    href: "/par-levels",
+    label: "Par Levels",
+    icon: <SlidersHorizontal size={22} />,
+    adminOnly: true,
+    description: "Set reorder thresholds",
+  },
+  {
+    href: "/settings",
+    label: "Settings",
+    icon: <Settings size={22} />,
+    adminOnly: true,
+    description: "Categories, vendors, storage",
   },
 ];
 

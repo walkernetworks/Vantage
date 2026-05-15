@@ -6,6 +6,9 @@ import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import {
   addRecipeItem,
+  addCategory,
+  addStorageArea,
+  addVendor,
   bulkCreateItems,
   calculateShortfall,
   completeCountSession,
@@ -13,22 +16,31 @@ import {
   createCountSession,
   createItem,
   deleteCateringRecipe,
+  deleteCategory,
   deleteItem,
+  deleteStorageArea,
+  deleteVendor,
   getAllItems,
   getBelowParItems,
   getCateringRecipe,
+  getCategories,
   getCountEntries,
   getCountSession,
   getItemById,
   getPriceHistory,
   getRecipeItems,
   getSessionWithEntries,
+  getStorageAreas,
+  getVendors,
   importPfgItems,
   listCateringRecipes,
   listCountSessions,
   removeRecipeItem,
   updateCateringRecipe,
+  updateCategory,
   updateItem,
+  updateStorageArea,
+  updateVendor,
   upsertCountEntry,
   type PfgImportRow,
 } from "./db";
@@ -274,7 +286,47 @@ const cateringRouter = router({
     .query(({ input }) => calculateShortfall(input.recipeId, input.orderVolume)),
 });
 
-// ─── App Router ───────────────────────────────────────────────────────────────
+// ─── Settings Router ────────────────────────────────────────────────────────────────────
+
+const settingsRouter = router({
+  // Categories
+  listCategories: protectedProcedure.query(() => getCategories()),
+  addCategory: adminProcedure
+    .input(z.object({ name: z.string().min(1) }))
+    .mutation(({ input }) => addCategory(input.name)),
+  updateCategory: adminProcedure
+    .input(z.object({ id: z.number(), name: z.string().min(1) }))
+    .mutation(({ input }) => updateCategory(input.id, input.name)),
+  deleteCategory: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(({ input }) => deleteCategory(input.id)),
+
+  // Vendors
+  listVendors: protectedProcedure.query(() => getVendors()),
+  addVendor: adminProcedure
+    .input(z.object({ name: z.string().min(1) }))
+    .mutation(({ input }) => addVendor(input.name)),
+  updateVendor: adminProcedure
+    .input(z.object({ id: z.number(), name: z.string().min(1) }))
+    .mutation(({ input }) => updateVendor(input.id, input.name)),
+  deleteVendor: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(({ input }) => deleteVendor(input.id)),
+
+  // Storage Areas
+  listStorageAreas: protectedProcedure.query(() => getStorageAreas()),
+  addStorageArea: adminProcedure
+    .input(z.object({ name: z.string().min(1) }))
+    .mutation(({ input }) => addStorageArea(input.name)),
+  updateStorageArea: adminProcedure
+    .input(z.object({ id: z.number(), name: z.string().min(1) }))
+    .mutation(({ input }) => updateStorageArea(input.id, input.name)),
+  deleteStorageArea: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(({ input }) => deleteStorageArea(input.id)),
+});
+
+// ─── App Router ────────────────────────────────────────────────────────────────────
 
 export const appRouter = router({
   system: systemRouter,
@@ -291,6 +343,7 @@ export const appRouter = router({
   orders: ordersRouter,
   alcohol: alcoholRouter,
   catering: cateringRouter,
+  settings: settingsRouter,
 });
 
 export type AppRouter = typeof appRouter;

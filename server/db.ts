@@ -8,9 +8,32 @@ import {
   countSessions,
   items,
   priceHistory,
+  settingsCategories,
+  settingsVendors,
+  settingsStorageAreas,
   users,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+
+// ─── Pack Size Parsing ────────────────────────────────────────────────────────
+// Parses "6/24oz", "12/2 LB", "1/50 LB", "4/1 GA" etc. and returns the case qty
+export function parsePackSizeQty(packSize: string | null | undefined): number | null {
+  if (!packSize) return null;
+  // Match leading number before a slash: "6/24oz" -> 6, "12/2 LB" -> 12
+  const match = packSize.trim().match(/^(\d+(?:\.\d+)?)\s*\//);
+  if (match) {
+    const qty = parseFloat(match[1]);
+    return isNaN(qty) || qty <= 0 ? null : qty;
+  }
+  return null;
+}
+
+export function computeEachPrice(price: string | null | undefined, caseQty: number | null): string | null {
+  if (!price || !caseQty || caseQty <= 0) return null;
+  const p = parseFloat(price);
+  if (isNaN(p)) return null;
+  return (p / caseQty).toFixed(4);
+}
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -92,17 +115,34 @@ export async function getItemById(id: number) {
   return result[0];
 }
 
+function enrichItemWithPackSize(data: Partial<typeof items.$inferInsert>): Partial<typeof items.$inferInsert> {
+  // Auto-parse pack size to extract caseQty and compute eachPrice
+  const packSize = data.packSize ?? null;
+  const price = data.price ?? null;
+  const caseQty = parsePackSizeQty(packSize);
+  const eachPrice = computeEachPrice(price as string | null, caseQty);
+  return {
+    ...data,
+    caseQty: caseQty ?? data.caseQty ?? null,
+    eachPrice: eachPrice ?? data.eachPrice ?? null,
+  };
+}
+
 export async function createItem(data: typeof items.$inferInsert) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(items).values(data);
+  const enriched = enrichItemWithPackSize(data) as typeof items.$inferInsert;
+  const result = await db.insert(items).values(enriched);
   return result[0];
 }
-
 export async function updateItem(id: number, data: Partial<typeof items.$inferInsert>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(items).set(data).where(eq(items.id, id));
+  // Re-compute eachPrice if packSize or price changed
+  const enriched = (data.packSize !== undefined || data.price !== undefined)
+    ? enrichItemWithPackSize(data)
+    : data;
+  await db.update(items).set(enriched).where(eq(items.id, id));
 }
 
 export async function deleteItem(id: number) {
@@ -377,6 +417,8 @@ export async function importPfgItems(rows: PfgImportRow[]): Promise<PfgImportRes
       .where(eq(items.pfgProductNumber, row.pfgProductNumber))
       .limit(1);
 
+        const caseQty = parsePackSizeQty(row.packSize);
+    const eachPrice = computeEachPrice(row.price, caseQty);
     if (existing.length === 0) {
       // New item — create it
       await db.insert(items).values({
@@ -385,8 +427,10 @@ export async function importPfgItems(rows: PfgImportRow[]): Promise<PfgImportRes
         category: row.category,
         vendor: "PFG",
         packSize: row.packSize,
-        unitOfMeasure: row.unitOfMeasure,
+        unitOfMeasure: "Case",
         price: row.price,
+        caseQty,
+        eachPrice,
         parLevel: "0",
         storageArea: row.storageArea ?? "Dry Storage",
         isAlcohol: row.isAlcohol,
@@ -399,7 +443,6 @@ export async function importPfgItems(rows: PfgImportRow[]): Promise<PfgImportRes
       const item = existing[0];
       const oldPrice = item.price ?? "0";
       const newPrice = row.price;
-
       if (parseFloat(oldPrice) !== parseFloat(newPrice)) {
         // Price changed — record history and update
         await db.insert(priceHistory).values({
@@ -408,10 +451,8 @@ export async function importPfgItems(rows: PfgImportRow[]): Promise<PfgImportRes
           newPrice,
           importSource: "PFG",
         });
-
         const diff = parseFloat(newPrice) - parseFloat(oldPrice);
         const pct = oldPrice !== "0" ? (diff / parseFloat(oldPrice)) * 100 : 0;
-
         priceChanges.push({
           itemId: item.id,
           name: item.name,
@@ -421,17 +462,16 @@ export async function importPfgItems(rows: PfgImportRow[]): Promise<PfgImportRes
           diff: diff.toFixed(2),
           pctChange: pct.toFixed(1),
         });
-
         await db
           .update(items)
-          .set({ price: newPrice, brand: row.brand, packSize: row.packSize, updatedAt: new Date() })
+          .set({ price: newPrice, brand: row.brand, packSize: row.packSize, caseQty, eachPrice, updatedAt: new Date() })
           .where(eq(items.id, item.id));
         updated++;
       } else {
-        // Price unchanged — still update brand/packSize in case they changed
+        // Price unchanged — still update brand/packSize/caseQty/eachPrice in case they changed
         await db
           .update(items)
-          .set({ brand: row.brand, packSize: row.packSize, updatedAt: new Date() })
+          .set({ brand: row.brand, packSize: row.packSize, caseQty, eachPrice, updatedAt: new Date() })
           .where(eq(items.id, item.id));
         unchanged++;
       }
@@ -502,4 +542,82 @@ export async function calculateShortfall(recipeId: number, orderVolume: number) 
       unit: ri.unit,
     };
   });
+}
+
+// ─── Settings: Categories ─────────────────────────────────────────────────────
+
+export async function getCategories() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(settingsCategories).orderBy(settingsCategories.sortOrder, settingsCategories.name);
+}
+
+export async function addCategory(name: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.insert(settingsCategories).values({ name: name.trim() });
+}
+
+export async function updateCategory(id: number, name: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(settingsCategories).set({ name: name.trim() }).where(eq(settingsCategories.id, id));
+}
+
+export async function deleteCategory(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.delete(settingsCategories).where(eq(settingsCategories.id, id));
+}
+
+// ─── Settings: Vendors ────────────────────────────────────────────────────────
+
+export async function getVendors() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(settingsVendors).orderBy(settingsVendors.sortOrder, settingsVendors.name);
+}
+
+export async function addVendor(name: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.insert(settingsVendors).values({ name: name.trim() });
+}
+
+export async function updateVendor(id: number, name: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(settingsVendors).set({ name: name.trim() }).where(eq(settingsVendors.id, id));
+}
+
+export async function deleteVendor(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.delete(settingsVendors).where(eq(settingsVendors.id, id));
+}
+
+// ─── Settings: Storage Areas ──────────────────────────────────────────────────
+
+export async function getStorageAreas() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(settingsStorageAreas).orderBy(settingsStorageAreas.sortOrder, settingsStorageAreas.name);
+}
+
+export async function addStorageArea(name: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.insert(settingsStorageAreas).values({ name: name.trim() });
+}
+
+export async function updateStorageArea(id: number, name: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(settingsStorageAreas).set({ name: name.trim() }).where(eq(settingsStorageAreas.id, id));
+}
+
+export async function deleteStorageArea(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.delete(settingsStorageAreas).where(eq(settingsStorageAreas.id, id));
 }

@@ -12,6 +12,8 @@ import OrderingDashboard from "./pages/OrderingDashboard";
 import AlcoholManagement from "./pages/AlcoholManagement";
 import CateringCalculator from "./pages/CateringCalculator";
 import CountHistory from "./pages/CountHistory";
+import Settings from "./pages/Settings";
+import ParLevels from "./pages/ParLevels";
 
 function Router() {
   return (
@@ -24,6 +26,8 @@ function Router() {
         <Route path="/orders" component={OrderingDashboard} />
         <Route path="/alcohol" component={AlcoholManagement} />
         <Route path="/catering" component={CateringCalculator} />
+        <Route path="/par-levels" component={ParLevels} />
+        <Route path="/settings" component={Settings} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

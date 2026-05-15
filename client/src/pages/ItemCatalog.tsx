@@ -1,7 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
-import { CATEGORIES, CATEGORY_ICONS, STORAGE_AREAS, UNITS, VENDOR_COLORS, VENDORS } from "../../../shared/constants";
+import { CATEGORY_ICONS, UNITS, VENDOR_COLORS } from "../../../shared/constants";
 import {
   AlertTriangle,
   ArrowDown,
@@ -42,7 +42,7 @@ const emptyForm: ItemForm = {
   category: "",
   vendor: "",
   packSize: "",
-  unitOfMeasure: "CS",
+  unitOfMeasure: "Case",
   price: "",
   parLevel: "0",
   storageArea: "",
@@ -248,6 +248,12 @@ export default function ItemCatalog() {
     [filterVendor, filterCategory]
   );
   const { data: items = [], isLoading } = trpc.items.list.useQuery(queryInput);
+  const { data: settingsCategories = [] } = trpc.settings.listCategories.useQuery();
+  const { data: settingsVendors = [] } = trpc.settings.listVendors.useQuery();
+  const { data: settingsStorageAreas = [] } = trpc.settings.listStorageAreas.useQuery();
+  const categoryNames = (settingsCategories as { id: number; name: string }[]).map((c) => c.name);
+  const vendorNames = (settingsVendors as { id: number; name: string }[]).map((v) => v.name);
+  const storageAreaNames = (settingsStorageAreas as { id: number; name: string }[]).map((s) => s.name);
 
   const createMutation = trpc.items.create.useMutation({
     onSuccess: () => {
@@ -420,7 +426,7 @@ export default function ItemCatalog() {
                 Vendor
               </label>
               <div className="flex flex-wrap gap-2">
-                {VENDORS.map((v) => (
+                {vendorNames.map((v) => (
                   <button
                     key={v}
                     onClick={() => setFilterVendor(filterVendor === v ? "" : v)}
@@ -441,7 +447,7 @@ export default function ItemCatalog() {
                 Category
               </label>
               <div className="flex flex-wrap gap-2">
-                {CATEGORIES.map((c) => (
+                {categoryNames.map((c) => (
                   <button
                     key={c}
                     onClick={() => setFilterCategory(filterCategory === c ? "" : c)}
@@ -452,7 +458,7 @@ export default function ItemCatalog() {
                         : "bg-muted text-foreground hover:bg-secondary"
                     )}
                   >
-                    {CATEGORY_ICONS[c]} {c}
+                    {c}
                   </button>
                 ))}
               </div>
@@ -529,6 +535,11 @@ export default function ItemCatalog() {
                             {item.price && (
                               <span className="text-sm font-semibold text-foreground">
                                 ${parseFloat(item.price).toFixed(2)}
+                                {(item as any).eachPrice && (
+                                  <span className="text-xs font-normal text-muted-foreground ml-1">
+                                    · Each: ${parseFloat((item as any).eachPrice).toFixed(2)}
+                                  </span>
+                                )}
                               </span>
                             )}
                             {item.parLevel && parseFloat(item.parLevel) > 0 && (
@@ -604,7 +615,7 @@ export default function ItemCatalog() {
                   className="form-input"
                 >
                   <option value="">Select…</option>
-                  {CATEGORIES.map((c) => (
+                  {categoryNames.map((c) => (
                     <option key={c} value={c}>
                       {c}
                     </option>
@@ -619,7 +630,7 @@ export default function ItemCatalog() {
                   className="form-input"
                 >
                   <option value="">Select…</option>
-                  {VENDORS.map((v) => (
+                  {vendorNames.map((v) => (
                     <option key={v} value={v}>
                       {v}
                     </option>
@@ -683,7 +694,7 @@ export default function ItemCatalog() {
                 className="form-input"
               >
                 <option value="">Select…</option>
-                {STORAGE_AREAS.map((s) => (
+                {storageAreaNames.map((s) => (
                   <option key={s} value={s}>
                     {s}
                   </option>
