@@ -84,3 +84,11 @@
 - [x] Add dedicated "Par Levels" tab in Item Catalog with bulk-edit grid
 - [x] Filter Count Sheet to only show items that have a par level > 0 assigned
 - [x] Seed default categories, vendors, storage areas from existing hardcoded constants
+
+## Round 4 Features
+- [ ] Count Sheet: dual Case + Each count inputs per item; Each input only shown when item has caseQty > 1
+- [ ] Count Sheet: combined value = (cases × casePrice) + (eaches × eachPrice); total stock in cases shown
+- [ ] Order Dashboard: cases needed always rounded up (Math.ceil), never decimals
+- [ ] Order Dashboard: add orderThreshold field per item (default 50%) — only show item if stock < threshold% of par
+- [ ] Par Levels page: add orderThreshold column (editable %, default 50)
+- [ ] DB schema: add orderThreshold column to items table (decimal, default 0.5)

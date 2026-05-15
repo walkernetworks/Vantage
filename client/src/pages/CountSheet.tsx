@@ -27,7 +27,10 @@ export default function CountSheet() {
   const [showNewSession, setShowNewSession] = useState(false);
   const [sessionName, setSessionName] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  // localCounts stores the CASE count for each item
   const [localCounts, setLocalCounts] = useState<Record<number, string>>({});
+  // localEachCounts stores the EACH count for items that have caseQty > 1
+  const [localEachCounts, setLocalEachCounts] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState<Record<number, boolean>>({});
 
   const { data: sessions = [], refetch: refetchSessions } = trpc.counts.listSessions.useQuery();
@@ -69,15 +72,30 @@ export default function CountSheet() {
   });
 
   // Load existing counts into local state when session data loads
+  // The DB stores total cases (cases + eaches/caseQty). We display the integer part as cases
+  // and the fractional remainder * caseQty as eaches.
   useEffect(() => {
-    if (sessionData?.entries) {
-      const map: Record<number, string> = {};
+    if (sessionData?.entries && allItems.length > 0) {
+      const caseMap: Record<number, string> = {};
+      const eachMap: Record<number, string> = {};
+      const itemById = new Map(allItems.map((i) => [i.id, i]));
       sessionData.entries.forEach((e) => {
-        map[e.itemId] = e.quantity;
+        const item = itemById.get(e.itemId);
+        const total = parseFloat(e.quantity);
+        const caseQty = item?.caseQty;
+        if (caseQty && caseQty > 1) {
+          const cases = Math.floor(total);
+          const eaches = Math.round((total - cases) * caseQty);
+          caseMap[e.itemId] = cases > 0 ? String(cases) : "";
+          eachMap[e.itemId] = eaches > 0 ? String(eaches) : "";
+        } else {
+          caseMap[e.itemId] = total > 0 ? String(total) : "";
+        }
       });
-      setLocalCounts(map);
+      setLocalCounts(caseMap);
+      setLocalEachCounts(eachMap);
     }
-  }, [sessionData]);
+  }, [sessionData, allItems]);
 
   // Auto-select latest active session
   useEffect(() => {
@@ -89,19 +107,37 @@ export default function CountSheet() {
 
   const saveTimer = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
 
-  function handleCountChange(itemId: number, value: string) {
-    setLocalCounts((prev) => ({ ...prev, [itemId]: value }));
-    if (!activeSessionId) return;
+  // Combined total in cases = cases + (eaches / caseQty)
+  function computeTotalCases(itemId: number, caseQty: number | null, casesVal: string, eachesVal: string): string {
+    const cases = parseFloat(casesVal || "0");
+    const eaches = parseFloat(eachesVal || "0");
+    if (caseQty && caseQty > 1 && eaches > 0) {
+      return String(cases + eaches / caseQty);
+    }
+    return String(cases);
+  }
 
-    // Debounce save
-    clearTimeout(saveTimer.current[itemId]);
-    setSaving((prev) => ({ ...prev, [itemId]: true }));
-    saveTimer.current[itemId] = setTimeout(() => {
-      upsertEntryMutation.mutate({
-        sessionId: activeSessionId,
-        itemId,
-        quantity: value || "0",
-      });
+  function handleCaseCountChange(item: { id: number; caseQty: number | null }, value: string) {
+    setLocalCounts((prev) => ({ ...prev, [item.id]: value }));
+    if (!activeSessionId) return;
+    const eachesVal = localEachCounts[item.id] ?? "";
+    const total = computeTotalCases(item.id, item.caseQty, value, eachesVal);
+    clearTimeout(saveTimer.current[item.id]);
+    setSaving((prev) => ({ ...prev, [item.id]: true }));
+    saveTimer.current[item.id] = setTimeout(() => {
+      upsertEntryMutation.mutate({ sessionId: activeSessionId, itemId: item.id, quantity: total });
+    }, 800);
+  }
+
+  function handleEachCountChange(item: { id: number; caseQty: number | null }, value: string) {
+    setLocalEachCounts((prev) => ({ ...prev, [item.id]: value }));
+    if (!activeSessionId) return;
+    const casesVal = localCounts[item.id] ?? "";
+    const total = computeTotalCases(item.id, item.caseQty, casesVal, value);
+    clearTimeout(saveTimer.current[item.id]);
+    setSaving((prev) => ({ ...prev, [item.id]: true }));
+    saveTimer.current[item.id] = setTimeout(() => {
+      upsertEntryMutation.mutate({ sessionId: activeSessionId, itemId: item.id, quantity: total });
     }, 800);
   }
 
@@ -341,70 +377,88 @@ export default function CountSheet() {
                 {!isCollapsed && (
                   <div className="border-t border-border divide-y divide-border">
                                         {groupItems.map((item) => {
-                      const qty = effectiveCounts.get(item.id) ?? "";
-                      // Use eachPrice when UOM is Each, otherwise case price
-                      const isEach = item.unitOfMeasure?.toLowerCase() === "each";
-                      const unitPrice = isEach && item.eachPrice
-                        ? parseFloat(item.eachPrice)
-                        : parseFloat(item.price ?? "0");
-                      const value = parseFloat(qty || "0") * unitPrice;
+                      const casesVal = localCounts[item.id] ?? "";
+                      const eachesVal = localEachCounts[item.id] ?? "";
+                      const hasEach = (item.caseQty ?? 0) > 1; // show Each input only if pack has multiple units
+                      // Compute display value
+                      const totalCases = parseFloat(casesVal || "0") + (hasEach ? parseFloat(eachesVal || "0") / (item.caseQty ?? 1) : 0);
+                      const casePrice = parseFloat(item.price ?? "0");
+                      const eachPrice = item.eachPrice ? parseFloat(item.eachPrice) : 0;
+                      const value = parseFloat(casesVal || "0") * casePrice + (hasEach ? parseFloat(eachesVal || "0") * eachPrice : 0);
                       const isSaving = saving[item.id];
                       return (
                         <div key={item.id} className="p-4">
-                          <div className="flex items-center justify-between gap-3 mb-2">
+                          <div className="flex items-center justify-between gap-3 mb-3">
                             <div className="flex-1 min-w-0">
                               <p className="font-semibold text-foreground text-sm leading-tight">{item.name}</p>
                               <p className="text-xs text-muted-foreground mt-0.5">
                                 {item.packSize && <span>{item.packSize} · </span>}
-                                {item.unitOfMeasure && <span>{item.unitOfMeasure}</span>}
-                                {isEach && item.eachPrice
-                                  ? <span> · ${parseFloat(item.eachPrice).toFixed(2)}/each</span>
-                                  : item.price && <span> · ${parseFloat(item.price).toFixed(2)}/case</span>}
+                                <span>${casePrice.toFixed(2)}/case</span>
+                                {hasEach && eachPrice > 0 && <span> · ${eachPrice.toFixed(2)}/each</span>}
                               </p>
                             </div>
                             <div className="text-right shrink-0">
                               {value > 0 && (
-                                <p className="text-sm font-bold text-foreground">
-                                  ${value.toFixed(2)}
-                                </p>
+                                <p className="text-sm font-bold text-foreground">${value.toFixed(2)}</p>
                               )}
                               {isSaving && (
                                 <RefreshCw size={12} className="text-muted-foreground animate-spin ml-auto" />
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <button
-                              onClick={() => {
-                                const current = parseFloat(qty || "0");
-                                if (current > 0) handleCountChange(item.id, String(Math.max(0, current - 1)));
-                              }}
-                              disabled={isCompleted}
-                              className="w-12 h-12 rounded-xl bg-muted text-foreground text-xl font-bold flex items-center justify-center hover:bg-secondary transition-colors active:scale-95 disabled:opacity-40 shrink-0"
-                            >
-                              −
-                            </button>
-                            <input
-                              type="number"
-                              inputMode="decimal"
-                              min="0"
-                              step="0.5"
-                              value={qty}
-                              onChange={(e) => handleCountChange(item.id, e.target.value)}
-                              disabled={isCompleted}
-                              placeholder="0"
-                              className="count-input disabled:opacity-60"
-                            />
-                            <button
-                              onClick={() => {
-                                const current = parseFloat(qty || "0");
-                                handleCountChange(item.id, String(current + 1));
-                              }}
-                              disabled={isCompleted}
-                              className="w-12 h-12 rounded-xl bg-primary text-primary-foreground text-xl font-bold flex items-center justify-center hover:opacity-90 transition-colors active:scale-95 disabled:opacity-40 shrink-0"
-                            >
-                              +
-                            </button>
+                          {/* Case count row */}
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold text-muted-foreground w-10 shrink-0">CASE</span>
+                              <button
+                                onClick={() => {
+                                  const c = parseFloat(casesVal || "0");
+                                  if (c > 0) handleCaseCountChange(item, String(Math.max(0, c - 1)));
+                                }}
+                                disabled={isCompleted}
+                                className="w-11 h-11 rounded-xl bg-muted text-foreground text-xl font-bold flex items-center justify-center hover:bg-secondary transition-colors active:scale-95 disabled:opacity-40 shrink-0"
+                              >−</button>
+                              <input
+                                type="number" inputMode="numeric" min="0" step="1"
+                                value={casesVal}
+                                onChange={(e) => handleCaseCountChange(item, e.target.value)}
+                                disabled={isCompleted}
+                                placeholder="0"
+                                className="count-input disabled:opacity-60"
+                              />
+                              <button
+                                onClick={() => handleCaseCountChange(item, String(parseFloat(casesVal || "0") + 1))}
+                                disabled={isCompleted}
+                                className="w-11 h-11 rounded-xl bg-primary text-primary-foreground text-xl font-bold flex items-center justify-center hover:opacity-90 transition-colors active:scale-95 disabled:opacity-40 shrink-0"
+                              >+</button>
+                            </div>
+                            {/* Each count row — only shown when item has multiple units per case */}
+                            {hasEach && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-semibold text-muted-foreground w-10 shrink-0">EACH</span>
+                                <button
+                                  onClick={() => {
+                                    const e = parseFloat(eachesVal || "0");
+                                    if (e > 0) handleEachCountChange(item, String(Math.max(0, e - 1)));
+                                  }}
+                                  disabled={isCompleted}
+                                  className="w-11 h-11 rounded-xl bg-muted text-foreground text-xl font-bold flex items-center justify-center hover:bg-secondary transition-colors active:scale-95 disabled:opacity-40 shrink-0"
+                                >−</button>
+                                <input
+                                  type="number" inputMode="numeric" min="0" step="1"
+                                  value={eachesVal}
+                                  onChange={(e) => handleEachCountChange(item, e.target.value)}
+                                  disabled={isCompleted}
+                                  placeholder="0"
+                                  className="count-input disabled:opacity-60"
+                                />
+                                <button
+                                  onClick={() => handleEachCountChange(item, String(parseFloat(eachesVal || "0") + 1))}
+                                  disabled={isCompleted}
+                                  className="w-11 h-11 rounded-xl bg-amber-600 text-white text-xl font-bold flex items-center justify-center hover:opacity-90 transition-colors active:scale-95 disabled:opacity-40 shrink-0"
+                                >+</button>
+                              </div>
+                            )}
                           </div>
                         </div>
                       );

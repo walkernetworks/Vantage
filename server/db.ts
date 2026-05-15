@@ -267,11 +267,15 @@ export async function getBelowParItems(vendor?: string) {
   const allItems = await db.select().from(items).where(and(...conditions));
 
   if (!latestSession) {
-    return allItems.map((item) => ({
-      ...item,
-      currentStock: "0",
-      casesNeeded: parseFloat(item.parLevel ?? "0"),
-    }));
+    // No count session yet — show all items with par > 0 as needing a full order
+    return allItems
+      .filter((item) => parseFloat(item.parLevel ?? "0") > 0)
+      .map((item) => ({
+        ...item,
+        currentStock: "0",
+        casesNeeded: Math.ceil(parseFloat(item.parLevel ?? "0")),
+        needsOrder: true,
+      }));
   }
 
   const itemIds = allItems.map((i) => i.id);
@@ -293,10 +297,16 @@ export async function getBelowParItems(vendor?: string) {
     .map((item) => {
       const currentStock = parseFloat(entryMap.get(item.id) ?? "0");
       const parLevel = parseFloat(item.parLevel ?? "0");
-      const casesNeeded = Math.max(0, parLevel - currentStock);
-      return { ...item, currentStock: String(currentStock), casesNeeded };
+      // orderThreshold: fraction of par below which ordering is triggered (default 0.5 = 50%)
+      const threshold = parseFloat(item.orderThreshold ?? "0.50");
+      const triggerLevel = parLevel * threshold;
+      const casesNeededRaw = Math.max(0, parLevel - currentStock);
+      // Always round up — you can't order half a case
+      const casesNeeded = Math.ceil(casesNeededRaw);
+      const needsOrder = parLevel > 0 && currentStock < triggerLevel;
+      return { ...item, currentStock: String(currentStock), casesNeeded, needsOrder };
     })
-    .filter((item) => item.casesNeeded > 0);
+    .filter((item) => item.needsOrder);
 }
 
 // ─── Catering ─────────────────────────────────────────────────────────────────

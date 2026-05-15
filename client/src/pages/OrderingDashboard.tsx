@@ -38,7 +38,7 @@ export default function OrderingDashboard() {
     onError: (e) => toast.error(e.message),
   });
 
-  const totalCasesNeeded = belowPar.reduce((sum, item) => sum + item.casesNeeded, 0);
+  const totalCasesNeeded = belowPar.reduce((sum, item) => sum + Math.ceil(item.casesNeeded), 0);
   const totalOrderValue = belowPar.reduce((sum, item) => {
     const price = parseFloat(item.price ?? "0");
     return sum + item.casesNeeded * price;
@@ -105,9 +105,7 @@ export default function OrderingDashboard() {
           <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center mx-auto mb-2">
             <ShoppingCart size={16} className="text-blue-600" />
           </div>
-          <p className="text-xl font-bold text-foreground">
-            {totalCasesNeeded % 1 === 0 ? totalCasesNeeded : totalCasesNeeded.toFixed(1)}
-          </p>
+          <p className="text-xl font-bold text-foreground">{totalCasesNeeded}</p>
           <p className="text-xs text-muted-foreground font-medium">Cases Needed</p>
         </div>
       </div>
@@ -176,21 +174,19 @@ export default function OrderingDashboard() {
                     <div className="text-right shrink-0">
                       <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-center">
                         <p className="text-2xl font-bold text-red-700">
-                          {item.casesNeeded % 1 === 0 ? item.casesNeeded : item.casesNeeded.toFixed(1)}
+                          {Math.ceil(item.casesNeeded)}
                         </p>
-                        <p className="text-xs font-semibold text-red-600">
-                          {item.unitOfMeasure ?? "CS"} needed
-                        </p>
+                        <p className="text-xs font-semibold text-red-600">Cases needed</p>
                       </div>
                     </div>
                   </div>
 
                   {/* Stock vs Par */}
-                  <div className="mt-3 flex items-center gap-4 text-sm">
+                  <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                     <div className="flex items-center gap-1.5">
                       <span className="text-muted-foreground">On Hand:</span>
                       <span className="font-semibold text-foreground">
-                        {parseFloat(item.currentStock).toFixed(1)} {item.unitOfMeasure ?? "CS"}
+                        {parseFloat(item.currentStock).toFixed(2)} cases
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -199,7 +195,7 @@ export default function OrderingDashboard() {
                         <div className="flex items-center gap-1">
                           <input
                             type="number"
-                            step="0.5"
+                            step="1"
                             value={parValue}
                             onChange={(e) => setParValue(e.target.value)}
                             className="w-20 h-7 px-2 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-ring"
@@ -224,32 +220,52 @@ export default function OrderingDashboard() {
                           onClick={() => { setEditParId(item.id); setParValue(item.parLevel ?? "0"); }}
                           className="flex items-center gap-1 font-semibold text-foreground hover:text-primary transition-colors"
                         >
-                          {parseFloat(item.parLevel ?? "0").toFixed(1)}
+                          {Math.round(parseFloat(item.parLevel ?? "0"))} cases
                           <Edit2 size={12} className="text-muted-foreground" />
                         </button>
                       )}
                     </div>
+                    {item.orderThreshold && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-muted-foreground">Order at:</span>
+                        <span className="font-semibold text-amber-700">
+                          ≤{parseFloat(item.orderThreshold).toFixed(0)} cases
+                        </span>
+                      </div>
+                    )}
                     {price > 0 && (
                       <div className="ml-auto flex items-center gap-1.5">
-                        <span className="text-muted-foreground">Cost:</span>
-                        <span className="font-semibold text-foreground">${orderCost.toFixed(2)}</span>
+                        <span className="text-muted-foreground">Est. cost:</span>
+                        <span className="font-semibold text-foreground">${(Math.ceil(item.casesNeeded) * price).toFixed(2)}</span>
                       </div>
                     )}
                   </div>
 
-                  {/* Progress bar */}
+                  {/* Progress bar: red fill = current stock, threshold marker line */}
                   <div className="mt-3">
-                    <div className="h-2 bg-muted rounded-full overflow-hidden">
+                    <div className="h-2 bg-muted rounded-full overflow-hidden relative">
                       <div
                         className="h-full bg-red-400 rounded-full transition-all"
                         style={{
                           width: `${Math.min(100, (parseFloat(item.currentStock) / Math.max(0.01, parseFloat(item.parLevel ?? "1"))) * 100)}%`,
                         }}
                       />
+                      {/* Threshold marker */}
+                      {item.orderThreshold && (
+                        <div
+                          className="absolute top-0 h-full w-0.5 bg-amber-500"
+                          style={{
+                            left: `${Math.min(100, (parseFloat(item.orderThreshold) / Math.max(0.01, parseFloat(item.parLevel ?? "1"))) * 100)}%`,
+                          }}
+                        />
+                      )}
                     </div>
                     <div className="flex justify-between text-xs text-muted-foreground mt-1">
                       <span>0</span>
-                      <span>Par: {parseFloat(item.parLevel ?? "0").toFixed(1)}</span>
+                      {item.orderThreshold && (
+                        <span className="text-amber-600">Order ≤{parseFloat(item.orderThreshold).toFixed(0)}</span>
+                      )}
+                      <span>Par: {Math.round(parseFloat(item.parLevel ?? "0"))}</span>
                     </div>
                   </div>
                 </div>

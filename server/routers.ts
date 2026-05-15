@@ -55,6 +55,7 @@ const itemInputSchema = z.object({
   unitOfMeasure: z.string().optional(),
   price: z.string().optional(),
   parLevel: z.string().optional(),
+  orderThreshold: z.string().optional(), // fraction 0.0–1.0, e.g. "0.50" = 50%
   storageArea: z.string().optional(),
   isAlcohol: z.boolean().optional(),
   alcoholCategory: z.string().optional(),
@@ -140,6 +141,9 @@ const itemsRouter = router({
   updateParLevel: adminProcedure
     .input(z.object({ id: z.number(), parLevel: z.string() }))
     .mutation(({ input }) => updateItem(input.id, { parLevel: input.parLevel })),
+  updateOrderThreshold: adminProcedure
+    .input(z.object({ id: z.number(), orderThreshold: z.string() }))
+    .mutation(({ input }) => updateItem(input.id, { orderThreshold: input.orderThreshold })),
 });
 
 // ─── Counts Router ────────────────────────────────────────────────────────────

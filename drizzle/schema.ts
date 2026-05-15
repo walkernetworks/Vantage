@@ -100,6 +100,9 @@ export const items = mysqlTable(
     // eachPrice = price / caseQty when UOM is Each
     caseQty: int("caseQty"),
     eachPrice: decimal("eachPrice", { precision: 10, scale: 4 }),
+    // orderThreshold: fraction of par (0.0–1.0) below which an order is triggered.
+    // Default 0.5 means "order when stock < 50% of par".
+    orderThreshold: decimal("orderThreshold", { precision: 4, scale: 2 }).default("0.50"),
     notes: text("notes"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
