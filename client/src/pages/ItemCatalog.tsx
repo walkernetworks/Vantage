@@ -19,7 +19,8 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 
 type ItemForm = {
@@ -1068,10 +1069,30 @@ function Modal({
   onClose: () => void;
   children: React.ReactNode;
 }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="absolute inset-0 bg-foreground/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full sm:max-w-lg bg-card rounded-t-3xl sm:rounded-2xl shadow-lg max-h-[90vh] overflow-y-auto animate-in">
+  // Use a ref to track whether the modal was just mounted.
+  // This prevents the same click event that opened the modal from
+  // immediately triggering the backdrop onMouseDown and closing it.
+  const justMounted = useRef(true);
+  useEffect(() => {
+    // After first paint, allow backdrop clicks to close
+    const t = setTimeout(() => { justMounted.current = false; }, 50);
+    return () => clearTimeout(t);
+  }, []);
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div
+        className="absolute inset-0 bg-foreground/40 backdrop-blur-sm"
+        onMouseDown={(e) => {
+          if (justMounted.current) return;
+          if (e.target === e.currentTarget) onClose();
+        }}
+      />
+      <div
+        className="relative w-full sm:max-w-lg bg-card rounded-t-3xl sm:rounded-2xl shadow-lg max-h-[90vh] overflow-y-auto"
+        style={{ animation: "modalIn 200ms cubic-bezier(0.23,1,0.32,1) both" }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-card z-10">
           <h2 className="text-lg font-serif font-semibold text-foreground">{title}</h2>
           <button onClick={onClose} className="p-2 rounded-xl hover:bg-muted transition-colors">
@@ -1080,7 +1101,8 @@ function Modal({
         </div>
         <div className="p-5">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
