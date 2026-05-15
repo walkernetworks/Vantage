@@ -49,12 +49,15 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     values.lastSignedIn = user.lastSignedIn;
     updateSet.lastSignedIn = user.lastSignedIn;
   }
-  if (user.role !== undefined) {
-    values.role = user.role;
-    updateSet.role = user.role;
-  } else if (user.openId === ENV.ownerOpenId) {
+  // Always set admin for owner; never downgrade an existing admin on re-login
+  if (user.openId === ENV.ownerOpenId) {
     values.role = "admin";
     updateSet.role = "admin";
+  } else if (user.role !== undefined) {
+    values.role = user.role;
+    // Only include role in updateSet if explicitly elevating to admin
+    if (user.role === "admin") updateSet.role = user.role;
+    // Do NOT include role in updateSet for 'user' — preserve existing DB role
   }
 
   if (!values.lastSignedIn) values.lastSignedIn = new Date();

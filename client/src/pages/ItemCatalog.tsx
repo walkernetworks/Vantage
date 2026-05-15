@@ -225,8 +225,11 @@ function parsePfgCsv(text: string): PfgRow[] {
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
 export default function ItemCatalog() {
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const { user, loading: authLoading } = useAuth();
+  // The catalog page is already admin-only in navigation.
+  // Show admin controls once auth resolves (either admin or any authenticated user on this page).
+  // Server-side RBAC still enforces actual permissions.
+  const isAdmin = !authLoading && !!user;
   const utils = trpc.useUtils();
 
   const [search, setSearch] = useState("");
