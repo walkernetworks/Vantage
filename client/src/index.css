@@ -1,177 +1,229 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Inter:wght@300;400;500;600;700&display=swap");
 
 @custom-variant dark (&:is(.dark *));
 
+/* ── Design Tokens ─────────────────────────────────────────────────────────── */
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
+  /* Warm cream / espresso palette */
+  --color-background:       oklch(97% 0.012 75);
+  --color-foreground:       oklch(18% 0.025 50);
+  --color-card:             oklch(99% 0.008 75);
+  --color-card-foreground:  oklch(18% 0.025 50);
+  --color-popover:          oklch(99% 0.008 75);
+  --color-popover-foreground: oklch(18% 0.025 50);
+
+  /* Espresso brown primary */
+  --color-primary:          oklch(35% 0.07 50);
+  --color-primary-foreground: oklch(97% 0.012 75);
+
+  /* Warm amber secondary */
+  --color-secondary:        oklch(88% 0.04 75);
+  --color-secondary-foreground: oklch(25% 0.04 50);
+
+  /* Muted warm gray */
+  --color-muted:            oklch(93% 0.018 75);
+  --color-muted-foreground: oklch(52% 0.025 55);
+
+  /* Accent: golden amber */
+  --color-accent:           oklch(78% 0.12 65);
+  --color-accent-foreground: oklch(18% 0.025 50);
+
+  /* Status colors */
+  --color-destructive:      oklch(55% 0.22 25);
+  --color-destructive-foreground: oklch(97% 0.012 75);
+  --color-success:          oklch(55% 0.15 145);
+  --color-success-foreground: oklch(97% 0.012 75);
+  --color-warning:          oklch(72% 0.17 65);
+  --color-warning-foreground: oklch(18% 0.025 50);
+
+  --color-border:           oklch(88% 0.025 70);
+  --color-input:            oklch(88% 0.025 70);
+  --color-ring:             oklch(35% 0.07 50);
+
+  /* Typography */
+  --font-sans:   "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif:  "Playfair Display", ui-serif, Georgia, serif;
+
+  /* Radius */
+  --radius: 0.75rem;
+
+  /* Shadows */
+  --shadow-sm:   0 1px 3px oklch(0% 0 0 / 0.06), 0 1px 2px oklch(0% 0 0 / 0.04);
+  --shadow:      0 4px 12px oklch(0% 0 0 / 0.08), 0 2px 4px oklch(0% 0 0 / 0.04);
+  --shadow-md:   0 8px 24px oklch(0% 0 0 / 0.10), 0 4px 8px oklch(0% 0 0 / 0.06);
+  --shadow-lg:   0 16px 40px oklch(0% 0 0 / 0.12), 0 8px 16px oklch(0% 0 0 / 0.08);
 }
 
-:root {
-  --primary: var(--color-blue-700);
-  --primary-foreground: var(--color-blue-50);
-  --sidebar-primary: var(--color-blue-600);
-  --sidebar-primary-foreground: var(--color-blue-50);
-  --chart-1: var(--color-blue-300);
-  --chart-2: var(--color-blue-500);
-  --chart-3: var(--color-blue-600);
-  --chart-4: var(--color-blue-700);
-  --chart-5: var(--color-blue-800);
-  --radius: 0.65rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.235 0.015 65);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.235 0.015 65);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.235 0.015 65);
-  --secondary: oklch(0.98 0.001 286.375);
-  --secondary-foreground: oklch(0.4 0.015 65);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.141 0.005 285.823);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.623 0.214 259.815);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.235 0.015 65);
-  --sidebar-accent: oklch(0.967 0.001 286.375);
-  --sidebar-accent-foreground: oklch(0.141 0.005 285.823);
-  --sidebar-border: oklch(0.92 0.004 286.32);
-  --sidebar-ring: oklch(0.623 0.214 259.815);
-}
-
-.dark {
-  --primary: var(--color-blue-700);
-  --primary-foreground: var(--color-blue-50);
-  --sidebar-primary: var(--color-blue-500);
-  --sidebar-primary-foreground: var(--color-blue-50);
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.85 0.005 65);
-  --card: oklch(0.21 0.006 285.885);
-  --card-foreground: oklch(0.85 0.005 65);
-  --popover: oklch(0.21 0.006 285.885);
-  --popover-foreground: oklch(0.85 0.005 65);
-  --secondary: oklch(0.24 0.006 286.033);
-  --secondary-foreground: oklch(0.7 0.005 65);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground:  oklch(0.92 0.005 65);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.488 0.243 264.376);
-  --chart-1: var(--color-blue-300);
-  --chart-2: var(--color-blue-500);
-  --chart-3: var(--color-blue-600);
-  --chart-4: var(--color-blue-700);
-  --chart-5: var(--color-blue-800);
-  --sidebar: oklch(0.21 0.006 285.885);
-  --sidebar-foreground: oklch(0.85 0.005 65);
-  --sidebar-accent: oklch(0.274 0.006 286.033);
-  --sidebar-accent-foreground:  oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.488 0.243 264.376);
-}
-
+/* ── Base Styles ────────────────────────────────────────────────────────────── */
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    border-color: var(--color-border);
+    outline-color: var(--color-ring);
   }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+    scroll-behavior: smooth;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
-  button:not(:disabled),
-  [role="button"]:not([aria-disabled="true"]),
-  [type="button"]:not(:disabled),
-  [type="submit"]:not(:disabled),
-  [type="reset"]:not(:disabled),
-  a[href],
-  select:not(:disabled),
-  input[type="checkbox"]:not(:disabled),
-  input[type="radio"]:not(:disabled) {
-    @apply cursor-pointer;
+
+  h1, h2, h3 {
+    font-family: var(--font-serif);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  /* Bigger touch targets on mobile */
+  button, [role="button"], a, input, select, textarea {
+    touch-action: manipulation;
   }
 }
 
-@layer components {
-  /**
-   * Custom container utility that centers content and adds responsive padding.
-   *
-   * This overrides Tailwind's default container behavior to:
-   * - Auto-center content (mx-auto)
-   * - Add responsive horizontal padding
-   * - Set max-width for large screens
-   *
-   * Usage: <div className="container">...</div>
-   *
-   * For custom widths, use max-w-* utilities directly:
-   * <div className="max-w-6xl mx-auto px-4">...</div>
-   */
+/* ── Container ──────────────────────────────────────────────────────────────── */
+@layer utilities {
   .container {
     width: 100%;
+    max-width: 1280px;
     margin-left: auto;
     margin-right: auto;
-    padding-left: 1rem; /* 16px - mobile padding */
+    padding-left: 1rem;
     padding-right: 1rem;
   }
 
-  .flex {
-    min-height: 0;
-    min-width: 0;
-  }
-
   @media (min-width: 640px) {
-    .container {
-      padding-left: 1.5rem; /* 24px - tablet padding */
-      padding-right: 1.5rem;
-    }
+    .container { padding-left: 1.5rem; padding-right: 1.5rem; }
   }
 
-  @media (min-width: 1024px) {
-    .container {
-      padding-left: 2rem; /* 32px - desktop padding */
-      padding-right: 2rem;
-      max-width: 1280px; /* Standard content width */
-    }
+  /* Flex fix */
+  .flex { min-width: 0; min-height: 0; }
+
+  /* Big button mobile tap target */
+  .btn-big {
+    min-height: 3rem;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    border-radius: var(--radius);
+    transition: all 160ms cubic-bezier(0.23, 1, 0.32, 1);
   }
+
+  .btn-big:active {
+    transform: scale(0.97);
+  }
+
+  /* Number input for count sheet */
+  .count-input {
+    min-height: 3.5rem;
+    font-size: 1.25rem;
+    font-weight: 600;
+    text-align: center;
+    border-radius: var(--radius);
+    border: 2px solid var(--color-border);
+    background: var(--color-card);
+    width: 100%;
+    transition: border-color 160ms ease-out, box-shadow 160ms ease-out;
+  }
+
+  .count-input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px oklch(35% 0.07 50 / 0.15);
+  }
+
+  /* Status badges */
+  .badge-low { background: oklch(95% 0.06 25); color: oklch(45% 0.18 25); }
+  .badge-ok  { background: oklch(93% 0.06 145); color: oklch(40% 0.14 145); }
+  .badge-warn { background: oklch(95% 0.08 65); color: oklch(50% 0.15 65); }
+
+  /* Card hover lift */
+  .card-hover {
+    transition: box-shadow 200ms cubic-bezier(0.23, 1, 0.32, 1), transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .card-hover:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+  }
+
+  /* Shimmer skeleton */
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  .skeleton {
+    background: linear-gradient(90deg, var(--color-muted) 25%, var(--color-border) 50%, var(--color-muted) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: calc(var(--radius) * 0.5);
+  }
+
+  /* Shortfall highlight */
+  .shortfall-row {
+    background: oklch(97% 0.04 25);
+    border-left: 3px solid oklch(55% 0.22 25);
+  }
+
+  /* Safe area padding for mobile */
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .safe-top    { padding-top:    env(safe-area-inset-top, 0px); }
+}
+
+/* ── Animations ─────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: no-preference) {
+  .animate-in {
+    animation: fadeInUp 200ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  }
+
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+}
+
+/* ── Card Hover ─────────────────────────────────────────────────────────────── */
+.card-hover {
+  transition: box-shadow 150ms ease-out, transform 150ms ease-out;
+}
+.card-hover:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+.card-hover:active {
+  transform: scale(0.98);
+}
+
+/* ── Form Input ─────────────────────────────────────────────────────────────── */
+.form-input {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.625rem 0.875rem;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--color-border);
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-size: 1rem;
+  font-family: var(--font-sans);
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+  appearance: auto;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px oklch(35% 0.07 50 / 0.12);
+}
+
+.form-input::placeholder {
+  color: var(--color-muted-foreground);
 }
