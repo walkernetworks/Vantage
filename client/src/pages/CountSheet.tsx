@@ -24,6 +24,7 @@ import {
   MapPin,
   Plus,
   RefreshCw,
+  Search,
   SlidersHorizontal,
   Square,
   Trash2,
@@ -50,6 +51,7 @@ export default function CountSheet() {
   const [saving, setSaving] = useState<Record<number, boolean>>({});
 
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+  const [countSearch, setCountSearch] = useState("");
 
   // Bulk mode state
   const [bulkMode, setBulkMode] = useState(false);
@@ -305,16 +307,29 @@ export default function CountSheet() {
     }, 0);
   }, [countableItems, effectiveCounts]);
 
+  // Search-filtered items
+  const searchFilteredItems = useMemo(() => {
+    if (!countSearch.trim()) return countableItems;
+    const q = countSearch.toLowerCase();
+    return countableItems.filter(
+      (item) =>
+        item.name.toLowerCase().includes(q) ||
+        item.category.toLowerCase().includes(q) ||
+        (item.storageArea ?? "").toLowerCase().includes(q) ||
+        (item.vendor ?? "").toLowerCase().includes(q)
+    );
+  }, [countableItems, countSearch]);
+
   // Group items
   const grouped = useMemo(() => {
     const groups: Record<string, typeof allItems> = {};
-    countableItems.forEach((item) => {
+    searchFilteredItems.forEach((item) => {
       const key = viewMode === "storage" ? (item.storageArea ?? "Other") : item.category;
       if (!groups[key]) groups[key] = [];
       groups[key].push(item);
     });
     return groups;
-  }, [countableItems, viewMode]);
+  }, [searchFilteredItems, viewMode]);
 
   const groupKeys = useMemo(() => {
     if (viewMode === "storage") {
@@ -565,6 +580,28 @@ export default function CountSheet() {
         </div>
       )}
 
+      {/* Count Search Bar */}
+      {activeSessionId && allItems.length > 0 && (
+        <div className="relative">
+          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          <input
+            type="text"
+            value={countSearch}
+            onChange={(e) => setCountSearch(e.target.value)}
+            placeholder="Search items…"
+            className="w-full h-11 pl-10 pr-10 rounded-xl border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+          {countSearch && (
+            <button
+              onClick={() => setCountSearch("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Count Groups */}
       {activeSessionId && allItems.length > 0 && (
         <div className="space-y-3">
@@ -648,15 +685,17 @@ export default function CountSheet() {
                                 {user?.role === "admin" && !isCompleted && (
                                   <button
                                     onClick={() => setCountModeMutation.mutate({ id: item.id, countMode: isEachMode ? "case" : "each" })}
+                                    disabled={setCountModeMutation.isPending}
                                     className={cn(
-                                      "text-[10px] font-bold px-1.5 py-0.5 rounded-md border transition-colors shrink-0",
+                                      "text-[10px] font-bold px-2 py-1 rounded-lg border-2 transition-all shrink-0 flex items-center gap-1",
                                       isEachMode
-                                        ? "bg-amber-100 text-amber-700 border-amber-300 hover:bg-amber-200"
-                                        : "bg-muted text-muted-foreground border-border hover:bg-secondary"
+                                        ? "bg-amber-100 text-amber-800 border-amber-400 hover:bg-amber-200 active:scale-95"
+                                        : "bg-sky-50 text-sky-700 border-sky-300 hover:bg-sky-100 active:scale-95"
                                     )}
-                                    title={isEachMode ? "Switch to Case counting" : "Switch to Each counting"}
+                                    title={isEachMode ? "Currently counting by Each — tap to switch to Case" : "Currently counting by Case — tap to switch to Each"}
                                   >
-                                    {isEachMode ? "EACH" : "CASE"}
+                                    <span>{isEachMode ? "EACH" : "CASE"}</span>
+                                    <span className="opacity-60 text-[9px]">▼</span>
                                   </button>
                                 )}
                               </div>

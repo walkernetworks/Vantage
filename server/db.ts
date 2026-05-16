@@ -214,6 +214,13 @@ export async function deleteItem(id: number) {
   await db.update(items).set({ isActive: false }).where(eq(items.id, id));
 }
 
+export async function bulkDeleteItems(ids: number[]) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  if (ids.length === 0) return;
+  await db.update(items).set({ isActive: false }).where(inArray(items.id, ids));
+}
+
 export async function bulkCreateItems(data: (typeof items.$inferInsert)[]) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");

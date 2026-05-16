@@ -20,6 +20,7 @@ import {
   deleteCateringRecipe,
   deleteCategory,
   deleteItem,
+  bulkDeleteItems,
   deleteStorageArea,
   deleteVendor,
   getAllItems,
@@ -109,6 +110,9 @@ const itemsRouter = router({
   delete: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(({ input }) => deleteItem(input.id)),
+  bulkDelete: adminProcedure
+    .input(z.object({ ids: z.array(z.number()).min(1) }))
+    .mutation(({ input }) => bulkDeleteItems(input.ids)),
 
   importCSV: adminProcedure
     .input(

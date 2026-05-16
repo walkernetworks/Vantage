@@ -191,3 +191,22 @@
 ## Round 13 — Bug Fixes
 
 - [x] Bug: delete count session broken — root cause was delete button hidden behind opacity-0/group-hover (invisible on mobile/touch). Fixed: button now always visible for admins as a Trash2 icon with proper tap target size next to each session chip.
+
+## Round 14 — Item Catalog Delete
+
+- [x] Item Catalog: delete button (Trash2 icon) already existed on each item card (admin-only)
+- [x] Item Catalog: single-item delete uses Modal confirmation (createPortal-based)
+- [x] Item Catalog: calls `trpc.items.delete` mutation on confirm, invalidates list on success
+
+## Round 15 — Bulk Delete & Count Mode Fix
+
+- [x] Item Catalog: bulk select mode toggle button added (admin-only, CheckSquare icon)
+- [x] Item Catalog: checkbox on each item card in bulk mode
+- [x] Item Catalog: Select All / Deselect All in bulk mode toolbar
+- [x] Item Catalog: Delete Selected button with count badge in bulk mode toolbar
+- [x] Item Catalog: Modal confirmation before bulk delete showing count of items
+- [x] Item Catalog: calls `items.bulkDelete` mutation on confirm, invalidates list on success
+- [x] Count Sheet: toggle button now clearly shows current mode (blue CASE▼ / amber EACH▼) with dropdown arrow indicator
+- [x] Count Sheet: setCountMode mutation persists change to DB via `items.setCountMode` procedure
+- [x] Count Sheet: CASE is default; EACH hides case row and shows only EACH input
+- [x] Count Sheet: added search bar above item groups to filter by name/category/storage/vendor

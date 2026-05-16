@@ -7,12 +7,14 @@ import {
   ArrowDown,
   ArrowUp,
   CheckCircle2,
+  CheckSquare,
   Edit2,
   Filter,
   Minus,
   Package,
   Plus,
   Search,
+  Square,
   Trash2,
   TrendingDown,
   TrendingUp,
@@ -243,6 +245,9 @@ export default function ItemCatalog() {
   const [showWebstaurantImport, setShowWebstaurantImport] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
 
   const recalcEachPricesMutation = trpc.items.recalcEachPrices.useMutation({
     onSuccess: (res) => {
@@ -293,6 +298,33 @@ export default function ItemCatalog() {
     },
     onError: (e) => toast.error(e.message),
   });
+
+  const bulkDeleteMutation = trpc.items.bulkDelete.useMutation({
+    onSuccess: (_, vars) => {
+      utils.items.list.invalidate();
+      setSelectedIds(new Set());
+      setBulkDeleteConfirm(false);
+      setBulkMode(false);
+      toast.success(`${vars.ids.length} item${vars.ids.length === 1 ? '' : 's'} removed`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAll() {
+    setSelectedIds(new Set(filtered.map((i) => i.id)));
+  }
+
+  function deselectAll() {
+    setSelectedIds(new Set());
+  }
 
   const filtered = items.filter(
     (item) =>
@@ -357,6 +389,21 @@ export default function ItemCatalog() {
         </div>
         {isAdmin && (
           <div className="flex gap-2">
+            <button
+              onClick={() => {
+                setBulkMode((v) => !v);
+                setSelectedIds(new Set());
+              }}
+              className={cn(
+                "p-3 rounded-xl transition-colors active:scale-95",
+                bulkMode
+                  ? "bg-destructive/15 text-destructive"
+                  : "bg-muted text-muted-foreground hover:bg-secondary"
+              )}
+              title={bulkMode ? "Exit bulk select" : "Bulk select items"}
+            >
+              <CheckSquare size={20} />
+            </button>
             <button
               onClick={() => setShowImport(true)}
               className="p-3 rounded-xl bg-secondary text-secondary-foreground hover:bg-muted transition-colors active:scale-95"
@@ -491,6 +538,33 @@ export default function ItemCatalog() {
         )}
       </div>
 
+      {/* Bulk Action Bar */}
+      {bulkMode && (
+        <div className="flex items-center gap-3 bg-destructive/10 border border-destructive/20 rounded-2xl px-4 py-3">
+          <button
+            onClick={selectedIds.size === filtered.length ? deselectAll : selectAll}
+            className="flex items-center gap-2 text-sm font-semibold text-foreground"
+          >
+            {selectedIds.size === filtered.length
+              ? <CheckSquare size={18} className="text-primary" />
+              : <Square size={18} className="text-muted-foreground" />}
+            {selectedIds.size === filtered.length ? "Deselect All" : "Select All"}
+          </button>
+          <span className="text-sm text-muted-foreground ml-auto">
+            {selectedIds.size} selected
+          </span>
+          {selectedIds.size > 0 && (
+            <button
+              onClick={() => setBulkDeleteConfirm(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold hover:bg-destructive/90 active:scale-95 transition-all"
+            >
+              <Trash2 size={16} />
+              Delete {selectedIds.size}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Item List */}
       {isLoading ? (
         <div className="space-y-3">
@@ -530,8 +604,25 @@ export default function ItemCatalog() {
                 </div>
                 <div className="space-y-2">
                   {catItems.map((item) => (
-                    <div key={item.id} className="bg-card rounded-2xl border border-border p-4 shadow-sm">
+                    <div
+                      key={item.id}
+                      className={cn(
+                        "bg-card rounded-2xl border p-4 shadow-sm transition-colors",
+                        bulkMode && selectedIds.has(item.id)
+                          ? "border-destructive bg-destructive/5"
+                          : "border-border",
+                        bulkMode && "cursor-pointer"
+                      )}
+                      onClick={bulkMode ? () => toggleSelect(item.id) : undefined}
+                    >
                       <div className="flex items-start justify-between gap-3">
+                        {bulkMode && (
+                          <div className="shrink-0 mt-0.5">
+                            {selectedIds.has(item.id)
+                              ? <CheckSquare size={20} className="text-destructive" />
+                              : <Square size={20} className="text-muted-foreground" />}
+                          </div>
+                        )}
                         <div className="flex-1 min-w-0">
                           <p className="font-semibold text-foreground truncate">{item.name}</p>
                           {(item as any).brand && (
@@ -576,16 +667,16 @@ export default function ItemCatalog() {
                             )}
                           </div>
                         </div>
-                        {isAdmin && (
+                        {isAdmin && !bulkMode && (
                           <div className="flex gap-2 shrink-0">
                             <button
-                              onClick={() => openEdit(item)}
+                              onClick={(e) => { e.stopPropagation(); openEdit(item); }}
                               className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center hover:bg-secondary transition-colors active:scale-95"
                             >
                               <Edit2 size={16} className="text-foreground" />
                             </button>
                             <button
-                              onClick={() => setDeleteConfirm(item.id)}
+                              onClick={(e) => { e.stopPropagation(); setDeleteConfirm(item.id); }}
                               className="w-9 h-9 rounded-xl bg-destructive/10 flex items-center justify-center hover:bg-destructive/20 transition-colors active:scale-95"
                             >
                               <Trash2 size={16} className="text-destructive" />
@@ -782,6 +873,30 @@ export default function ItemCatalog() {
               className="flex-1 btn-big bg-destructive text-destructive-foreground disabled:opacity-60"
             >
               {deleteMutation.isPending ? "Removing…" : "Remove"}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Bulk Delete Confirm ── */}
+      {bulkDeleteConfirm && (
+        <Modal title={`Remove ${selectedIds.size} item${selectedIds.size === 1 ? '' : 's'}?`} onClose={() => setBulkDeleteConfirm(false)}>
+          <p className="text-muted-foreground mb-6">
+            {selectedIds.size} item{selectedIds.size === 1 ? '' : 's'} will be deactivated and hidden from all views. Historical count data is preserved.
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setBulkDeleteConfirm(false)}
+              className="flex-1 btn-big bg-muted text-foreground"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => bulkDeleteMutation.mutate({ ids: Array.from(selectedIds) })}
+              disabled={bulkDeleteMutation.isPending}
+              className="flex-1 btn-big bg-destructive text-destructive-foreground disabled:opacity-60"
+            >
+              {bulkDeleteMutation.isPending ? "Removing…" : `Remove ${selectedIds.size}`}
             </button>
           </div>
         </Modal>
