@@ -3,7 +3,6 @@ import { getLoginUrl } from "@/const";
 import { cn } from "@/lib/utils";
 import {
   BookOpen,
-  Calculator,
   ChevronRight,
   ClipboardList,
   LogOut,
@@ -12,10 +11,11 @@ import {
   Settings,
   ShoppingCart,
   SlidersHorizontal,
+  User,
   Users,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -26,6 +26,7 @@ interface NavItem {
   icon: React.ReactNode;
   adminOnly?: boolean;
   description: string;
+  hidden?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -44,8 +45,9 @@ const navItems: NavItem[] = [
   {
     href: "/catering",
     label: "Catering Calc",
-    icon: <Calculator size={22} />,
+    icon: <ShoppingCart size={22} />,
     description: "Check order shortfalls",
+    hidden: true, // tabled for now
   },
   {
     href: "/catalog",
@@ -92,12 +94,24 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const { user, loading, isAuthenticated } = useAuth();
   const [location] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
   const logoutMutation = trpc.auth.logout.useMutation({
-    onSuccess: () => {
-      window.location.href = "/";
-    },
+    onSuccess: () => { window.location.href = "/"; },
     onError: () => toast.error("Logout failed"),
   });
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   if (loading) {
     return (
@@ -114,20 +128,16 @@ export default function AppLayout({ children }: AppLayoutProps) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background px-4">
         <div className="w-full max-w-sm text-center space-y-8 animate-in">
-          {/* Logo */}
           <div className="space-y-3">
-            <div className="mx-auto w-64 max-w-full">
+            <div className="mx-auto w-72 max-w-full">
               <img
                 src="/manus-storage/B&BLogo-Transparent_340094db.png"
                 alt="Beignets & Brew"
                 className="w-full h-auto object-contain"
               />
             </div>
-            <div>
-              <p className="text-muted-foreground mt-1">Inventory & Ordering System</p>
-            </div>
+            <p className="text-muted-foreground mt-1">Inventory & Ordering System</p>
           </div>
-
           <div className="space-y-3">
             <a
               href={getLoginUrl()}
@@ -136,9 +146,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
               Sign In to Continue
               <ChevronRight size={18} />
             </a>
-            <p className="text-xs text-muted-foreground">
-              Secure login via Manus OAuth
-            </p>
+            <p className="text-xs text-muted-foreground">Secure login via Manus OAuth</p>
           </div>
         </div>
       </div>
@@ -146,41 +154,121 @@ export default function AppLayout({ children }: AppLayoutProps) {
   }
 
   const isAdmin = user?.role === "admin";
-  const visibleNav = navItems.filter((item) => !item.adminOnly || isAdmin);
+  const visibleNav = navItems.filter((item) => !item.hidden && (!item.adminOnly || isAdmin));
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* ── Top Header ── */}
       <header className="sticky top-0 z-40 bg-card border-b border-border shadow-sm safe-top">
-        <div className="flex items-center justify-between h-16 px-4">
+        <div className="flex items-center justify-between h-20 px-4">
+          {/* Left: hamburger + logo */}
           <div className="flex items-center gap-3">
             <button
               onClick={() => setSidebarOpen(true)}
               className="p-2 rounded-xl hover:bg-muted transition-colors active:scale-95"
               aria-label="Open menu"
             >
-              <Menu size={22} className="text-foreground" />
+              <Menu size={24} className="text-foreground" />
             </button>
-            <Link href="/" className="flex items-center gap-2">
+            <Link href="/" className="flex items-center">
               <img
                 src="/manus-storage/B&BLogo-Transparent_340094db.png"
                 alt="Beignets & Brew"
-                className="h-14 w-auto object-contain max-w-[180px]"
+                className="h-16 w-auto object-contain"
+                style={{ maxWidth: "220px" }}
               />
             </Link>
           </div>
 
-          <div className="flex items-center gap-2">
-            {isAdmin && (
-              <span className="text-xs font-semibold px-2 py-1 rounded-full bg-primary text-primary-foreground">
-                Admin
-              </span>
+          {/* Right: user dropdown */}
+          <div className="relative" ref={dropdownRef}>
+            <button
+              onClick={() => setDropdownOpen((v) => !v)}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-muted transition-colors active:scale-95"
+              aria-label="User menu"
+            >
+              <div className="w-9 h-9 rounded-full bg-primary flex items-center justify-center shrink-0">
+                <span className="text-sm font-bold text-primary-foreground">
+                  {user?.name?.charAt(0)?.toUpperCase() ?? "U"}
+                </span>
+              </div>
+              <div className="hidden sm:flex flex-col items-start leading-tight">
+                <span className="text-sm font-semibold text-foreground max-w-[120px] truncate">
+                  {user?.name ?? "Employee"}
+                </span>
+                {isAdmin && (
+                  <span className="text-[10px] font-semibold text-primary uppercase tracking-wide">Admin</span>
+                )}
+              </div>
+              <ChevronRight
+                size={16}
+                className={cn(
+                  "text-muted-foreground transition-transform duration-200 hidden sm:block",
+                  dropdownOpen && "rotate-90"
+                )}
+              />
+            </button>
+
+            {/* Dropdown panel */}
+            {dropdownOpen && (
+              <div className="absolute right-0 top-full mt-2 w-56 bg-card border border-border rounded-2xl shadow-lg overflow-hidden z-50 animate-in">
+                {/* User info header */}
+                <div className="px-4 py-3 border-b border-border bg-muted/40">
+                  <p className="text-sm font-semibold text-foreground truncate">{user?.name ?? "Employee"}</p>
+                  <p className="text-xs text-muted-foreground truncate">{user?.email ?? ""}</p>
+                  {isAdmin && (
+                    <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary text-primary-foreground uppercase tracking-wide">
+                      Admin
+                    </span>
+                  )}
+                </div>
+
+                {/* Menu items */}
+                <div className="py-1">
+                  <Link
+                    href="/account"
+                    onClick={() => setDropdownOpen(false)}
+                    className="flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors"
+                  >
+                    <User size={16} className="text-muted-foreground shrink-0" />
+                    Account Settings
+                  </Link>
+
+                  {isAdmin && (
+                    <Link
+                      href="/admin/users"
+                      onClick={() => setDropdownOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors"
+                    >
+                      <Users size={16} className="text-muted-foreground shrink-0" />
+                      User Management
+                    </Link>
+                  )}
+
+                  {isAdmin && (
+                    <Link
+                      href="/settings"
+                      onClick={() => setDropdownOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors"
+                    >
+                      <Settings size={16} className="text-muted-foreground shrink-0" />
+                      App Settings
+                    </Link>
+                  )}
+                </div>
+
+                <div className="border-t border-border py-1">
+                  <button
+                    onClick={() => { setDropdownOpen(false); logoutMutation.mutate(); }}
+                    disabled={logoutMutation.isPending}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
+                  >
+                    <LogOut size={16} className="shrink-0" />
+                    Sign Out
+                  </button>
+                </div>
+              </div>
             )}
-            <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center">
-              <span className="text-xs font-bold text-accent-foreground">
-                {user?.name?.charAt(0)?.toUpperCase() ?? "U"}
-              </span>
-            </div>
           </div>
         </div>
       </header>
@@ -202,17 +290,18 @@ export default function AppLayout({ children }: AppLayoutProps) {
       >
         {/* Sidebar Header */}
         <div className="flex items-center justify-between p-5 border-b border-border">
-          <div className="flex flex-col gap-2 min-w-0">
+          <div className="flex flex-col gap-2 min-w-0 flex-1">
             <img
               src="/manus-storage/B&BLogo-Transparent_340094db.png"
               alt="Beignets & Brew"
-              className="h-20 w-auto object-contain max-w-[200px]"
+              className="h-24 w-auto object-contain"
+              style={{ maxWidth: "210px" }}
             />
             <p className="text-xs text-muted-foreground truncate">{user?.name ?? "Employee"}</p>
           </div>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="p-2 rounded-xl hover:bg-muted transition-colors"
+            className="p-2 rounded-xl hover:bg-muted transition-colors shrink-0"
           >
             <X size={20} />
           </button>

@@ -243,3 +243,9 @@
 - [x] Increase B&B logo size in sidebar header and mobile top bar
 - [x] Add tRPC procedures for dashboard metrics: order costs over time, inventory value by category, price fluctuations by distributor
 - [x] Build dashboard charts: Cost of Orders (line), Inventory Value by Category (donut), Price Fluctuations by Distributor (multi-line)
+
+## Round 22 — Nav, Logo, User Dropdown
+- [x] Hide Catering Calculator from nav (keep code, remove nav item)
+- [x] Fix logo size — make it visibly larger in header and sidebar
+- [x] User dropdown menu in top-right (Account Settings, User Management admin-only, Sign Out)
+- [x] Account Settings page (display name, email, role badge)

@@ -14,6 +14,7 @@ import CountHistory from "./pages/CountHistory";
 import Settings from "./pages/Settings";
 import ParLevels from "./pages/ParLevels";
 import UserManagement from "./pages/UserManagement";
+import AccountSettings from "./pages/AccountSettings";
 
 function Router() {
   return (
@@ -28,6 +29,7 @@ function Router() {
         <Route path="/par-levels" component={ParLevels} />
         <Route path="/settings" component={Settings} />
         <Route path="/admin/users" component={UserManagement} />
+        <Route path="/account" component={AccountSettings} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>
