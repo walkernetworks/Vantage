@@ -210,3 +210,7 @@
 - [x] Count Sheet: setCountMode mutation persists change to DB via `items.setCountMode` procedure
 - [x] Count Sheet: CASE is default; EACH hides case row and shows only EACH input
 - [x] Count Sheet: added search bar above item groups to filter by name/category/storage/vendor
+
+## Round 16 — Import Re-insert Bug Fix
+
+- [x] Bug: after deleting all items, re-uploading CSV only ran price-check — root cause was soft-delete: rows remained in DB with isActive=false. Fixed: both PFG and Webstaurant importers now check isActive on matched rows; if false, they reactivate the row and update all fields (counted as 'created'), bypassing the price-check path.

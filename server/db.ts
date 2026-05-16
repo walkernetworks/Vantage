@@ -517,17 +517,18 @@ export async function importPfgItems(rows: PfgImportRow[]): Promise<PfgImportRes
   const priceChanges: PfgImportResult["priceChanges"] = [];
 
   for (const row of rows) {
-    // Look up by PFG product number first, then fall back to name match
+    // Look up by PFG product number (including soft-deleted rows)
     const existing = await db
       .select()
       .from(items)
       .where(eq(items.pfgProductNumber, row.pfgProductNumber))
       .limit(1);
 
-        const caseQty = parsePackSizeQty(row.packSize);
+    const caseQty = parsePackSizeQty(row.packSize);
     const eachPrice = computeEachPrice(row.price, caseQty);
+
     if (existing.length === 0) {
-      // New item — create it
+      // Truly new item — create it
       await db.insert(items).values({
         name: row.name,
         brand: row.brand,
@@ -548,6 +549,32 @@ export async function importPfgItems(rows: PfgImportRow[]): Promise<PfgImportRes
       created++;
     } else {
       const item = existing[0];
+
+      // If the item was soft-deleted, reactivate it and treat as a fresh insert
+      if (!item.isActive) {
+        await db
+          .update(items)
+          .set({
+            name: row.name,
+            brand: row.brand,
+            category: row.category,
+            vendor: "PFG",
+            packSize: row.packSize,
+            unitOfMeasure: "Case",
+            price: row.price,
+            caseQty,
+            eachPrice,
+            storageArea: row.storageArea ?? item.storageArea ?? "Dry Storage",
+            isAlcohol: row.isAlcohol,
+            alcoholCategory: row.alcoholCategory ?? null,
+            isActive: true,
+            updatedAt: new Date(),
+          })
+          .where(eq(items.id, item.id));
+        created++;
+        continue;
+      }
+
       const oldPrice = item.price ?? "0";
       const newPrice = row.price;
       if (parseFloat(oldPrice) !== parseFloat(newPrice)) {
@@ -800,6 +827,7 @@ export async function importWebstaurantItems(
   const priceChanges: WebstaurantImportResult["priceChanges"] = [];
 
   for (const row of rows) {
+    // Look up by Webstaurant item number (including soft-deleted rows)
     const existing = await db
       .select()
       .from(items)
@@ -810,6 +838,7 @@ export async function importWebstaurantItems(
     const eachPrice = computeEachPrice(row.price, caseQty);
 
     if (existing.length === 0) {
+      // Truly new item — create it
       await db.insert(items).values({
         name: row.cleanName,
         brand: row.brand || null,
@@ -829,6 +858,28 @@ export async function importWebstaurantItems(
       created++;
     } else {
       const item = existing[0];
+
+      // If the item was soft-deleted, reactivate it and treat as a fresh insert
+      if (!item.isActive) {
+        await db
+          .update(items)
+          .set({
+            name: row.cleanName,
+            brand: row.brand || null,
+            vendor: "Webstaurant",
+            packSize: row.packSize || null,
+            unitOfMeasure: "Case",
+            price: row.price,
+            caseQty,
+            eachPrice,
+            isActive: true,
+            updatedAt: new Date(),
+          })
+          .where(eq(items.id, item.id));
+        created++;
+        continue;
+      }
+
       const oldPrice = item.price ?? "0";
       const newPrice = row.price;
 
