@@ -16,6 +16,8 @@ import {
   RefreshCw,
   SlidersHorizontal,
   Square,
+  Trash2,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -36,6 +38,8 @@ export default function CountSheet() {
   // localEachCounts stores the EACH count for items that have caseQty > 1
   const [localEachCounts, setLocalEachCounts] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState<Record<number, boolean>>({});
+
+  const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
 
   // Bulk mode state
   const [bulkMode, setBulkMode] = useState(false);
@@ -86,6 +90,17 @@ export default function CountSheet() {
       refetchSessions();
       refetchSession();
       toast.success("Count session completed!");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const deleteMutation = trpc.counts.deleteSession.useMutation({
+    onSuccess: () => {
+      setDeleteConfirm(null);
+      // If we deleted the active session, clear it
+      if (deleteConfirm === activeSessionId) setActiveSessionId(null);
+      refetchSessions();
+      toast.success("Count session deleted");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -183,6 +198,14 @@ export default function CountSheet() {
     });
   }
 
+  function handleSelectAll() {
+    if (selectedIds.size === countableItems.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(countableItems.map((i) => i.id)));
+    }
+  }
+
   function handleBulkCopyDown() {
     const visible = countableItems.filter((i) => selectedIds.has(i.id));
     if (visible.length < 2) { toast.error("Select at least 2 items to copy down"); return; }
@@ -228,11 +251,10 @@ export default function CountSheet() {
   // Calculate total inventory value (across all countable items)
   const totalValue = useMemo(() => {
     return countableItems.reduce((sum, item) => {
-      const qty = parseFloat(effectiveCounts.get(item.id) ?? "0");
+      const qty = parseFloat(effectiveCounts.get(item.id) ?? "0") || 0;
       const isEach = item.unitOfMeasure?.toLowerCase() === "each";
-      const unitPrice = isEach && item.eachPrice
-        ? parseFloat(item.eachPrice)
-        : parseFloat(item.price ?? "0");
+      const rawPrice = isEach && item.eachPrice ? item.eachPrice : (item.price ?? "0");
+      const unitPrice = parseFloat(rawPrice) || 0;
       return sum + qty * unitPrice;
     }, 0);
   }, [countableItems, effectiveCounts]);
@@ -337,6 +359,13 @@ export default function CountSheet() {
       {bulkMode && activeSessionId && !isCompleted && (
         <div className="bg-primary/5 border border-primary/20 rounded-2xl p-3 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleSelectAll}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors active:scale-95"
+            >
+              {selectedIds.size === countableItems.length ? "Deselect All" : "Select All"}
+            </button>
+
             <span className="text-sm font-semibold text-primary">
               {selectedIds.size} selected
             </span>
@@ -390,24 +419,35 @@ export default function CountSheet() {
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Previous Counts</p>
           <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1">
             {sessions.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => setActiveSessionId(s.id)}
-                className={cn(
-                  "shrink-0 px-4 py-2 rounded-xl text-sm font-semibold border transition-colors whitespace-nowrap",
-                  activeSessionId === s.id
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-card text-foreground border-border hover:bg-muted"
+              <div key={s.id} className="relative shrink-0 flex items-center group">
+                <button
+                  onClick={() => setActiveSessionId(s.id)}
+                  className={cn(
+                    "px-4 py-2 pr-8 rounded-xl text-sm font-semibold border transition-colors whitespace-nowrap",
+                    activeSessionId === s.id
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-card text-foreground border-border hover:bg-muted"
+                  )}
+                >
+                  {s.name ?? "Count"} ·{" "}
+                  {new Date(s.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  {!s.completedAt ? (
+                    <span className="ml-1.5 w-2 h-2 rounded-full bg-amber-400 inline-block" title="In progress" />
+                  ) : (
+                    <span className="ml-1.5 w-2 h-2 rounded-full bg-green-500 inline-block" title="Completed" />
+                  )}
+                </button>
+                {/* Delete button — only shown to admins */}
+                {user?.role === "admin" && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setDeleteConfirm(s.id); }}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 hover:text-red-600 text-muted-foreground"
+                    title="Delete this count session"
+                  >
+                    <X size={11} />
+                  </button>
                 )}
-              >
-                {s.name ?? "Count"} ·{" "}
-                {new Date(s.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                {!s.completedAt ? (
-                  <span className="ml-1.5 w-2 h-2 rounded-full bg-amber-400 inline-block" title="In progress" />
-                ) : (
-                  <span className="ml-1.5 w-2 h-2 rounded-full bg-green-500 inline-block" title="Completed" />
-                )}
-              </button>
+              </div>
             ))}
           </div>
         </div>
@@ -486,11 +526,10 @@ export default function CountSheet() {
             const groupItems = grouped[groupKey] ?? [];
             const isCollapsed = collapsed[groupKey];
             const groupValue = groupItems.reduce((sum, item) => {
-              const qty = parseFloat(effectiveCounts.get(item.id) ?? "0");
+              const qty = parseFloat(effectiveCounts.get(item.id) ?? "0") || 0;
               const isEach = item.unitOfMeasure?.toLowerCase() === "each";
-              const unitPrice = isEach && item.eachPrice
-                ? parseFloat(item.eachPrice)
-                : parseFloat(item.price ?? "0");
+              const rawPrice = isEach && item.eachPrice ? item.eachPrice : (item.price ?? "0");
+              const unitPrice = parseFloat(rawPrice) || 0;
               return sum + qty * unitPrice;
             }, 0);
             const countedItems = groupItems.filter((i) => parseFloat(effectiveCounts.get(i.id) ?? "0") > 0).length;
@@ -531,10 +570,10 @@ export default function CountSheet() {
                       const eachesVal = localEachCounts[item.id] ?? "";
                       const hasEach = (item.caseQty ?? 0) > 1; // show Each input only if pack has multiple units
                       // Compute display value
-                      const totalCases = parseFloat(casesVal || "0") + (hasEach ? parseFloat(eachesVal || "0") / (item.caseQty ?? 1) : 0);
-                      const casePrice = parseFloat(item.price ?? "0");
-                      const eachPrice = item.eachPrice ? parseFloat(item.eachPrice) : 0;
-                      const value = parseFloat(casesVal || "0") * casePrice + (hasEach ? parseFloat(eachesVal || "0") * eachPrice : 0);
+                      const totalCases = (parseFloat(casesVal || "0") || 0) + (hasEach ? (parseFloat(eachesVal || "0") || 0) / (item.caseQty ?? 1) : 0);
+                      const casePrice = parseFloat(item.price ?? "0") || 0;
+                      const eachPrice = item.eachPrice ? (parseFloat(item.eachPrice) || 0) : 0;
+                      const value = (parseFloat(casesVal || "0") || 0) * casePrice + (hasEach ? (parseFloat(eachesVal || "0") || 0) * eachPrice : 0);
                       const isSaving = saving[item.id];
                       return (
                         <div key={item.id} className={cn("p-4", bulkMode && selectedIds.has(item.id) && "bg-primary/5")}>
@@ -663,6 +702,38 @@ export default function CountSheet() {
                 className="flex-1 btn-big bg-primary text-primary-foreground disabled:opacity-60"
               >
                 {createSessionMutation.isPending ? "Starting…" : "Start Count"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      {deleteConfirm !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-card rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
+                <Trash2 size={20} className="text-red-600" />
+              </div>
+              <div>
+                <p className="font-semibold text-foreground">Delete Count Session?</p>
+                <p className="text-sm text-muted-foreground">This will permanently remove the session and all its count entries. This cannot be undone.</p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="flex-1 btn-big bg-muted text-foreground"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => deleteMutation.mutate({ id: deleteConfirm })}
+                disabled={deleteMutation.isPending}
+                className="flex-1 btn-big bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {deleteMutation.isPending ? "Deleting…" : "Delete"}
               </button>
             </div>
           </div>

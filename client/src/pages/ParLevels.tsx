@@ -82,8 +82,10 @@ function ParInput({
     if (e.key === "Enter") (e.target as HTMLInputElement).blur();
   }
 
-  const casePrice = item.price ? parseFloat(item.price) : null;
-  const eachPrice = item.eachPrice ? parseFloat(item.eachPrice) : null;
+  const casePriceRaw = item.price ? parseFloat(item.price) : null;
+  const casePrice = casePriceRaw !== null && !isNaN(casePriceRaw) ? casePriceRaw : null;
+  const eachPriceRaw = item.eachPrice ? parseFloat(item.eachPrice) : null;
+  const eachPrice = eachPriceRaw !== null && !isNaN(eachPriceRaw) ? eachPriceRaw : null;
   const anyDirty = parDirty || thresholdDirty;
 
   return (
@@ -407,6 +409,14 @@ export default function ParLevels() {
       {bulkMode && (
         <div className="bg-primary/5 border border-primary/20 rounded-2xl p-3 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
+            {/* Select All / Deselect All */}
+            <button
+              onClick={toggleSelectAll}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors active:scale-95"
+            >
+              {allFilteredSelected ? "Deselect All" : "Select All"}
+            </button>
+
             <span className="text-sm font-semibold text-primary">
               {selectedIds.size} selected
             </span>

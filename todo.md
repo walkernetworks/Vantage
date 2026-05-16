@@ -143,3 +143,11 @@
 - [x] "Fill All Cases" button: opens input, applies same case count to all selected items
 - [x] "Copy Down Cases" button: copies first selected item's case count to all other selected items
 - [x] Bulk save sends array of upsertEntry mutations in parallel
+
+## Round 7 Features & Fixes
+
+- [x] Bug fix: $NaN in count history — guard all parseFloat/price calculations against null/undefined/empty string values
+- [x] Count Sheet: add Select All / Deselect All button in bulk mode header
+- [x] Par Levels: add Select All / Deselect All button in bulk mode header (verified toggleSelectAll already existed)
+- [x] Count History: add Delete button on each session with confirmation dialog (admin-only, hover to reveal)
+- [x] Backend: add `counts.deleteSession` procedure (admin-only) — hard-deletes session and all its entries

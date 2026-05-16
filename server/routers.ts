@@ -13,6 +13,7 @@ import {
   calculateShortfall,
   completeCountSession,
   reopenCountSession,
+  deleteCountSession,
   createCateringRecipe,
   createCountSession,
   createItem,
@@ -220,6 +221,13 @@ const countsRouter = router({
   reopenSession: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(({ input }) => reopenCountSession(input.id)),
+
+  deleteSession: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(({ input, ctx }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      return deleteCountSession(input.id);
+    }),
 
   getEntries: protectedProcedure
     .input(z.object({ sessionId: z.number() }))

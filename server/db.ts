@@ -223,6 +223,14 @@ export async function reopenCountSession(id: number) {
   await db.update(countSessions).set({ completedAt: null }).where(eq(countSessions.id, id));
 }
 
+export async function deleteCountSession(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  // Delete all entries first (foreign key), then the session
+  await db.delete(countEntries).where(eq(countEntries.sessionId, id));
+  await db.delete(countSessions).where(eq(countSessions.id, id));
+}
+
 // ─── Count Entries ────────────────────────────────────────────────────────────
 
 export async function getCountEntries(sessionId: number) {

@@ -540,12 +540,12 @@ export default function ItemCatalog() {
                             )}
                           </div>
                           <div className="flex items-center gap-3 mt-2">
-                            {item.price && (
+                            {item.price && parseFloat(item.price) > 0 && (
                               <span className="text-sm font-semibold text-foreground">
-                                ${parseFloat(item.price).toFixed(2)}
-                                {(item as any).eachPrice && (
+                                ${(parseFloat(item.price) || 0).toFixed(2)}
+                                {(item as any).eachPrice && parseFloat((item as any).eachPrice) > 0 && (
                                   <span className="text-xs font-normal text-muted-foreground ml-1">
-                                    · Each: ${parseFloat((item as any).eachPrice).toFixed(2)}
+                                    · Each: ${(parseFloat((item as any).eachPrice) || 0).toFixed(2)}
                                   </span>
                                 )}
                               </span>
