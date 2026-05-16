@@ -187,3 +187,7 @@
 - [x] Fix: recalcAllEachPrices() backend function iterates all items and recomputes caseQty+eachPrice from packSize
 - [x] Fix: "Recalc Each Prices" admin button (÷ icon, amber) added to Item Catalog toolbar — run once after import to fix existing items
 - [x] Frontend: Count Sheet each mode already derives price client-side as casePrice/caseQty fallback when eachPrice is null
+
+## Round 13 — Bug Fixes
+
+- [x] Bug: delete count session broken — root cause was delete button hidden behind opacity-0/group-hover (invisible on mobile/touch). Fixed: button now always visible for admins as a Trash2 icon with proper tap target size next to each session chip.

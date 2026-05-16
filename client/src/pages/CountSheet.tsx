@@ -455,11 +455,11 @@ export default function CountSheet() {
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Previous Counts</p>
           <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1">
             {sessions.map((s) => (
-              <div key={s.id} className="relative shrink-0 flex items-center group">
+              <div key={s.id} className="relative shrink-0 flex items-center gap-1">
                 <button
                   onClick={() => setActiveSessionId(s.id)}
                   className={cn(
-                    "px-4 py-2 pr-8 rounded-xl text-sm font-semibold border transition-colors whitespace-nowrap",
+                    "px-4 py-2 rounded-xl text-sm font-semibold border transition-colors whitespace-nowrap",
                     activeSessionId === s.id
                       ? "bg-primary text-primary-foreground border-primary"
                       : "bg-card text-foreground border-border hover:bg-muted"
@@ -473,14 +473,14 @@ export default function CountSheet() {
                     <span className="ml-1.5 w-2 h-2 rounded-full bg-green-500 inline-block" title="Completed" />
                   )}
                 </button>
-                {/* Delete button — only shown to admins */}
+                {/* Delete button — always visible for admins */}
                 {user?.role === "admin" && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setDeleteConfirm(s.id); }}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 hover:text-red-600 text-muted-foreground"
+                    className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-red-100 hover:text-red-600 active:scale-95 transition-all shrink-0"
                     title="Delete this count session"
                   >
-                    <X size={11} />
+                    <Trash2 size={14} />
                   </button>
                 )}
               </div>
