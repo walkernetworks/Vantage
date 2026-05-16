@@ -3,6 +3,16 @@ import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { CATEGORY_ICONS, STORAGE_AREAS } from "../../../shared/constants";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   ArrowDownToLine,
   CheckCircle,
   CheckSquare,
@@ -774,36 +784,29 @@ export default function CountSheet() {
       )}
 
       {/* Delete Confirmation Dialog */}
-      {deleteConfirm !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-card rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
-                <Trash2 size={20} className="text-red-600" />
-              </div>
-              <div>
-                <p className="font-semibold text-foreground">Delete Count Session?</p>
-                <p className="text-sm text-muted-foreground">This will permanently remove the session and all its count entries. This cannot be undone.</p>
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setDeleteConfirm(null)}
-                className="flex-1 btn-big bg-muted text-foreground"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => deleteMutation.mutate({ id: deleteConfirm })}
-                disabled={deleteMutation.isPending}
-                className="flex-1 btn-big bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"
-              >
-                {deleteMutation.isPending ? "Deleting…" : "Delete"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AlertDialog open={deleteConfirm !== null} onOpenChange={(open) => { if (!open) setDeleteConfirm(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Trash2 size={18} className="text-red-600" />
+              Delete Count Session?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove the session and all its count entries. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteConfirm(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteConfirm !== null && deleteMutation.mutate({ id: deleteConfirm })}
+              disabled={deleteMutation.isPending}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleteMutation.isPending ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
