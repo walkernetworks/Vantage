@@ -152,7 +152,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
     <div className="min-h-screen bg-background flex flex-col">
       {/* ── Top Header ── */}
       <header className="sticky top-0 z-40 bg-card border-b border-border shadow-sm safe-top">
-        <div className="flex items-center justify-between h-14 px-4">
+        <div className="flex items-center justify-between h-16 px-4">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setSidebarOpen(true)}
@@ -165,7 +165,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
               <img
                 src="/manus-storage/B&BLogo-Transparent_340094db.png"
                 alt="Beignets & Brew"
-                className="h-12 w-auto object-contain"
+                className="h-14 w-auto object-contain max-w-[180px]"
               />
             </Link>
           </div>
@@ -206,7 +206,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
             <img
               src="/manus-storage/B&BLogo-Transparent_340094db.png"
               alt="Beignets & Brew"
-              className="h-14 w-auto object-contain"
+              className="h-20 w-auto object-contain max-w-[200px]"
             />
             <p className="text-xs text-muted-foreground truncate">{user?.name ?? "Employee"}</p>
           </div>

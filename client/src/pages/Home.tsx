@@ -78,8 +78,15 @@ export default function Home() {
   // ── Derived chart data ──────────────────────────────────────────────────────
 
   // Total inventory value
-  const totalInventoryValue =
-    metrics?.inventoryValueByCategory.reduce((sum, c) => sum + c.totalValue, 0) ?? 0;
+  // Filter out categories with $0 value (items with no price set) from the chart
+  const pricedCategories = (metrics?.inventoryValueByCategory ?? []).filter(
+    (c) => c.totalValue > 0
+  );
+  const unpricedCategories = (metrics?.inventoryValueByCategory ?? []).filter(
+    (c) => c.totalValue === 0
+  );
+  const totalInventoryValue = pricedCategories.reduce((sum, c) => sum + c.totalValue, 0);
+  const totalUnpricedItems = unpricedCategories.reduce((sum, c) => sum + c.itemCount, 0);
 
   // Price fluctuations: pivot by month, one series per vendor
   const vendors = Array.from(
@@ -108,9 +115,9 @@ export default function Home() {
     estimatedCost: { label: "Est. Order Cost", color: "#ff7a6e" },
   };
 
-  // Inventory donut
+  // Inventory donut — only priced categories
   const inventoryConfig: ChartConfig = Object.fromEntries(
-    (metrics?.inventoryValueByCategory ?? []).map((c, i) => [
+    pricedCategories.map((c, i) => [
       c.category,
       { label: c.category, color: BRAND_COLORS[i % BRAND_COLORS.length] },
     ])
@@ -189,15 +196,15 @@ export default function Home() {
                     Current value = price × par level per category
                   </p>
                 </div>
-                {(metrics?.inventoryValueByCategory.length ?? 0) === 0 ? (
-                  <EmptyChart message="No inventory data yet. Import items to see this chart." />
+                {pricedCategories.length === 0 ? (
+                  <EmptyChart message="No inventory data yet. Import items with prices to see this chart." />
                 ) : (
                   <div className="flex flex-col sm:flex-row items-center gap-4">
                     <div className="w-full sm:w-56 h-56 shrink-0">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                           <Pie
-                            data={metrics!.inventoryValueByCategory}
+                            data={pricedCategories}
                             dataKey="totalValue"
                             nameKey="category"
                             cx="50%"
@@ -206,7 +213,7 @@ export default function Home() {
                             outerRadius="80%"
                             paddingAngle={2}
                           >
-                            {metrics!.inventoryValueByCategory.map((entry, i) => (
+                            {pricedCategories.map((entry, i) => (
                               <Cell
                                 key={entry.category}
                                 fill={BRAND_COLORS[i % BRAND_COLORS.length]}
@@ -222,7 +229,7 @@ export default function Home() {
                       </ResponsiveContainer>
                     </div>
                     <div className="flex-1 space-y-2 w-full">
-                      {metrics!.inventoryValueByCategory.map((entry, i) => (
+                      {pricedCategories.map((entry, i) => (
                         <div key={entry.category} className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
                             <span
@@ -241,6 +248,11 @@ export default function Home() {
                           </div>
                         </div>
                       ))}
+                      {totalUnpricedItems > 0 && (
+                        <p className="text-xs text-muted-foreground pt-2 border-t border-border">
+                          {totalUnpricedItems} item{totalUnpricedItems !== 1 ? "s" : ""} have no price set and are excluded from this chart.
+                        </p>
+                      )}
                     </div>
                   </div>
                 )}
