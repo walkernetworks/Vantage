@@ -60,6 +60,7 @@ import {
 
 const itemInputSchema = z.object({
   name: z.string().min(1),
+  brand: z.string().optional(),
   category: z.string().min(1),
   vendor: z.string().min(1),
   packSize: z.string().optional(),

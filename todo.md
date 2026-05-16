@@ -226,3 +226,8 @@
 - [x] Color audit: sweep all pages/components for hardcoded colors and replace with brand palette CSS variables
 - [x] Remove Alcohol Module (page, route, nav item, router, tests)
 - [x] Universal CSV importer — single modal auto-detects PFG vs Webstaurant format
+
+## Round 19 — Import Fixes & Manual Add Item
+- [x] Remove divider/separator next to Import button in Item Catalog toolbar
+- [x] Unify Webstaurant import to run price-change detection (same as PFG), not just insert
+- [x] Add manual "Add Item" form to Item Catalog for alcohol and other non-order-guide items

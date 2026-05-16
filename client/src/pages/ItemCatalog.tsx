@@ -27,6 +27,7 @@ import { toast } from "sonner";
 
 type ItemForm = {
   name: string;
+  brand: string;
   category: string;
   vendor: string;
   packSize: string;
@@ -41,6 +42,7 @@ type ItemForm = {
 
 const emptyForm: ItemForm = {
   name: "",
+  brand: "",
   category: "",
   vendor: "",
   packSize: "",
@@ -325,16 +327,23 @@ export default function ItemCatalog() {
     setSelectedIds(new Set());
   }
 
-  const filtered = items.filter(
-    (item) =>
-      item.name.toLowerCase().includes(search.toLowerCase()) ||
-      item.category.toLowerCase().includes(search.toLowerCase()) ||
-      item.vendor.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = items.filter((item) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return (
+      item.name.toLowerCase().includes(q) ||
+      item.category.toLowerCase().includes(q) ||
+      item.vendor.toLowerCase().includes(q) ||
+      ((item as any).brand ?? "").toLowerCase().includes(q) ||
+      ((item as any).pfgProductNumber ?? "").toLowerCase().includes(q) ||
+      ((item as any).webstaurantItemNumber ?? "").toLowerCase().includes(q)
+    );
+  });
 
   function openEdit(item: (typeof items)[0]) {
     setForm({
       name: item.name,
+      brand: (item as any).brand ?? "",
       category: item.category,
       vendor: item.vendor,
       packSize: item.packSize ?? "",
@@ -357,6 +366,7 @@ export default function ItemCatalog() {
     }
     const data = {
       ...form,
+      brand: form.brand || undefined,
       price: form.price || undefined,
       parLevel: form.parLevel || "0",
       packSize: form.packSize || undefined,
@@ -410,14 +420,7 @@ export default function ItemCatalog() {
             >
               <Upload size={20} />
             </button>
-            <button
-              onClick={() => recalcEachPricesMutation.mutate()}
-              disabled={recalcEachPricesMutation.isPending}
-              className="p-3 rounded-xl bg-secondary text-secondary-foreground hover:bg-muted transition-colors active:scale-95 disabled:opacity-50"
-              title="Recalculate each prices from pack size (run once after import)"
-            >
-              {recalcEachPricesMutation.isPending ? <span className="text-xs font-bold">...</span> : <span className="text-xs font-bold">÷</span>}
-            </button>
+
             <button
               onClick={() => {
                 setForm(emptyForm);
@@ -701,6 +704,16 @@ export default function ItemCatalog() {
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder="e.g. House Blend Coffee"
+                className="form-input"
+              />
+            </FormField>
+
+            <FormField label="Brand / Manufacturer">
+              <input
+                type="text"
+                value={form.brand}
+                onChange={(e) => setForm({ ...form, brand: e.target.value })}
+                placeholder="e.g. Svedka, Tito's, Heineken"
                 className="form-input"
               />
             </FormField>
