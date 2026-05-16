@@ -237,55 +237,72 @@ const itemsRouter = router({
         ...sampleRows.map((r) => r.join(" | ")),
       ].join("\n");
 
-      const systemPrompt = `You are a data mapping assistant for a restaurant inventory system.
+      // ── Heuristic fallback: map columns by header name keywords ──────────────
+      function heuristicMapping(hdrs: string[]): Record<string, number> {
+        const m: Record<string, number> = {};
+        hdrs.forEach((h, i) => {
+          const lh = h.toLowerCase().replace(/[^a-z0-9 ]/g, " ").trim();
+          if (m.name === undefined && (lh.includes("product description") || lh.includes("item description") || lh.includes("description") || lh.includes("product name") || lh.includes("item name") || lh === "name")) m.name = i;
+          if (m.brand === undefined && (lh === "brand" || lh.includes("manufacturer") || lh.includes("brand name"))) m.brand = i;
+          if (m.price === undefined && (lh === "price" || lh.includes("unit price") || lh.includes("case price") || lh.includes("base price") || lh.includes("your price"))) m.price = i;
+          if (m.packSize === undefined && (lh.includes("pack size") || lh === "pack" || lh.includes("size"))) m.packSize = i;
+          if (m.unitOfMeasure === undefined && (lh === "uom" || lh === "unit" || lh.includes("unit of measure"))) m.unitOfMeasure = i;
+          if (m.storageArea === undefined && (lh.includes("storage") || lh.includes("location") || lh.includes("storage location"))) m.storageArea = i;
+          if (m.category === undefined && (lh.includes("category") || lh.includes("inventory category") || lh.includes("category name"))) m.category = i;
+          if (m.vendor === undefined && (lh === "vendor" || lh.includes("supplier") || lh.includes("distributor"))) m.vendor = i;
+        });
+        // Prefer "Inventory Category" (more specific) over "Category Name" for category
+        const invCatIdx = hdrs.findIndex(h => h.toLowerCase().includes("inventory category"));
+        if (invCatIdx !== -1) m.category = invCatIdx;
+        // Prefer "Full Product Description" over plain "Product Description" if available
+        const fullDescIdx = hdrs.findIndex(h => h.toLowerCase().includes("full product description"));
+        const descIdx = hdrs.findIndex(h => h.toLowerCase().includes("product description") && !h.toLowerCase().includes("full"));
+        if (descIdx !== -1) m.name = descIdx; // plain description is more reliable
+        if (fullDescIdx !== -1 && (hdrs[fullDescIdx] ?? "").trim()) m.name = descIdx !== -1 ? descIdx : fullDescIdx;
+        return m;
+      }
+
+      // Try heuristic first (fast, no LLM cost)
+      const heuristic = heuristicMapping(headers);
+      let mapping: Record<string, number> = heuristic;
+
+      // Only call LLM if heuristic couldn't find the name column
+      if (heuristic.name === undefined) {
+        const systemPrompt = `You are a data mapping assistant for a restaurant inventory system.
 You will be given a CSV header row and sample data rows from a vendor spreadsheet.
 Your job is to identify which column index (0-based) corresponds to each of these fields:
-- name: the product/item name or description (required)
+- name: the product/item name or description (REQUIRED - pick the most descriptive column)
 - brand: manufacturer or brand name
-- price: case price or unit price (a dollar amount)
+- price: case price or unit price (a dollar amount, may have $ prefix)
 - packSize: pack size string like "6/750 ML", "12/1 L", "2/12 PK"
 - unitOfMeasure: unit like CS, EA, PK, BT
 - storageArea: where the item is stored (e.g. Bar, Walk-In, Dry Storage, Freezer, Merchandiser)
 - category: product category (e.g. Beer, Wine, Liquor, Bakery, Dairy)
 - vendor: the vendor/distributor name
 
-Return ONLY a JSON object with field names as keys and column index numbers as values.
-If a field is not present, omit it from the response.
-For the "name" field, prefer the most descriptive product description column.
-Example response: {"name":4,"brand":5,"price":13,"packSize":6,"unitOfMeasure":7,"storageArea":1,"category":2}`;
+Return ONLY a valid JSON object. Field values must be integer column indices (0-based).
+Omit fields that are not clearly present. You MUST include "name".
+Example: {"name":4,"brand":5,"price":13,"packSize":6,"unitOfMeasure":7,"storageArea":1,"category":3}`;
 
-      const llmResponse = await invokeLLM({
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: `CSV header and sample data:\n${sampleTable}` },
-        ],
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "column_mapping",
-            strict: true,
-            schema: {
-              type: "object",
-              properties: {
-                name: { type: "number" },
-                brand: { type: "number" },
-                price: { type: "number" },
-                packSize: { type: "number" },
-                unitOfMeasure: { type: "number" },
-                storageArea: { type: "number" },
-                category: { type: "number" },
-                vendor: { type: "number" },
-              },
-              required: ["name"],
-              additionalProperties: false,
-            },
-          },
-        },
-      });
-
-      const rawContent = llmResponse?.choices?.[0]?.message?.content;
-      const mappingJson = (typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent)) ?? "{}";
-      const mapping: Record<string, number> = JSON.parse(mappingJson);
+        try {
+          const llmResponse = await invokeLLM({
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: `Map these columns (indices 0-${headers.length - 1}):\n${sampleTable}` },
+            ],
+          });
+          const rawContent = llmResponse?.choices?.[0]?.message?.content;
+          const contentStr = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent ?? "{}");
+          // Extract JSON from response (LLM may wrap in markdown code blocks)
+          const jsonMatch = contentStr.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (typeof parsed.name === "number") mapping = parsed;
+          }
+        } catch (e) {
+          console.error("[analyzeAndMapCsv] LLM mapping failed, using heuristic:", e);
+        }
+      }
 
       // Apply mapping to all data rows
       const dataRows = lines.slice(headerIdx + 1);
