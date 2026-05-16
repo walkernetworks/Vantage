@@ -54,6 +54,7 @@ import {
   setUserActive,
   recalcAllEachPrices,
   getDashboardMetrics,
+  bulkUpdateItems,
   type PfgImportRow,
   type WebstaurantImportRow,
   type UniversalImportRow,
@@ -117,6 +118,18 @@ const itemsRouter = router({
   bulkDelete: adminProcedure
     .input(z.object({ ids: z.array(z.number()).min(1) }))
     .mutation(({ input }) => bulkDeleteItems(input.ids)),
+
+  bulkUpdate: adminProcedure
+    .input(z.object({
+      ids: z.array(z.number()).min(1),
+      patch: z.object({
+        vendor: z.string().optional(),
+        category: z.string().optional(),
+        storageArea: z.string().optional(),
+        parLevel: z.number().optional(),
+      }),
+    }))
+    .mutation(({ input }) => bulkUpdateItems(input.ids, input.patch)),
 
   importCSV: adminProcedure
     .input(
@@ -385,6 +398,132 @@ Example: {"name":4,"brand":5,"price":13,"packSize":6,"unitOfMeasure":7,"storageA
         rows: mappedRows,
         detectedSource: looksLikeAlcohol ? "Alcohol" : "General",
       };
+    }),
+
+  // ── AI row enrichment: infer brand, clean name, parse pack size, normalize category/vendor ──
+  enrichImportRows: adminProcedure
+    .input(z.object({
+      rows: z.array(z.object({
+        name: z.string(),
+        brand: z.string().optional(),
+        packSize: z.string().optional(),
+        category: z.string().optional(),
+        vendor: z.string().optional(),
+        storageArea: z.string().optional(),
+        price: z.string().optional(),
+      })),
+      importSource: z.string().optional(), // hint: "PFG", "Webstaurant", "Alcohol", etc.
+    }))
+    .mutation(async ({ input }) => {
+      const { invokeLLM } = await import("./_core/llm");
+
+      const CANONICAL_CATEGORIES = ["Alcohol - 100","Alcohol - 130","Coffee","Bakery","Dairy","Dry Goods","Paper Goods","Produce","Protein","Syrups","Supplies","Other"];
+      const CANONICAL_VENDORS = ["PFG","Webstaurant","Savannah Distributing","United","Other"];
+      const CANONICAL_STORAGE = ["Dry Storage","Walk-In","Freezer","Bar","Other"];
+
+      const systemPrompt = `You are an expert restaurant inventory assistant with deep knowledge of food and beverage products, brands, and distributors.
+
+You will receive a JSON array of inventory items parsed from a vendor CSV. For each item, return an enriched version with:
+1. "cleanName": A clean, readable product name. Remove vendor codes, size suffixes (e.g. "12 OZ"), redundant words. Title case. Keep it concise.
+2. "brand": The manufacturer/brand name inferred from your product knowledge. Examples:
+   - "Tropicalia" → brand: "Creature Comforts" (it's a Creature Comforts beer)
+   - "Heineken" → brand: "Heineken"
+   - "Tito's Handmade Vodka" → brand: "Tito's"
+   - "Blue Moon Belgian White" → brand: "Blue Moon"
+   - "Jack Daniel's Tennessee Whiskey" → brand: "Jack Daniel's"
+   - If brand is already provided in the input, keep it unless clearly wrong.
+   - If you cannot determine the brand, return null.
+3. "caseQty": Integer number of individual units per case, parsed from packSize. Examples:
+   - "4/6/12 OZ" → 24 (4 packs × 6 cans)
+   - "6/4/12 OZ" → 24 (6 packs × 4 cans)
+   - "2/12 PK" → 24 (2 × 12)
+   - "12/750 ML" → 12 (12 bottles)
+   - "24 PK" → 24
+   - "6/750 ML" → 6
+   - "- 25/Case" → 25
+   - "1/50 LB" → 1
+   - If you cannot parse it, return null.
+4. "category": Must be exactly one of: ${CANONICAL_CATEGORIES.join(", ")}. Map the raw category to the closest match.
+5. "vendor": Must be exactly one of: ${CANONICAL_VENDORS.join(", ")}. Map raw vendor names:
+   - "UNITED", "United Distributors" → "Savannah Distributing" (they are the same distributor in Savannah, GA)
+   - "PFG", "Performance Food Group" → "PFG"
+   - "Webstaurant", "WebstaurantStore" → "Webstaurant"
+   - If unknown, return "Other"
+6. "storageArea": Must be exactly one of: ${CANONICAL_STORAGE.join(", ")}. Infer from category/name if not provided.
+
+Return a JSON array with one object per input row, in the same order. Each object: {"cleanName": string, "brand": string|null, "caseQty": number|null, "category": string, "vendor": string, "storageArea": string}`;
+
+      // Process in batches of 25 to stay within token limits
+      const BATCH_SIZE = 25;
+      const enriched: Array<{
+        cleanName: string;
+        brand: string | null;
+        caseQty: number | null;
+        category: string;
+        vendor: string;
+        storageArea: string;
+      }> = [];
+
+      for (let i = 0; i < input.rows.length; i += BATCH_SIZE) {
+        const batch = input.rows.slice(i, i + BATCH_SIZE);
+        const batchPayload = batch.map((r, idx) => ({
+          idx,
+          name: r.name,
+          brand: r.brand ?? null,
+          packSize: r.packSize ?? null,
+          category: r.category ?? null,
+          vendor: r.vendor ?? null,
+          storageArea: r.storageArea ?? null,
+        }));
+
+        try {
+          const llmResponse = await invokeLLM({
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: JSON.stringify(batchPayload) },
+            ],
+          });
+          const rawContent = llmResponse?.choices?.[0]?.message?.content;
+          const contentStr = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent ?? "[]");
+          const jsonMatch = contentStr.match(/\[\s*\{[\s\S]*\}\s*\]/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (Array.isArray(parsed) && parsed.length === batch.length) {
+              enriched.push(...parsed);
+              continue;
+            }
+          }
+        } catch (e) {
+          console.error("[enrichImportRows] LLM batch failed:", e);
+        }
+
+        // Fallback: return rows unchanged for this batch
+        for (const r of batch) {
+          enriched.push({
+            cleanName: r.name,
+            brand: r.brand ?? null,
+            caseQty: null,
+            category: r.category ?? "Other",
+            vendor: r.vendor ?? "Other",
+            storageArea: r.storageArea ?? "Dry Storage",
+          });
+        }
+      }
+
+      // Merge enriched data back into original rows
+      return input.rows.map((row, i) => {
+        const e = enriched[i];
+        if (!e) return row;
+        return {
+          ...row,
+          name: e.cleanName || row.name,
+          brand: e.brand ?? row.brand ?? undefined,
+          caseQty: e.caseQty ?? undefined,
+          category: e.category || row.category || "Other",
+          vendor: e.vendor || row.vendor || "Other",
+          storageArea: e.storageArea || row.storageArea || "Dry Storage",
+        };
+      });
     }),
 
   // Step 2: import the AI-mapped rows

@@ -25,6 +25,38 @@ export function parsePackSizeQty(packSize: string | null | undefined): number | 
   // Strip leading non-numeric prefix like "- " (Webstaurant format: "- 25/Case")
   const stripped = s.replace(/^[-\s]+/, "");
 
+  // Pattern 0: Multi-slash — "4/6/12 OZ", "6/4/12 OZ", "2/12 PK", "12/750 ML"
+  // Rules:
+  //   3+ numeric segments followed by a unit (OZ, ML, L, etc.) → multiply all but last (last is serving size)
+  //   2 numeric segments followed by a unit ("12/750 ML") → first number is case qty
+  //   2 numeric segments followed by PK/CT/EA → multiply both
+  const multiSlashMatch = stripped.match(/^((?:\d+\/)+)(\d+)\s*([A-Za-z]*)$/);
+  if (multiSlashMatch) {
+    const parts = stripped.split("/").map(p => parseFloat(p.replace(/[^\d.]/g, "")));
+    const unit = multiSlashMatch[3].toUpperCase();
+    const isSizeUnit = /^(OZ|ML|L|LT|LTR|GA|GAL|G|GR|LB|KG|CL|FL)$/i.test(unit);
+    const isCountUnit = /^(PK|CT|EA|PC|PCS|PACK|COUNT|EACH|CASE|CS)$/i.test(unit);
+    if (parts.length >= 2 && parts.every(p => !isNaN(p) && p > 0)) {
+      if (parts.length >= 3 && isSizeUnit) {
+        // "4/6/12 OZ" → 4×6=24 (last segment is serving size in oz)
+        const qty = parts.slice(0, -1).reduce((a, b) => a * b, 1);
+        if (!isNaN(qty) && qty > 0) return qty;
+      } else if (parts.length === 2 && isSizeUnit) {
+        // "12/750 ML" → 12 (first is case qty, second is bottle size)
+        const qty = parts[0];
+        if (!isNaN(qty) && qty > 0) return qty;
+      } else if (isCountUnit || !unit) {
+        // "2/12 PK" → 2×12=24, "24/1" → 24
+        const qty = parts.reduce((a, b) => a * b, 1);
+        if (!isNaN(qty) && qty > 0) return qty;
+      } else {
+        // Unknown unit — use first number as case qty
+        const qty = parts[0];
+        if (!isNaN(qty) && qty > 0) return qty;
+      }
+    }
+  }
+
   // Pattern 1: N/... — leading number before slash: "6/6oz", "24/1oz", "25/Case"
   const slashLeading = stripped.match(/^(\d+(?:\.\d+)?)\s*\//);
   if (slashLeading) {
@@ -39,8 +71,8 @@ export function parsePackSizeQty(packSize: string | null | undefined): number | 
     if (!isNaN(qty) && qty > 0) return qty;
   }
 
-  // Pattern 3: N CT / N EA / N PK — standalone count with unit suffix
-  const countUnit = stripped.match(/^(\d+(?:\.\d+)?)\s*(?:CT|EA|PK|PC|PCS|COUNT|EACH)\b/i);
+  // Pattern 3: N CT / N EA / N PK / N PACK — standalone count with unit suffix
+  const countUnit = stripped.match(/^(\d+(?:\.\d+)?)\s*(?:CT|EA|PK|PC|PCS|PACK|COUNT|EACH)\b/i);
   if (countUnit) {
     const qty = parseFloat(countUnit[1]);
     if (!isNaN(qty) && qty > 0) return qty;
@@ -1214,4 +1246,27 @@ export async function getDashboardMetrics() {
     })),
     orderCostTrend: orderCostData,
   };
+}
+
+// ─── Bulk Update Items ────────────────────────────────────────────────────────
+export async function bulkUpdateItems(
+  ids: number[],
+  patch: {
+    vendor?: string;
+    category?: string;
+    storageArea?: string;
+    parLevel?: number;
+  }
+): Promise<number> {
+  const db = await getDb();
+  if (!db || ids.length === 0) return 0;
+
+  const updateData: Record<string, unknown> = { updatedAt: new Date() };
+  if (patch.vendor !== undefined) updateData.vendor = patch.vendor;
+  if (patch.category !== undefined) updateData.category = patch.category;
+  if (patch.storageArea !== undefined) updateData.storageArea = patch.storageArea;
+  if (patch.parLevel !== undefined) updateData.parLevel = patch.parLevel;
+
+  await db.update(items).set(updateData).where(inArray(items.id, ids));
+  return ids.length;
 }

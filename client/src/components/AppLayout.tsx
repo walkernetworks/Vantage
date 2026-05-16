@@ -131,7 +131,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
           <div className="space-y-3">
             <div className="mx-auto w-72 max-w-full">
               <img
-                src="/manus-storage/B&BLogo-Transparent_340094db.png"
+                src="/manus-storage/BBLogo-Cropped_d8c3a53e.png"
                 alt="Beignets & Brew"
                 className="w-full h-auto object-contain"
               />
@@ -172,7 +172,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
             </button>
             <Link href="/" className="flex items-center">
               <img
-                src="/manus-storage/B&BLogo-Transparent_340094db.png"
+                src="/manus-storage/BBLogo-Cropped_d8c3a53e.png"
                 alt="Beignets & Brew"
                 className="h-16 w-auto object-contain"
                 style={{ maxWidth: "220px" }}
@@ -292,7 +292,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
         <div className="flex items-center justify-between p-5 border-b border-border">
           <div className="flex flex-col gap-2 min-w-0 flex-1">
             <img
-              src="/manus-storage/B&BLogo-Transparent_340094db.png"
+              src="/manus-storage/BBLogo-Cropped_d8c3a53e.png"
               alt="Beignets & Brew"
               className="h-24 w-auto object-contain"
               style={{ maxWidth: "210px" }}

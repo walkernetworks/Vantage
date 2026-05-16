@@ -14,6 +14,7 @@ import {
   Package,
   Plus,
   Search,
+  Sparkles,
   Square,
   Trash2,
   TrendingDown,
@@ -249,6 +250,8 @@ export default function ItemCatalog() {
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
+  const [bulkEditForm, setBulkEditForm] = useState({ vendor: "", category: "", storageArea: "", parLevel: "" });
 
   const recalcEachPricesMutation = trpc.items.recalcEachPrices.useMutation({
     onSuccess: (res) => {
@@ -307,6 +310,18 @@ export default function ItemCatalog() {
       setBulkDeleteConfirm(false);
       setBulkMode(false);
       toast.success(`${vars.ids.length} item${vars.ids.length === 1 ? '' : 's'} removed`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const bulkUpdateMutation = trpc.items.bulkUpdate.useMutation({
+    onSuccess: (count) => {
+      utils.items.list.invalidate();
+      setSelectedIds(new Set());
+      setShowBulkEdit(false);
+      setBulkMode(false);
+      setBulkEditForm({ vendor: "", category: "", storageArea: "", parLevel: "" });
+      toast.success(`Updated ${count} item${count === 1 ? '' : 's'}`);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -549,13 +564,22 @@ export default function ItemCatalog() {
             {selectedIds.size} selected
           </span>
           {selectedIds.size > 0 && (
-            <button
-              onClick={() => setBulkDeleteConfirm(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold hover:bg-destructive/90 active:scale-95 transition-all"
-            >
-              <Trash2 size={16} />
-              Delete {selectedIds.size}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowBulkEdit(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 active:scale-95 transition-all"
+              >
+                <Edit2 size={16} />
+                Edit {selectedIds.size}
+              </button>
+              <button
+                onClick={() => setBulkDeleteConfirm(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold hover:bg-destructive/90 active:scale-95 transition-all"
+              >
+                <Trash2 size={16} />
+                Delete {selectedIds.size}
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -878,6 +902,85 @@ export default function ItemCatalog() {
               className="flex-1 btn-big bg-destructive text-destructive-foreground disabled:opacity-60"
             >
               {deleteMutation.isPending ? "Removing…" : "Remove"}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Bulk Edit Modal ── */}
+      {showBulkEdit && (
+        <Modal title={`Edit ${selectedIds.size} Item${selectedIds.size === 1 ? '' : 's'}`} onClose={() => setShowBulkEdit(false)}>
+          <p className="text-sm text-muted-foreground mb-4">
+            Leave fields blank to keep existing values. Only filled fields will be updated.
+          </p>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Vendor</label>
+              <select
+                value={bulkEditForm.vendor}
+                onChange={(e) => setBulkEditForm((f) => ({ ...f, vendor: e.target.value }))}
+                className="w-full px-3 py-2 rounded-xl border border-input bg-background text-sm"
+              >
+                <option value="">— keep existing —</option>
+                {vendorNames.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Category</label>
+              <select
+                value={bulkEditForm.category}
+                onChange={(e) => setBulkEditForm((f) => ({ ...f, category: e.target.value }))}
+                className="w-full px-3 py-2 rounded-xl border border-input bg-background text-sm"
+              >
+                <option value="">— keep existing —</option>
+                {categoryNames.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Storage Area</label>
+              <select
+                value={bulkEditForm.storageArea}
+                onChange={(e) => setBulkEditForm((f) => ({ ...f, storageArea: e.target.value }))}
+                className="w-full px-3 py-2 rounded-xl border border-input bg-background text-sm"
+              >
+                <option value="">— keep existing —</option>
+                {storageAreaNames.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Par Level</label>
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                placeholder="e.g. 2 (leave blank to keep)"
+                value={bulkEditForm.parLevel}
+                onChange={(e) => setBulkEditForm((f) => ({ ...f, parLevel: e.target.value }))}
+                className="w-full px-3 py-2 rounded-xl border border-input bg-background text-sm"
+              />
+            </div>
+          </div>
+          <div className="flex gap-3 mt-6">
+            <button onClick={() => setShowBulkEdit(false)} className="flex-1 btn-big bg-muted text-foreground">
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                const patch: { vendor?: string; category?: string; storageArea?: string; parLevel?: number } = {};
+                if (bulkEditForm.vendor) patch.vendor = bulkEditForm.vendor;
+                if (bulkEditForm.category) patch.category = bulkEditForm.category;
+                if (bulkEditForm.storageArea) patch.storageArea = bulkEditForm.storageArea;
+                if (bulkEditForm.parLevel) patch.parLevel = parseFloat(bulkEditForm.parLevel);
+                if (Object.keys(patch).length === 0) {
+                  toast.error("Please fill in at least one field to update.");
+                  return;
+                }
+                bulkUpdateMutation.mutate({ ids: Array.from(selectedIds), patch });
+              }}
+              disabled={bulkUpdateMutation.isPending}
+              className="flex-1 btn-big bg-primary text-primary-foreground disabled:opacity-60"
+            >
+              {bulkUpdateMutation.isPending ? "Updating…" : `Update ${selectedIds.size} Items`}
             </button>
           </div>
         </Modal>
@@ -1692,7 +1795,7 @@ function detectFormat(text: string): DetectedFormat {
 }
 
 function UniversalImportModal({ onClose }: { onClose: () => void }) {
-  type Step = "upload" | "pfg-preview" | "web-preview" | "web-generating" | "ai-analyzing" | "ai-preview" | "result";
+  type Step = "upload" | "pfg-preview" | "web-preview" | "web-generating" | "ai-analyzing" | "ai-preview" | "ai-enriching" | "result";
   const [step, setStep] = useState<Step>("upload");
   const [format, setFormat] = useState<DetectedFormat>("ai");
   const [pfgRows, setPfgRows] = useState<PfgRow[]>([]);
@@ -1705,6 +1808,7 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const generateCleanName = trpc.items.generateCleanName.useMutation();
+  const enrichImportRows = trpc.items.enrichImportRows.useMutation();
 
   const importPfgMutation = trpc.items.importPfg.useMutation({
     onSuccess: (res) => { setResult(res as ImportResult); setStep("result"); },
@@ -1723,9 +1827,24 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
         setStep("upload");
         return;
       }
-      setAiRows(res.rows as AiMappedRow[]);
-      setAiSource(res.detectedSource ?? "Universal");
-      setStep("ai-preview");
+      const source = res.detectedSource ?? "Universal";
+      setAiSource(source);
+      // Now enrich the mapped rows with AI brand/name/packSize intelligence
+      setStep("ai-enriching");
+      enrichImportRows.mutate(
+        { rows: res.rows as AiMappedRow[], importSource: source },
+        {
+          onSuccess: (enriched) => {
+            setAiRows(enriched as AiMappedRow[]);
+            setStep("ai-preview");
+          },
+          onError: () => {
+            // Fallback: use unenriched rows
+            setAiRows(res.rows as AiMappedRow[]);
+            setStep("ai-preview");
+          },
+        }
+      );
     },
     onError: (e) => {
       toast.error("AI analysis failed: " + e.message);
@@ -1753,16 +1872,51 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
           toast.error("No valid rows found in this file.");
           return;
         }
-        setPfgRows(rows);
-        setStep("pfg-preview");
+        // Enrich PFG rows with AI brand/name intelligence
+        setStep("ai-enriching");
+        setAiSource("PFG");
+        enrichImportRows.mutate(
+          { rows: rows.map((r) => ({ name: r.name, brand: r.brand, packSize: r.packSize, category: r.category, vendor: "PFG", storageArea: r.storageArea, price: r.price })), importSource: "PFG" },
+          {
+            onSuccess: (enriched) => {
+              // Merge enriched data back into pfgRows
+              const merged = rows.map((r, i) => ({
+                ...r,
+                name: (enriched[i] as AiMappedRow)?.name ?? r.name,
+                brand: (enriched[i] as AiMappedRow)?.brand ?? r.brand,
+                category: (enriched[i] as AiMappedRow)?.category ?? r.category,
+                storageArea: (enriched[i] as AiMappedRow)?.storageArea ?? r.storageArea,
+              }));
+              setPfgRows(merged);
+              setStep("pfg-preview");
+            },
+            onError: () => { setPfgRows(rows); setStep("pfg-preview"); },
+          }
+        );
       } else if (detected === "webstaurant") {
         const rows = parseWebstaurantCsv(text);
         if (rows.length === 0) {
           toast.error("No valid rows found in this file.");
           return;
         }
-        setWebRows(rows);
-        setStep("web-preview");
+        // Enrich Webstaurant rows with AI brand/name intelligence
+        setStep("ai-enriching");
+        setAiSource("Webstaurant");
+        enrichImportRows.mutate(
+          { rows: rows.map((r) => ({ name: r.rawName, brand: r.brand, packSize: r.packSize, category: undefined, vendor: "Webstaurant", price: r.price })), importSource: "Webstaurant" },
+          {
+            onSuccess: (enriched) => {
+              const merged = rows.map((r, i) => ({
+                ...r,
+                cleanName: (enriched[i] as AiMappedRow)?.name ?? r.cleanName,
+                brand: (enriched[i] as AiMappedRow)?.brand ?? r.brand,
+              }));
+              setWebRows(merged);
+              setStep("web-preview");
+            },
+            onError: () => { setWebRows(rows); setStep("web-preview"); },
+          }
+        );
       } else {
         // Unknown format — send to AI for column mapping
         setStep("ai-analyzing");
@@ -2065,6 +2219,25 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
               Import {webRows.length} Items
             </button>
           </div>
+        </div>
+      )}
+
+      {/* AI enriching — brand/name/packSize enrichment in progress */}
+      {step === "ai-enriching" && (
+        <div className="space-y-5 py-4 text-center">
+          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+            <Sparkles size={28} className="text-primary animate-pulse" />
+          </div>
+          <div>
+            <p className="font-semibold text-foreground">AI Enriching Items…</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Inferring brands, parsing pack sizes, and cleaning item names.
+            </p>
+          </div>
+          <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
+            <div className="h-full bg-primary rounded-full animate-pulse" style={{ width: "70%" }} />
+          </div>
+          <p className="text-xs text-muted-foreground">Using AI product knowledge…</p>
         </div>
       )}
 

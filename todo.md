@@ -249,3 +249,13 @@
 - [x] Fix logo size — make it visibly larger in header and sidebar
 - [x] User dropdown menu in top-right (Account Settings, User Management admin-only, Sign Out)
 - [x] Account Settings page (display name, email, role badge)
+
+## Round 23 — Logo Fix, Pack Size Parsing, Bulk Edit
+- [x] Fix logo size — actually visible increase in header and sidebar
+- [x] Fix pack size parsing in CSV importer (4/6/12oz → total units → each price)
+- [ ] Bulk edit in Item Catalog — select multiple items, batch change vendor/category/storage/par
+
+## Round 24 — AI-Enriched Import for All CSV Formats
+- [ ] AI enrichment for all CSV imports: brand inference, pack size parsing, clean names, category suggestions
+- [ ] Bulk edit in Item Catalog (select multiple → change vendor/category/storage/par)
+- [ ] Logo size fix (cropped PNG already uploaded)
