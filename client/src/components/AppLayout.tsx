@@ -8,7 +8,6 @@ import {
   ChevronRight,
   ClipboardList,
   Coffee,
-  History,
   LogOut,
   Menu,
   Package,
@@ -40,9 +39,9 @@ const navItems: NavItem[] = [
   },
   {
     href: "/count",
-    label: "Count Sheet",
+    label: "Counts & History",
     icon: <ClipboardList size={22} />,
-    description: "Enter current stock counts",
+    description: "Enter counts & view history",
   },
   {
     href: "/catering",
@@ -71,13 +70,7 @@ const navItems: NavItem[] = [
     adminOnly: true,
     description: "Categories 100 & 130",
   },
-  {
-    href: "/count/history",
-    label: "Count History",
-    icon: <History size={22} />,
-    adminOnly: true,
-    description: "Past inventory sessions",
-  },
+
   {
     href: "/par-levels",
     label: "Par Levels",

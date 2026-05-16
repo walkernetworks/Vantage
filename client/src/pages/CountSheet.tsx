@@ -292,7 +292,7 @@ export default function CountSheet() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-serif text-foreground">Count Sheet</h1>
+          <h1 className="text-2xl font-serif text-foreground">Counts &amp; History</h1>
           {activeSessionId && sessionData?.session && (
             <p className="text-sm text-muted-foreground mt-0.5">
               {sessionData.session.name ?? "Inventory Count"} ·{" "}

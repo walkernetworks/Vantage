@@ -151,3 +151,9 @@
 - [x] Par Levels: add Select All / Deselect All button in bulk mode header (verified toggleSelectAll already existed)
 - [x] Count History: add Delete button on each session with confirmation dialog (admin-only, hover to reveal)
 - [x] Backend: add `counts.deleteSession` procedure (admin-only) — hard-deletes session and all its entries
+
+## Round 8 Nav Cleanup
+
+- [x] Remove Count History nav item from AppLayout sidebar
+- [x] Rename "Count Sheet" nav label to "Counts & History"
+- [x] Update page title inside CountSheet.tsx to match new label
