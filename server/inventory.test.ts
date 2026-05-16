@@ -211,42 +211,6 @@ describe("Orders Router", () => {
   });
 });
 
-describe("Alcohol Router", () => {
-  it("lists alcohol items", async () => {
-    const caller = appRouter.createCaller(makeAdminCtx());
-    const items = await caller.alcohol.list();
-    // Both mock items are returned (getAllItems mock returns 2, both filtered for isAlcohol in router)
-    expect(items.length).toBeGreaterThanOrEqual(1);
-    const alcoholItem = items.find((i) => i.alcoholCategory === "100");
-    expect(alcoholItem).toBeDefined();
-    expect(alcoholItem?.isAlcohol).toBe(true);
-  });
-
-  it("admin can add alcohol item with category 100", async () => {
-    const caller = appRouter.createCaller(makeAdminCtx());
-    await expect(
-      caller.alcohol.addItem({
-        name: "Borghetti Espresso Liqueur",
-        alcoholCategory: "100",
-        vendor: "Savannah Distributing",
-        packSize: "750 ML",
-        unitOfMeasure: "BTL",
-      })
-    ).resolves.toBeDefined();
-  });
-
-  it("admin can add alcohol item with category 130", async () => {
-    const caller = appRouter.createCaller(makeAdminCtx());
-    await expect(
-      caller.alcohol.addItem({
-        name: "Torani Vanilla Syrup",
-        alcoholCategory: "130",
-        vendor: "Webstaurant",
-      })
-    ).resolves.toBeDefined();
-  });
-});
-
 describe("Catering Router", () => {
   it("employee can access catering calculator", async () => {
     const caller = appRouter.createCaller(makeEmployeeCtx());

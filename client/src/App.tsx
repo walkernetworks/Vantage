@@ -9,7 +9,6 @@ import Home from "./pages/Home";
 import ItemCatalog from "./pages/ItemCatalog";
 import CountSheet from "./pages/CountSheet";
 import OrderingDashboard from "./pages/OrderingDashboard";
-import AlcoholManagement from "./pages/AlcoholManagement";
 import CateringCalculator from "./pages/CateringCalculator";
 import CountHistory from "./pages/CountHistory";
 import Settings from "./pages/Settings";
@@ -25,7 +24,6 @@ function Router() {
         <Route path="/count" component={CountSheet} />
         <Route path="/count/history" component={CountHistory} />
         <Route path="/orders" component={OrderingDashboard} />
-        <Route path="/alcohol" component={AlcoholManagement} />
         <Route path="/catering" component={CateringCalculator} />
         <Route path="/par-levels" component={ParLevels} />
         <Route path="/settings" component={Settings} />

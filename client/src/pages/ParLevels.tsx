@@ -141,7 +141,7 @@ function ParInput({
               {item.name}
             </span>
             {anyDirty && (
-              <span className="shrink-0 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+              <span className="shrink-0 text-xs bg-secondary text-secondary-foreground px-2 py-0.5 rounded-full">
                 unsaved
               </span>
             )}
@@ -184,13 +184,13 @@ function ParInput({
                 className={cn(
                   "w-16 h-10 text-center rounded-xl border text-sm font-semibold focus:outline-none focus:ring-2 transition-colors",
                   parDirty
-                    ? "border-amber-400 bg-amber-50 text-amber-900 focus:ring-amber-300"
+                    ? "border-primary bg-primary/5 text-foreground focus:ring-primary/30"
                     : "border-border bg-background text-foreground focus:ring-primary/30"
                 )}
               />
             </div>
             <div className="flex flex-col items-center gap-0.5">
-              <span className="text-xs text-amber-600 font-medium">Order ≤</span>
+              <span className="text-xs text-muted-foreground font-medium">Order ≤</span>
               <input
                 type="number"
                 min="0"
@@ -203,7 +203,7 @@ function ParInput({
                 className={cn(
                   "w-16 h-10 text-center rounded-xl border text-sm font-semibold focus:outline-none focus:ring-2 transition-colors",
                   thresholdDirty
-                    ? "border-amber-400 bg-amber-50 text-amber-900 focus:ring-amber-300"
+                    ? "border-primary bg-primary/5 text-foreground focus:ring-primary/30"
                     : "border-border bg-background text-foreground focus:ring-primary/30"
                 )}
               />
@@ -432,7 +432,7 @@ export default function ParLevels() {
           <div className="text-xs text-muted-foreground mt-0.5">Par levels set</div>
         </div>
         <div className="bg-card border border-border rounded-2xl px-4 py-3">
-          <div className="text-2xl font-bold text-amber-600">{unsetCount}</div>
+          <div className="text-2xl font-bold text-muted-foreground">{unsetCount}</div>
           <div className="text-xs text-muted-foreground mt-0.5">Not yet set</div>
         </div>
       </div>
@@ -558,7 +558,7 @@ export default function ParLevels() {
             className={cn(
               "h-10 px-4 rounded-xl border text-sm font-medium flex items-center gap-2 transition-colors active:scale-95",
               showOnlyUnset
-                ? "bg-amber-100 border-amber-300 text-amber-800"
+                ? "bg-secondary border-border text-secondary-foreground"
                 : "border-border bg-background text-muted-foreground"
             )}
           >

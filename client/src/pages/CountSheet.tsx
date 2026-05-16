@@ -496,9 +496,9 @@ export default function CountSheet() {
                   {s.name ?? "Count"} ·{" "}
                   {new Date(s.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                   {!s.completedAt ? (
-                    <span className="ml-1.5 w-2 h-2 rounded-full bg-amber-400 inline-block" title="In progress" />
+                    <span className="ml-1.5 w-2 h-2 rounded-full bg-primary inline-block" title="In progress" />
                   ) : (
-                    <span className="ml-1.5 w-2 h-2 rounded-full bg-green-500 inline-block" title="Completed" />
+                    <span className="ml-1.5 w-2 h-2 rounded-full bg-accent inline-block" title="Completed" />
                   )}
                 </button>
                 {/* Delete button — always visible for admins */}
@@ -548,7 +548,7 @@ export default function CountSheet() {
             <button
               onClick={() => completeMutation.mutate({ id: activeSessionId })}
               disabled={completeMutation.isPending}
-              className="ml-auto flex items-center gap-2 px-4 py-2 rounded-xl bg-green-600 text-white text-sm font-semibold hover:bg-green-700 transition-colors active:scale-95 disabled:opacity-60"
+              className="ml-auto flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-accent-foreground text-sm font-semibold hover:opacity-90 transition-colors active:scale-95 disabled:opacity-60"
             >
               <CheckCircle size={16} />
               {completeMutation.isPending ? "Completing…" : "Complete"}
@@ -557,7 +557,7 @@ export default function CountSheet() {
             <button
               onClick={() => reopenMutation.mutate({ id: activeSessionId })}
               disabled={reopenMutation.isPending}
-              className="ml-auto flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 transition-colors active:scale-95 disabled:opacity-60"
+              className="ml-auto flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary text-secondary-foreground text-sm font-semibold hover:bg-secondary/80 transition-colors active:scale-95 disabled:opacity-60"
             >
               <RefreshCw size={16} />
               {reopenMutation.isPending ? "Re-opening…" : "Re-open to Edit"}
@@ -642,7 +642,7 @@ export default function CountSheet() {
                   </div>
                   <div className="flex items-center gap-2">
                     {countedItems === groupItems.length && groupItems.length > 0 && (
-                      <CheckCircle size={16} className="text-green-600" />
+                      <CheckCircle size={16} className="text-accent" />
                     )}
                     {isCollapsed ? <ChevronRight size={18} className="text-muted-foreground" /> : <ChevronDown size={18} className="text-muted-foreground" />}
                   </div>
@@ -692,8 +692,8 @@ export default function CountSheet() {
                                     className={cn(
                                       "text-[10px] font-bold px-2 py-1 rounded-lg border-2 transition-all shrink-0 flex items-center gap-1",
                                       isEachMode
-                                        ? "bg-amber-100 text-amber-800 border-amber-400 hover:bg-amber-200 active:scale-95"
-                                        : "bg-sky-50 text-sky-700 border-sky-300 hover:bg-sky-100 active:scale-95"
+                                        ? "bg-secondary text-secondary-foreground border-primary/40 hover:bg-secondary/80 active:scale-95"
+                                        : "bg-muted text-foreground border-border hover:bg-muted/80 active:scale-95"
                                     )}
                                     title={isEachMode ? "Currently counting by Each — tap to switch to Case" : "Currently counting by Case — tap to switch to Each"}
                                   >
@@ -771,7 +771,7 @@ export default function CountSheet() {
                                 <button
                                   onClick={() => handleEachCountChange(item, String(parseFloat(eachesVal || "0") + 1))}
                                   disabled={isCompleted}
-                                  className="w-11 h-11 rounded-xl bg-amber-600 text-white text-xl font-bold flex items-center justify-center hover:opacity-90 transition-colors active:scale-95 disabled:opacity-40 shrink-0"
+                                  className="w-11 h-11 rounded-xl bg-accent text-accent-foreground text-xl font-bold flex items-center justify-center hover:opacity-90 transition-colors active:scale-95 disabled:opacity-40 shrink-0"
                                 >+</button>
                               </div>
                             )}
@@ -806,7 +806,7 @@ export default function CountSheet() {
                 autoFocus
               />
             </div>
-            <div className="bg-amber-50 rounded-xl p-3 text-sm text-amber-800">
+            <div className="bg-secondary/40 rounded-xl p-3 text-sm text-foreground">
               <strong>Note:</strong> Starting a new count doesn't affect previous session data.
             </div>
             <div className="flex gap-3">
@@ -830,7 +830,7 @@ export default function CountSheet() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <Trash2 size={18} className="text-red-600" />
+              <Trash2 size={18} className="text-destructive" />
               Delete Count Session?
             </AlertDialogTitle>
             <AlertDialogDescription>
@@ -842,7 +842,7 @@ export default function CountSheet() {
             <AlertDialogAction
               onClick={() => deleteConfirm !== null && deleteMutation.mutate({ id: deleteConfirm })}
               disabled={deleteMutation.isPending}
-              className="bg-red-600 hover:bg-red-700 text-white"
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
             >
               {deleteMutation.isPending ? "Deleting…" : "Delete"}
             </AlertDialogAction>

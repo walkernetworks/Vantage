@@ -40,8 +40,8 @@ export default function CountHistory() {
                     <span className={cn(
                       "text-xs font-semibold px-2 py-0.5 rounded-full flex items-center gap-1",
                       session.completedAt
-                        ? "bg-green-100 text-green-700"
-                        : "bg-amber-100 text-amber-700"
+                        ? "bg-accent/20 text-accent"
+                        : "bg-secondary text-secondary-foreground"
                     )}>
                       {session.completedAt
                         ? <><CheckCircle size={10} /> Completed</>

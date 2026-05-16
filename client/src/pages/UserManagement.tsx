@@ -65,7 +65,7 @@ export default function UserManagement() {
       </div>
 
       {/* How it works callout */}
-      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-900 space-y-1">
+      <div className="bg-secondary border border-border rounded-2xl p-4 text-sm text-foreground space-y-1">
         <p className="font-semibold">How access works</p>
         <p>
           A new team member must <strong>sign in once</strong> using their Manus account — this creates
@@ -87,7 +87,7 @@ export default function UserManagement() {
             <p className="text-xs text-muted-foreground font-medium">Admins</p>
           </div>
           <div className="bg-card rounded-2xl border border-border p-3 shadow-sm text-center">
-            <p className="text-2xl font-bold text-green-600">{users.filter((u) => u.isActive).length}</p>
+            <p className="text-2xl font-bold text-accent">{users.filter((u) => u.isActive).length}</p>
             <p className="text-xs text-muted-foreground font-medium">Active</p>
           </div>
         </div>
@@ -162,7 +162,7 @@ export default function UserManagement() {
                       </span>
                       {/* Active badge */}
                       {!user.isActive && (
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-destructive/10 text-destructive border border-destructive/20">
                           <XCircle size={10} />
                           Deactivated
                         </span>
@@ -221,8 +221,8 @@ export default function UserManagement() {
                       className={cn(
                         "flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-colors active:scale-95",
                         user.isActive
-                          ? "bg-muted text-foreground border-border hover:bg-red-50 hover:text-red-700 hover:border-red-200"
-                          : "bg-green-50 text-green-700 border-green-200 hover:bg-green-600 hover:text-white"
+                          ? "bg-muted text-foreground border-border hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
+                          : "bg-accent/20 text-accent border-accent/30 hover:bg-accent hover:text-accent-foreground"
                       )}
                     >
                       {user.isActive ? (

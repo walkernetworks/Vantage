@@ -242,7 +242,6 @@ export default function ItemCatalog() {
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState<ItemForm>(emptyForm);
   const [showImport, setShowImport] = useState(false);
-  const [showWebstaurantImport, setShowWebstaurantImport] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [bulkMode, setBulkMode] = useState(false);
@@ -407,21 +406,14 @@ export default function ItemCatalog() {
             <button
               onClick={() => setShowImport(true)}
               className="p-3 rounded-xl bg-secondary text-secondary-foreground hover:bg-muted transition-colors active:scale-95"
-              title="Import PFG Order Guide"
-            >
-              <Upload size={20} />
-            </button>
-            <button
-              onClick={() => setShowWebstaurantImport(true)}
-              className="p-3 rounded-xl bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors active:scale-95"
-              title="Import Webstaurant Order Guide"
+              title="Import Order Guide Spreadsheet (PFG or Webstaurant)"
             >
               <Upload size={20} />
             </button>
             <button
               onClick={() => recalcEachPricesMutation.mutate()}
               disabled={recalcEachPricesMutation.isPending}
-              className="p-3 rounded-xl bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors active:scale-95 disabled:opacity-50"
+              className="p-3 rounded-xl bg-secondary text-secondary-foreground hover:bg-muted transition-colors active:scale-95 disabled:opacity-50"
               title="Recalculate each prices from pack size (run once after import)"
             >
               {recalcEachPricesMutation.isPending ? <span className="text-xs font-bold">...</span> : <span className="text-xs font-bold">÷</span>}
@@ -902,21 +894,11 @@ export default function ItemCatalog() {
         </Modal>
       )}
 
-      {/* ── PFG Import Modal ── */}
+      {/* ── Universal Import Modal ── */}
       {showImport && (
-        <PfgImportModal
+        <UniversalImportModal
           onClose={() => {
             setShowImport(false);
-            utils.items.list.invalidate();
-          }}
-        />
-      )}
-
-      {/* ── Webstaurant Import Modal ── */}
-      {showWebstaurantImport && (
-        <WebstaurantImportModal
-          onClose={() => {
-            setShowWebstaurantImport(false);
             utils.items.list.invalidate();
           }}
         />
@@ -1655,6 +1637,407 @@ New items will be created; existing items (matched by Item #) will have prices u
           </button>
         </div>
       )}
+    </Modal>
+  );
+}
+
+// ── Universal Import Modal ─────────────────────────────────────────────────────
+// Detects PFG vs Webstaurant format automatically; falls back to a generic
+// "unknown format" message if neither is recognized.
+
+type DetectedFormat = "pfg" | "webstaurant" | "unknown";
+
+function detectFormat(text: string): DetectedFormat {
+  const cleaned = text.replace(/^\uFEFF/, "").trim();
+  const firstLines = cleaned.split(/\r?\n/).slice(0, 5).join("\n").toLowerCase();
+  if (firstLines.includes("category name") && firstLines.includes("product number")) {
+    return "pfg";
+  }
+  if (firstLines.includes("item number") && firstLines.includes("base price")) {
+    return "webstaurant";
+  }
+  // Webstaurant sometimes has a title row before the header
+  if (firstLines.includes("item number")) {
+    return "webstaurant";
+  }
+  return "unknown";
+}
+
+function UniversalImportModal({ onClose }: { onClose: () => void }) {
+  type Step = "upload" | "pfg-preview" | "web-preview" | "web-generating" | "result";
+  const [step, setStep] = useState<Step>("upload");
+  const [format, setFormat] = useState<DetectedFormat>("unknown");
+  const [pfgRows, setPfgRows] = useState<PfgRow[]>([]);
+  const [webRows, setWebRows] = useState<WebstaurantRow[]>([]);
+  const [filterCat, setFilterCat] = useState("");
+  const [result, setResult] = useState<ImportResult | null>(null);
+  const [aiProgress, setAiProgress] = useState(0);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const generateCleanName = trpc.items.generateCleanName.useMutation();
+
+  const importPfgMutation = trpc.items.importPfg.useMutation({
+    onSuccess: (res) => { setResult(res as ImportResult); setStep("result"); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const importWebMutation = trpc.items.importWebstaurant.useMutation({
+    onSuccess: (res) => { setResult(res as ImportResult); setStep("result"); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = (ev.target?.result as string) ?? "";
+      const detected = detectFormat(text);
+      setFormat(detected);
+
+      if (detected === "pfg") {
+        const rows = parsePfgCsv(text);
+        if (rows.length === 0) {
+          toast.error("No valid rows found in this file.");
+          return;
+        }
+        setPfgRows(rows);
+        setStep("pfg-preview");
+      } else if (detected === "webstaurant") {
+        const rows = parseWebstaurantCsv(text);
+        if (rows.length === 0) {
+          toast.error("No valid rows found in this file.");
+          return;
+        }
+        setWebRows(rows);
+        setStep("web-preview");
+      } else {
+        toast.error("Format not recognized. Please upload a PFG or Webstaurant Order Guide CSV.");
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  async function handleWebImportWithAI() {
+    setStep("web-generating");
+    setAiProgress(0);
+    const enhanced: WebstaurantRow[] = [];
+    for (let i = 0; i < webRows.length; i++) {
+      const row = webRows[i];
+      try {
+        const aiName = await generateCleanName.mutateAsync({
+          rawName: row.rawName,
+          brand: row.brand,
+          packSize: row.packSize,
+        });
+        enhanced.push({ ...row, cleanName: typeof aiName === "string" ? aiName : row.cleanName });
+      } catch {
+        enhanced.push(row);
+      }
+      setAiProgress(Math.round(((i + 1) / webRows.length) * 100));
+    }
+    importWebMutation.mutate({ rows: enhanced });
+  }
+
+  const formatLabel = format === "pfg" ? "PFG" : format === "webstaurant" ? "Webstaurant" : "";
+  const totalRows = format === "pfg" ? pfgRows.length : webRows.length;
+
+  // Shared result UI
+  function ResultStep() {
+    if (!result) return null;
+    return (
+      <div className="space-y-5">
+        <div className="bg-secondary border border-border rounded-xl p-3 text-center">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+            {formatLabel} Import Complete
+          </p>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-accent/10 border border-accent/30 rounded-xl p-3 text-center">
+            <p className="text-2xl font-bold text-accent">{result.created}</p>
+            <p className="text-xs font-semibold text-accent mt-0.5">New Items</p>
+          </div>
+          <div className="bg-ring/10 border border-ring/30 rounded-xl p-3 text-center">
+            <p className="text-2xl font-bold text-ring">{result.updated}</p>
+            <p className="text-xs font-semibold text-ring mt-0.5">Price Updated</p>
+          </div>
+          <div className="bg-muted border border-border rounded-xl p-3 text-center">
+            <p className="text-2xl font-bold text-muted-foreground">{result.unchanged}</p>
+            <p className="text-xs font-semibold text-muted-foreground mt-0.5">Unchanged</p>
+          </div>
+        </div>
+
+        {result.priceChanges.length > 0 ? (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={16} className="text-primary" />
+              <p className="font-semibold text-foreground text-sm">
+                Price Changes Detected ({result.priceChanges.length})
+              </p>
+            </div>
+            <div className="rounded-xl border border-border divide-y divide-border overflow-hidden">
+              <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 px-3 py-2 bg-muted text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                <span>Item</span>
+                <span className="text-right">Old</span>
+                <span className="text-right">New</span>
+                <span className="text-right">$ Diff</span>
+                <span className="text-right">%</span>
+              </div>
+              {result.priceChanges.map((change) => {
+                const diff = parseFloat(change.diff);
+                const pct = parseFloat(change.pctChange);
+                const isUp = diff > 0;
+                return (
+                  <div
+                    key={change.itemId}
+                    className={cn(
+                      "grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 px-3 py-3 items-center text-sm",
+                      isUp ? "bg-destructive/5" : "bg-accent/5"
+                    )}
+                  >
+                    <div className="min-w-0">
+                      <p className="font-semibold text-foreground truncate text-xs">{change.name}</p>
+                    </div>
+                    <span className="text-muted-foreground font-mono text-xs text-right">
+                      ${parseFloat(change.oldPrice).toFixed(2)}
+                    </span>
+                    <span className="font-bold font-mono text-xs text-right">
+                      ${parseFloat(change.newPrice).toFixed(2)}
+                    </span>
+                    <span className={cn(
+                      "text-xs font-bold font-mono px-1.5 py-0.5 rounded-md text-right",
+                      isUp ? "bg-destructive/10 text-destructive" : "bg-accent/20 text-accent"
+                    )}>
+                      {isUp ? "+" : ""}${Math.abs(diff).toFixed(2)}
+                    </span>
+                    <span className={cn(
+                      "text-xs font-bold px-1.5 py-0.5 rounded-md flex items-center gap-0.5 justify-end",
+                      isUp ? "bg-destructive/10 text-destructive" : "bg-accent/20 text-accent"
+                    )}>
+                      {isUp ? <ArrowUp size={10} /> : <ArrowDown size={10} />}
+                      {Math.abs(pct).toFixed(1)}%
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="bg-card border border-border rounded-xl p-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Net Price Impact</p>
+              {(() => {
+                const increases = result.priceChanges.filter((c) => parseFloat(c.diff) > 0);
+                const decreases = result.priceChanges.filter((c) => parseFloat(c.diff) < 0);
+                const totalIncrease = increases.reduce((s, c) => s + parseFloat(c.diff), 0);
+                const totalDecrease = decreases.reduce((s, c) => s + parseFloat(c.diff), 0);
+                return (
+                  <div className="space-y-1.5">
+                    {increases.length > 0 && (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="flex items-center gap-1.5 text-destructive">
+                          <TrendingUp size={14} />
+                          {increases.length} price increase{increases.length !== 1 ? "s" : ""}
+                        </span>
+                        <span className="font-bold text-destructive">+${totalIncrease.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {decreases.length > 0 && (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="flex items-center gap-1.5 text-accent">
+                          <TrendingDown size={14} />
+                          {decreases.length} price decrease{decreases.length !== 1 ? "s" : ""}
+                        </span>
+                        <span className="font-bold text-accent">${totalDecrease.toFixed(2)}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 bg-accent/10 border border-accent/30 rounded-xl p-4">
+            <CheckCircle2 size={20} className="text-accent shrink-0" />
+            <div>
+              <p className="font-semibold text-foreground text-sm">No price changes detected</p>
+              <p className="text-xs text-muted-foreground">All existing item prices match the imported guide.</p>
+            </div>
+          </div>
+        )}
+
+        <button onClick={onClose} className="w-full btn-big bg-primary text-primary-foreground">
+          Done
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <Modal title="Import Order Guide" onClose={onClose}>
+      {/* Step 1: Upload */}
+      {step === "upload" && (
+        <div className="space-y-5">
+          <div className="bg-secondary border border-border rounded-xl p-4 text-sm text-foreground space-y-1">
+            <p className="font-semibold flex items-center gap-2">
+              <Upload size={16} /> Universal Order Guide Importer
+            </p>
+            <p>Upload any order guide CSV — the system automatically detects whether it's a PFG or Webstaurant export.</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Supports: <span className="font-mono">PFG Order Guide</span> · <span className="font-mono">Webstaurant Saved List Export</span>
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Re-uploading will update prices and track changes. Historical price data is preserved.
+            </p>
+          </div>
+
+          <input ref={fileRef} type="file" accept=".csv,.txt" onChange={handleFileChange} className="hidden" />
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="w-full h-32 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 flex flex-col items-center justify-center gap-3 hover:bg-primary/10 transition-colors active:scale-[0.98]"
+          >
+            <Upload size={32} className="text-primary" />
+            <div className="text-center">
+              <p className="font-semibold text-foreground">Tap to select CSV file</p>
+              <p className="text-sm text-muted-foreground">PFG or Webstaurant · .csv or .txt</p>
+            </div>
+          </button>
+
+          <button onClick={onClose} className="w-full btn-big bg-muted text-foreground">
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* PFG Preview */}
+      {step === "pfg-preview" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-semibold text-foreground">{pfgRows.length} items found <span className="text-xs font-normal text-muted-foreground">(PFG format)</span></p>
+              <p className="text-sm text-muted-foreground">
+                New items will be created. Existing items (matched by Product #) will have pricing updated.
+              </p>
+            </div>
+          </div>
+
+          {/* Category filter chips */}
+          {(() => {
+            const uniqueCats = Array.from(new Set(pfgRows.map((r) => r.pfgCategory))).sort();
+            const displayRows = filterCat ? pfgRows.filter((r) => r.pfgCategory === filterCat) : pfgRows;
+            return (
+              <>
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={() => setFilterCat("")}
+                    className={cn("px-3 py-1 rounded-lg text-xs font-semibold transition-colors",
+                      !filterCat ? "bg-primary text-primary-foreground" : "bg-muted text-foreground")}
+                  >
+                    All ({pfgRows.length})
+                  </button>
+                  {uniqueCats.map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => setFilterCat(filterCat === cat ? "" : cat)}
+                      className={cn("px-3 py-1 rounded-lg text-xs font-semibold transition-colors",
+                        filterCat === cat ? "bg-primary text-primary-foreground" : "bg-muted text-foreground")}
+                    >
+                      {cat.split("-")[0]} ({pfgRows.filter((r) => r.pfgCategory === cat).length})
+                    </button>
+                  ))}
+                </div>
+                <div className="max-h-72 overflow-y-auto rounded-xl border border-border divide-y divide-border">
+                  {displayRows.map((row, i) => (
+                    <div key={i} className="flex items-center justify-between px-3 py-2.5 text-sm bg-card">
+                      <div className="flex-1 min-w-0 mr-3">
+                        <p className="font-semibold text-foreground truncate">{row.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {row.brand} · #{row.pfgProductNumber} · {row.packSize}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          → <span className="font-medium text-foreground">{row.category}</span>
+                          {row.storageArea && <span> · {row.storageArea}</span>}
+                        </p>
+                      </div>
+                      <span className="font-bold text-foreground shrink-0">${row.price}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
+
+          <div className="flex gap-3">
+            <button onClick={() => setStep("upload")} className="flex-1 btn-big bg-muted text-foreground">Back</button>
+            <button
+              onClick={() => importPfgMutation.mutate({ rows: pfgRows })}
+              disabled={importPfgMutation.isPending}
+              className="flex-1 btn-big bg-primary text-primary-foreground disabled:opacity-60"
+            >
+              {importPfgMutation.isPending ? "Importing…" : `Import ${pfgRows.length} Items`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Webstaurant Preview */}
+      {step === "web-preview" && (
+        <div className="space-y-4">
+          <div>
+            <p className="font-semibold text-foreground">{webRows.length} items found <span className="text-xs font-normal text-muted-foreground">(Webstaurant format)</span></p>
+            <p className="text-sm text-muted-foreground">
+              New items will be created; existing items (matched by Item #) will have prices updated.
+            </p>
+          </div>
+          <div className="max-h-72 overflow-y-auto rounded-xl border border-border divide-y divide-border">
+            {webRows.map((row, i) => (
+              <div key={i} className="px-3 py-2.5 text-sm bg-card">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-foreground truncate">{row.rawName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {row.brand} · #{row.webstaurantItemNumber}
+                      {row.packSize && ` · ${row.packSize}`}
+                    </p>
+                  </div>
+                  <span className="font-bold text-foreground shrink-0">${row.price}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-3">
+            <button onClick={() => setStep("upload")} className="flex-1 btn-big bg-muted text-foreground">Back</button>
+            <button
+              onClick={handleWebImportWithAI}
+              className="flex-1 btn-big bg-primary text-primary-foreground disabled:opacity-60"
+            >
+              Import {webRows.length} Items
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* AI name generation in progress */}
+      {step === "web-generating" && (
+        <div className="space-y-5 py-4 text-center">
+          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+            <Upload size={28} className="text-primary animate-bounce" />
+          </div>
+          <div>
+            <p className="font-semibold text-foreground">Importing items…</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Processing item {Math.round((aiProgress / 100) * webRows.length)} of {webRows.length}
+            </p>
+          </div>
+          <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
+            <div
+              className="h-full bg-primary rounded-full transition-all duration-300"
+              style={{ width: `${aiProgress}%` }}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">{aiProgress}% complete</p>
+        </div>
+      )}
+
+      {/* Result */}
+      {step === "result" && <ResultStep />}
     </Modal>
   );
 }

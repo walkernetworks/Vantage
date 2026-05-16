@@ -220,3 +220,9 @@
 - [x] Count Sheet search: expand to match brand, pfgProductNumber, webstaurantItemNumber, vendor, category, storageArea (not just item name)
 - [x] Brand color scheme: updated index.css CSS variables to B&B palette (Coral #ff7a6e, Pink #fcccc8, Mint #d3e5df, Emerald #57b296, Blue #73d0d1, Dark Gray #262626)
 - [x] Logo: uploaded B&BLogo-Transparent.png and placed in sidebar header, top header, and login page
+
+## Round 18 — Color Audit, Alcohol Removal, Universal Importer
+
+- [ ] Color audit: sweep all pages/components for hardcoded colors (amber, blue, green, etc.) and replace with brand palette CSS variables (primary=coral, accent=emerald, secondary=pink, muted=mint)
+- [x] Remove Alcohol Module (page, route, nav item, router, tests)
+- [x] Universal CSV importer — single modal auto-detects PFG vs Webstaurant format

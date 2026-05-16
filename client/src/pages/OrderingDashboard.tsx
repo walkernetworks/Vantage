@@ -194,8 +194,8 @@ export default function OrderingDashboard() {
           <h1 className="text-2xl font-serif text-foreground">Order Dashboard</h1>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             {activeSession ? (
-              <span className="inline-flex items-center gap-1.5 text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 rounded-full px-3 py-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold bg-secondary text-secondary-foreground border border-border rounded-full px-3 py-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary inline-block" />
                 {sessionLabel}
               </span>
             ) : (
@@ -208,7 +208,7 @@ export default function OrderingDashboard() {
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => exportToCSV(belowPar, selectedVendor, sessionLabel)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition-colors active:scale-95 shadow-sm"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-accent text-accent-foreground text-xs font-semibold hover:opacity-90 transition-colors active:scale-95 shadow-sm"
               title="Export to CSV spreadsheet"
             >
               <FileSpreadsheet size={14} />
@@ -216,7 +216,7 @@ export default function OrderingDashboard() {
             </button>
             <button
               onClick={() => exportToPDF(belowPar, selectedVendor, sessionLabel, totalCasesNeeded, totalOrderValue)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-600 text-white text-xs font-semibold hover:bg-red-700 transition-colors active:scale-95 shadow-sm"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 transition-colors active:scale-95 shadow-sm"
               title="Export to printable PDF"
             >
               <FileText size={14} />
@@ -258,22 +258,22 @@ export default function OrderingDashboard() {
       {/* Stats Row */}
       <div className="grid grid-cols-3 gap-3">
         <div className="bg-card rounded-2xl border border-border p-3 shadow-sm text-center">
-          <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center mx-auto mb-2">
-            <TrendingDown size={16} className="text-red-600" />
+          <div className="w-8 h-8 rounded-lg bg-destructive/10 flex items-center justify-center mx-auto mb-2">
+            <TrendingDown size={16} className="text-destructive" />
           </div>
-          <p className="text-xl font-bold text-red-600">{belowPar.length}</p>
+          <p className="text-xl font-bold text-destructive">{belowPar.length}</p>
           <p className="text-xs text-muted-foreground font-medium">Below Par</p>
         </div>
         <div className="bg-card rounded-2xl border border-border p-3 shadow-sm text-center">
-          <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center mx-auto mb-2">
-            <CheckCircle size={16} className="text-green-600" />
+          <div className="w-8 h-8 rounded-lg bg-accent/20 flex items-center justify-center mx-auto mb-2">
+            <CheckCircle size={16} className="text-accent" />
           </div>
-          <p className="text-xl font-bold text-green-600">{atParCount}</p>
+          <p className="text-xl font-bold text-accent">{atParCount}</p>
           <p className="text-xs text-muted-foreground font-medium">At Par</p>
         </div>
         <div className="bg-card rounded-2xl border border-border p-3 shadow-sm text-center">
-          <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center mx-auto mb-2">
-            <ShoppingCart size={16} className="text-blue-600" />
+          <div className="w-8 h-8 rounded-lg bg-ring/20 flex items-center justify-center mx-auto mb-2">
+            <ShoppingCart size={16} className="text-ring" />
           </div>
           <p className="text-xl font-bold text-foreground">{totalCasesNeeded}</p>
           <p className="text-xs text-muted-foreground font-medium">Cases Needed</p>
@@ -282,14 +282,14 @@ export default function OrderingDashboard() {
 
       {/* Order Value Banner */}
       {belowPar.length > 0 && totalOrderValue > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center justify-between">
+        <div className="bg-secondary border border-border rounded-2xl p-4 flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Estimated Order Value</p>
-            <p className="text-2xl font-serif font-bold text-amber-900 mt-0.5">
+            <p className="text-xs font-semibold text-secondary-foreground uppercase tracking-wider">Estimated Order Value</p>
+            <p className="text-2xl font-serif font-bold text-foreground mt-0.5">
               ${totalOrderValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
           </div>
-          <AlertTriangle size={32} className="text-amber-500" />
+          <AlertTriangle size={32} className="text-primary" />
         </div>
       )}
 
@@ -300,7 +300,7 @@ export default function OrderingDashboard() {
         </div>
       ) : belowPar.length === 0 ? (
         <div className="text-center py-16 space-y-3">
-          <CheckCircle size={48} className="mx-auto text-green-500" />
+          <CheckCircle size={48} className="mx-auto text-accent" />
           <div>
             <p className="font-semibold text-foreground">All Items at Par!</p>
             <p className="text-sm text-muted-foreground mt-1">
@@ -348,11 +348,11 @@ export default function OrderingDashboard() {
                       </div>
                     </div>
                     <div className="text-right shrink-0">
-                      <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-center min-w-[72px]">
-                        <p className="text-2xl font-bold text-red-700">
+                      <div className="bg-primary/10 border border-primary/30 rounded-xl px-3 py-2 text-center min-w-[72px]">
+                        <p className="text-2xl font-bold text-primary">
                           {Math.ceil(item.casesNeeded)}
                         </p>
-                        <p className="text-xs font-semibold text-red-600">Cases</p>
+                        <p className="text-xs font-semibold text-primary">Cases</p>
                       </div>
                     </div>
                   </div>
@@ -404,7 +404,7 @@ export default function OrderingDashboard() {
                     {item.orderThreshold && (
                       <div className="flex items-center gap-1.5">
                         <span className="text-muted-foreground">Order at:</span>
-                        <span className="font-semibold text-amber-700">
+                        <span className="font-semibold text-foreground">
                           ≤{parseFloat(item.orderThreshold).toFixed(0)} cs
                         </span>
                       </div>
@@ -421,14 +421,14 @@ export default function OrderingDashboard() {
                   <div className="mt-3">
                     <div className="h-2 bg-muted rounded-full overflow-hidden relative">
                       <div
-                        className="h-full bg-red-400 rounded-full transition-all"
+                        className="h-full bg-primary rounded-full transition-all"
                         style={{
                           width: `${Math.min(100, (parseFloat(item.currentStock) / Math.max(0.01, parseFloat(item.parLevel ?? "1"))) * 100)}%`,
                         }}
                       />
                       {item.orderThreshold && (
                         <div
-                          className="absolute top-0 h-full w-0.5 bg-amber-500"
+                          className="absolute top-0 h-full w-0.5 bg-foreground/40"
                           style={{
                             left: `${Math.min(100, (parseFloat(item.orderThreshold) / Math.max(0.01, parseFloat(item.parLevel ?? "1"))) * 100)}%`,
                           }}
@@ -438,7 +438,7 @@ export default function OrderingDashboard() {
                     <div className="flex justify-between text-xs text-muted-foreground mt-1">
                       <span>0</span>
                       {item.orderThreshold && (
-                        <span className="text-amber-600">≤{parseFloat(item.orderThreshold).toFixed(0)}</span>
+                        <span className="text-muted-foreground">≤{parseFloat(item.orderThreshold).toFixed(0)}</span>
                       )}
                       <span>Par {Math.round(parseFloat(item.parLevel ?? "0"))}</span>
                     </div>

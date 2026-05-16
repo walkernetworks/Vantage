@@ -2,14 +2,12 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import {
-  Beer,
   Calculator,
   ChevronRight,
   ClipboardList,
   Package,
   ShoppingCart,
   TrendingDown,
-  TrendingUp,
 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -62,19 +60,19 @@ export default function Home() {
             label="Items"
             value={totalItems}
             icon={<Package size={18} />}
-            color="bg-blue-50 text-blue-700"
+            color="bg-muted text-foreground"
           />
           <StatCard
             label="Sessions"
             value={totalSessions}
             icon={<ClipboardList size={18} />}
-            color="bg-amber-50 text-amber-700"
+            color="bg-secondary text-secondary-foreground"
           />
           <StatCard
             label="Below Par"
             value={belowParCount}
             icon={<TrendingDown size={18} />}
-            color={belowParCount > 0 ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"}
+            color={belowParCount > 0 ? "bg-destructive/10 text-destructive" : "bg-accent/20 text-accent"}
           />
         </div>
       )}
@@ -90,8 +88,8 @@ export default function Home() {
               className={cn(
                 "text-xs font-semibold px-2 py-0.5 rounded-full",
                 latestSession.completedAt
-                  ? "bg-green-100 text-green-700"
-                  : "bg-amber-100 text-amber-700"
+                  ? "bg-accent/20 text-accent"
+                  : "bg-secondary text-secondary-foreground"
               )}
             >
               {latestSession.completedAt ? "Completed" : "In Progress"}
@@ -130,7 +128,7 @@ export default function Home() {
             icon={<ClipboardList size={24} />}
             title="Count Sheet"
             description="Enter current stock for all items"
-            color="bg-amber-500"
+            iconBg="bg-primary"
             primary
           />
           <QuickActionCard
@@ -138,7 +136,7 @@ export default function Home() {
             icon={<Calculator size={24} />}
             title="Catering Calculator"
             description="Check stock for large orders"
-            color="bg-teal-600"
+            iconBg="bg-accent"
           />
           {isAdmin && (
             <>
@@ -151,22 +149,15 @@ export default function Home() {
                     ? `${belowParCount} items below par — action needed`
                     : "All items at or above par"
                 }
-                color="bg-blue-600"
+                iconBg="bg-ring"
                 badge={belowParCount > 0 ? belowParCount : undefined}
-              />
-              <QuickActionCard
-                href="/alcohol"
-                icon={<Beer size={24} />}
-                title="Alcohol Module"
-                description="Manage categories 100 & 130"
-                color="bg-purple-600"
               />
               <QuickActionCard
                 href="/catalog"
                 icon={<Package size={24} />}
                 title="Item Catalog"
                 description="Add, edit, or import items"
-                color="bg-slate-600"
+                iconBg="bg-muted-foreground/60"
               />
             </>
           )}
@@ -203,7 +194,7 @@ function QuickActionCard({
   icon,
   title,
   description,
-  color,
+  iconBg,
   primary,
   badge,
 }: {
@@ -211,7 +202,7 @@ function QuickActionCard({
   icon: React.ReactNode;
   title: string;
   description: string;
-  color: string;
+  iconBg: string;
   primary?: boolean;
   badge?: number;
 }) {
@@ -228,10 +219,10 @@ function QuickActionCard({
         <div
           className={cn(
             "w-12 h-12 rounded-xl flex items-center justify-center shrink-0",
-            primary ? "bg-white/20" : color
+            primary ? "bg-white/20" : iconBg
           )}
         >
-          <span className={primary ? "text-primary-foreground" : "text-white"}>{icon}</span>
+          <span className="text-white">{icon}</span>
         </div>
         <div className="flex-1 min-w-0">
           <p className={cn("font-semibold text-base", primary ? "text-primary-foreground" : "text-foreground")}>

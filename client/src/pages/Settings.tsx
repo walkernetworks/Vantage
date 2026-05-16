@@ -113,7 +113,7 @@ function SettingsSection({
                   />
                   <button
                     onClick={confirmEdit}
-                    className="w-9 h-9 rounded-xl bg-green-100 text-green-700 flex items-center justify-center active:scale-95 transition-transform"
+                    className="w-9 h-9 rounded-xl bg-accent/20 text-accent flex items-center justify-center active:scale-95 transition-transform"
                     title="Save"
                   >
                     <Check size={16} />

@@ -338,29 +338,29 @@ export default function CateringCalculator() {
                           </p>
                         </div>
                         {shortItems.length > 0
-                          ? <AlertTriangle size={32} className="text-red-500 shrink-0" />
-                          : <CheckCircle size={32} className="text-green-500 shrink-0" />
+                          ? <AlertTriangle size={32} className="text-destructive shrink-0" />
+                          : <CheckCircle size={32} className="text-accent shrink-0" />
                         }
                       </div>
 
                       {/* Shortfall Items */}
                       {shortItems.length > 0 && (
                         <div className="space-y-2">
-                          <h4 className="text-sm font-semibold text-red-700 uppercase tracking-wider px-1">
+                          <h4 className="text-sm font-semibold text-destructive uppercase tracking-wider px-1">
                             Items Short
                           </h4>
                           {shortItems.map((item) => (
-                            <div key={item.itemId} className="shortfall-row rounded-2xl border border-red-200 p-4">
+                            <div key={item.itemId} className="shortfall-row rounded-2xl border border-destructive/30 p-4">
                               <div className="flex items-start justify-between gap-3">
                                 <div className="flex-1">
                                   <p className="font-semibold text-foreground">{item.itemName}</p>
                                   <p className="text-xs text-muted-foreground mt-0.5">{item.category}</p>
                                 </div>
                                 <div className="text-right shrink-0">
-                                  <p className="text-lg font-bold text-red-700">
+                                  <p className="text-lg font-bold text-destructive">
                                     −{item.shortfall % 1 === 0 ? item.shortfall : item.shortfall.toFixed(2)} {item.unit ?? "units"}
                                   </p>
-                                  <p className="text-xs text-red-600">short</p>
+                                  <p className="text-xs text-destructive">short</p>
                                 </div>
                               </div>
                               <div className="mt-2 flex items-center gap-4 text-sm">
@@ -373,13 +373,13 @@ export default function CateringCalculator() {
                               </div>
                               {/* Progress bar */}
                               <div className="mt-2">
-                                <div className="h-2 bg-red-100 rounded-full overflow-hidden">
+                                <div className="h-2 bg-destructive/10 rounded-full overflow-hidden">
                                   <div
-                                    className="h-full bg-red-400 rounded-full"
+                                    className="h-full bg-destructive rounded-full"
                                     style={{ width: `${Math.min(100, (item.currentStock / item.quantityNeeded) * 100)}%` }}
                                   />
                                 </div>
-                                <p className="text-xs text-red-600 mt-1">
+                                <p className="text-xs text-destructive mt-1">
                                   {Math.round((item.currentStock / item.quantityNeeded) * 100)}% of needed
                                 </p>
                               </div>
@@ -391,7 +391,7 @@ export default function CateringCalculator() {
                       {/* OK Items */}
                       {okItems.length > 0 && (
                         <div className="space-y-2">
-                          <h4 className="text-sm font-semibold text-green-700 uppercase tracking-wider px-1">
+                          <h4 className="text-sm font-semibold text-accent uppercase tracking-wider px-1">
                             Items OK
                           </h4>
                           {okItems.map((item) => (
@@ -402,7 +402,7 @@ export default function CateringCalculator() {
                                   Need {item.quantityNeeded % 1 === 0 ? item.quantityNeeded : item.quantityNeeded.toFixed(2)} · Have {item.currentStock}
                                 </p>
                               </div>
-                              <CheckCircle size={20} className="text-green-500 shrink-0" />
+                              <CheckCircle size={20} className="text-accent shrink-0" />
                             </div>
                           ))}
                         </div>

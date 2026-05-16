@@ -42,10 +42,10 @@ export const ALCOHOL_CATEGORIES = ["100", "130"] as const;
 export type AlcoholCategory = (typeof ALCOHOL_CATEGORIES)[number];
 
 export const VENDOR_COLORS: Record<string, string> = {
-  PFG: "bg-blue-100 text-blue-800",
-  Webstaurant: "bg-purple-100 text-purple-800",
-  "Savannah Distributing": "bg-amber-100 text-amber-800",
-  Other: "bg-gray-100 text-gray-700",
+  PFG: "bg-ring/20 text-ring",
+  Webstaurant: "bg-accent/20 text-accent",
+  "Savannah Distributing": "bg-secondary text-secondary-foreground",
+  Other: "bg-muted text-muted-foreground",
 };
 
 export const CATEGORY_ICONS: Record<string, string> = {

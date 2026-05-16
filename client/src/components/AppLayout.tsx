@@ -2,7 +2,6 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import { cn } from "@/lib/utils";
 import {
-  Beer,
   BookOpen,
   Calculator,
   ChevronRight,
@@ -62,14 +61,6 @@ const navItems: NavItem[] = [
     adminOnly: true,
     description: "Below-par vendor orders",
   },
-  {
-    href: "/alcohol",
-    label: "Alcohol Module",
-    icon: <Beer size={22} />,
-    adminOnly: true,
-    description: "Categories 100 & 130",
-  },
-
   {
     href: "/par-levels",
     label: "Par Levels",

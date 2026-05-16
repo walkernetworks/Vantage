@@ -432,7 +432,6 @@ export const appRouter = router({
   items: itemsRouter,
   counts: countsRouter,
   orders: ordersRouter,
-  alcohol: alcoholRouter,
   catering: cateringRouter,
   settings: settingsRouter,
   adminUsers: adminUsersRouter,
