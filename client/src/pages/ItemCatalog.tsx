@@ -1676,7 +1676,8 @@ type AiMappedRow = {
 function detectFormat(text: string): DetectedFormat {
   const cleaned = text.replace(/^\uFEFF/, "").trim();
   const firstLines = cleaned.split(/\r?\n/).slice(0, 5).join("\n").toLowerCase();
-  if (firstLines.includes("category name") && firstLines.includes("product number")) {
+  // PFG files have a unique "Custom Product Description" column
+  if (firstLines.includes("custom product description") && firstLines.includes("product number")) {
     return "pfg";
   }
   if (firstLines.includes("item number") && (firstLines.includes("base price") || firstLines.includes("vendor"))) {
