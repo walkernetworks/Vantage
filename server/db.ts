@@ -266,11 +266,14 @@ export async function recalcAllEachPrices() {
   const allItems = await db.select().from(items);
   let updated = 0;
   for (const item of allItems) {
-    const caseQty = item.caseQty ?? parsePackSizeQty(item.packSize);
+    // Always recompute from packSize string — ignore stored caseQty so stale values get corrected
+    const caseQty = parsePackSizeQty(item.packSize);
     const eachPrice = computeEachPrice(item.price, caseQty);
-    if (caseQty !== item.caseQty || (eachPrice && eachPrice !== item.eachPrice)) {
+    const newCaseQty = caseQty ?? item.caseQty;
+    const newEachPrice = eachPrice ?? item.eachPrice;
+    if (newCaseQty !== item.caseQty || newEachPrice !== item.eachPrice) {
       await db.update(items)
-        .set({ caseQty: caseQty ?? item.caseQty, eachPrice: eachPrice ?? item.eachPrice })
+        .set({ caseQty: newCaseQty, eachPrice: newEachPrice })
         .where(eq(items.id, item.id));
       updated++;
     }

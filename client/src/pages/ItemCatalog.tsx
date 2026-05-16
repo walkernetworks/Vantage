@@ -13,6 +13,7 @@ import {
   Minus,
   Package,
   Plus,
+  RefreshCw,
   Search,
   Sparkles,
   Square,
@@ -434,6 +435,14 @@ export default function ItemCatalog() {
               title="Import Order Guide Spreadsheet (PFG or Webstaurant)"
             >
               <Upload size={20} />
+            </button>
+            <button
+              onClick={() => recalcEachPricesMutation.mutate()}
+              disabled={recalcEachPricesMutation.isPending}
+              className="p-3 rounded-xl bg-secondary text-secondary-foreground hover:bg-muted transition-colors active:scale-95 disabled:opacity-50"
+              title="Recalculate each prices from pack size for all items"
+            >
+              <RefreshCw size={20} className={recalcEachPricesMutation.isPending ? 'animate-spin' : ''} />
             </button>
 
             <button
