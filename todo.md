@@ -231,3 +231,4 @@
 - [x] Remove divider/separator next to Import button in Item Catalog toolbar
 - [x] Unify Webstaurant import to run price-change detection (same as PFG), not just insert
 - [x] Add manual "Add Item" form to Item Catalog for alcohol and other non-order-guide items
+- [x] Apply Comfortaa as universal font across all text, headings, buttons, and inputs
