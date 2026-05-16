@@ -94,6 +94,11 @@ export default function CountSheet() {
     onError: (e) => toast.error(e.message),
   });
 
+  const setCountModeMutation = trpc.items.setCountMode.useMutation({
+    onSuccess: () => { utils.items.list.invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+
   const deleteMutation = trpc.counts.deleteSession.useMutation({
     onSuccess: () => {
       setDeleteConfirm(null);
@@ -108,6 +113,7 @@ export default function CountSheet() {
   // Load existing counts into local state when session data loads
   // The DB stores total cases (cases + eaches/caseQty). We display the integer part as cases
   // and the fractional remainder * caseQty as eaches.
+  // For 'each' mode items, the DB stores eaches directly (no case conversion).
   useEffect(() => {
     if (sessionData?.entries && allItems.length > 0) {
       const caseMap: Record<number, string> = {};
@@ -117,7 +123,11 @@ export default function CountSheet() {
         const item = itemById.get(e.itemId);
         const total = parseFloat(e.quantity);
         const caseQty = item?.caseQty;
-        if (caseQty && caseQty > 1) {
+        const isEachMode = item?.countMode === "each";
+        if (isEachMode) {
+          // In each mode, quantity stored is eaches
+          eachMap[e.itemId] = total > 0 ? String(total) : "";
+        } else if (caseQty && caseQty > 1) {
           const cases = Math.floor(total);
           const eaches = Math.round((total - cases) * caseQty);
           caseMap[e.itemId] = cases > 0 ? String(cases) : "";
@@ -142,20 +152,29 @@ export default function CountSheet() {
   const saveTimer = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
 
   // Combined total in cases = cases + (eaches / caseQty)
-  function computeTotalCases(itemId: number, caseQty: number | null, casesVal: string, eachesVal: string): string {
+  // For 'each' mode items, quantity IS eaches (no case conversion)
+  function computeStoredQuantity(
+    item: { id: number; caseQty: number | null; countMode?: string | null },
+    casesVal: string,
+    eachesVal: string
+  ): string {
+    if (item.countMode === "each") {
+      // Store eaches directly
+      return String(parseFloat(eachesVal || "0") || 0);
+    }
     const cases = parseFloat(casesVal || "0");
     const eaches = parseFloat(eachesVal || "0");
-    if (caseQty && caseQty > 1 && eaches > 0) {
-      return String(cases + eaches / caseQty);
+    if (item.caseQty && item.caseQty > 1 && eaches > 0) {
+      return String(cases + eaches / item.caseQty);
     }
     return String(cases);
   }
 
-  function handleCaseCountChange(item: { id: number; caseQty: number | null }, value: string) {
+  function handleCaseCountChange(item: { id: number; caseQty: number | null; countMode?: string | null }, value: string) {
     setLocalCounts((prev) => ({ ...prev, [item.id]: value }));
     if (!activeSessionId) return;
     const eachesVal = localEachCounts[item.id] ?? "";
-    const total = computeTotalCases(item.id, item.caseQty, value, eachesVal);
+    const total = computeStoredQuantity(item, value, eachesVal);
     clearTimeout(saveTimer.current[item.id]);
     setSaving((prev) => ({ ...prev, [item.id]: true }));
     saveTimer.current[item.id] = setTimeout(() => {
@@ -163,11 +182,11 @@ export default function CountSheet() {
     }, 800);
   }
 
-  function handleEachCountChange(item: { id: number; caseQty: number | null }, value: string) {
+  function handleEachCountChange(item: { id: number; caseQty: number | null; countMode?: string | null }, value: string) {
     setLocalEachCounts((prev) => ({ ...prev, [item.id]: value }));
     if (!activeSessionId) return;
     const casesVal = localCounts[item.id] ?? "";
-    const total = computeTotalCases(item.id, item.caseQty, casesVal, value);
+    const total = computeStoredQuantity(item, casesVal, value);
     clearTimeout(saveTimer.current[item.id]);
     setSaving((prev) => ({ ...prev, [item.id]: true }));
     saveTimer.current[item.id] = setTimeout(() => {
@@ -209,18 +228,28 @@ export default function CountSheet() {
   function handleBulkCopyDown() {
     const visible = countableItems.filter((i) => selectedIds.has(i.id));
     if (visible.length < 2) { toast.error("Select at least 2 items to copy down"); return; }
-    const sourceVal = localCounts[visible[0].id] ?? "0";
+    const first = visible[0];
+    const isEachMode = first.countMode === "each";
+    const sourceVal = isEachMode
+      ? (localEachCounts[first.id] ?? "0")
+      : (localCounts[first.id] ?? "0");
     const newCounts: Record<number, string> = { ...localCounts };
-    visible.slice(1).forEach((i) => { newCounts[i.id] = sourceVal; });
+    const newEachCounts: Record<number, string> = { ...localEachCounts };
+    visible.slice(1).forEach((i) => {
+      if (i.countMode === "each") { newEachCounts[i.id] = sourceVal; }
+      else { newCounts[i.id] = sourceVal; }
+    });
     setLocalCounts(newCounts);
-    // Persist each
+    setLocalEachCounts(newEachCounts);
     if (activeSessionId) {
       visible.slice(1).forEach((i) => {
-        const total = computeTotalCases(i.id, i.caseQty, sourceVal, localEachCounts[i.id] ?? "");
+        const casesVal = i.countMode === "each" ? "" : sourceVal;
+        const eachesVal = i.countMode === "each" ? sourceVal : (newEachCounts[i.id] ?? "");
+        const total = computeStoredQuantity(i, casesVal, eachesVal);
         upsertEntryMutation.mutate({ sessionId: activeSessionId, itemId: i.id, quantity: total });
       });
     }
-    toast.success(`Copied ${sourceVal} cases to ${visible.length - 1} item${visible.length > 2 ? "s" : ""}`);
+    toast.success(`Copied ${sourceVal} to ${visible.length - 1} item${visible.length > 2 ? "s" : ""}`);
   }
 
   function handleBulkFillAll() {
@@ -229,15 +258,22 @@ export default function CountSheet() {
     const visible = countableItems.filter((i) => selectedIds.has(i.id));
     if (visible.length === 0) { toast.error("Select at least one item"); return; }
     const newCounts: Record<number, string> = { ...localCounts };
-    visible.forEach((i) => { newCounts[i.id] = val; });
+    const newEachCounts: Record<number, string> = { ...localEachCounts };
+    visible.forEach((i) => {
+      if (i.countMode === "each") { newEachCounts[i.id] = val; }
+      else { newCounts[i.id] = val; }
+    });
     setLocalCounts(newCounts);
+    setLocalEachCounts(newEachCounts);
     if (activeSessionId) {
       visible.forEach((i) => {
-        const total = computeTotalCases(i.id, i.caseQty, val, localEachCounts[i.id] ?? "");
+        const casesVal = i.countMode === "each" ? "" : val;
+        const eachesVal = i.countMode === "each" ? val : (newEachCounts[i.id] ?? "");
+        const total = computeStoredQuantity(i, casesVal, eachesVal);
         upsertEntryMutation.mutate({ sessionId: activeSessionId, itemId: i.id, quantity: total });
       });
     }
-    toast.success(`Set ${val} cases on ${visible.length} item${visible.length !== 1 ? "s" : ""}`);
+    toast.success(`Set ${val} on ${visible.length} item${visible.length !== 1 ? "s" : ""}`);
     setShowFillAll(false);
     setFillAllValue("");
   }
@@ -566,14 +602,21 @@ export default function CountSheet() {
                 {!isCollapsed && (
                   <div className="border-t border-border divide-y divide-border">
                                         {groupItems.map((item) => {
+                      const isEachMode = item.countMode === "each";
                       const casesVal = localCounts[item.id] ?? "";
                       const eachesVal = localEachCounts[item.id] ?? "";
-                      const hasEach = (item.caseQty ?? 0) > 1; // show Each input only if pack has multiple units
+                      // In each mode, hasEach is always true (only show each input)
+                      const hasEach = isEachMode || (item.caseQty ?? 0) > 1;
                       // Compute display value
-                      const totalCases = (parseFloat(casesVal || "0") || 0) + (hasEach ? (parseFloat(eachesVal || "0") || 0) / (item.caseQty ?? 1) : 0);
                       const casePrice = parseFloat(item.price ?? "0") || 0;
                       const eachPrice = item.eachPrice ? (parseFloat(item.eachPrice) || 0) : 0;
-                      const value = (parseFloat(casesVal || "0") || 0) * casePrice + (hasEach ? (parseFloat(eachesVal || "0") || 0) * eachPrice : 0);
+                      let value: number;
+                      if (isEachMode) {
+                        // value = eaches * eachPrice
+                        value = (parseFloat(eachesVal || "0") || 0) * (eachPrice || (item.caseQty ? casePrice / item.caseQty : 0));
+                      } else {
+                        value = (parseFloat(casesVal || "0") || 0) * casePrice + ((item.caseQty ?? 0) > 1 ? (parseFloat(eachesVal || "0") || 0) * eachPrice : 0);
+                      }
                       const isSaving = saving[item.id];
                       return (
                         <div key={item.id} className={cn("p-4", bulkMode && selectedIds.has(item.id) && "bg-primary/5")}>
@@ -589,11 +632,30 @@ export default function CountSheet() {
                               </button>
                             )}
                             <div className="flex-1 min-w-0">
-                              <p className="font-semibold text-foreground text-sm leading-tight">{item.name}</p>
+                              <div className="flex items-center gap-2">
+                                <p className="font-semibold text-foreground text-sm leading-tight">{item.name}</p>
+                                {/* Count mode toggle — admin only, not shown on completed sessions */}
+                                {user?.role === "admin" && !isCompleted && (
+                                  <button
+                                    onClick={() => setCountModeMutation.mutate({ id: item.id, countMode: isEachMode ? "case" : "each" })}
+                                    className={cn(
+                                      "text-[10px] font-bold px-1.5 py-0.5 rounded-md border transition-colors shrink-0",
+                                      isEachMode
+                                        ? "bg-amber-100 text-amber-700 border-amber-300 hover:bg-amber-200"
+                                        : "bg-muted text-muted-foreground border-border hover:bg-secondary"
+                                    )}
+                                    title={isEachMode ? "Switch to Case counting" : "Switch to Each counting"}
+                                  >
+                                    {isEachMode ? "EACH" : "CASE"}
+                                  </button>
+                                )}
+                              </div>
                               <p className="text-xs text-muted-foreground mt-0.5">
                                 {item.packSize && <span>{item.packSize} · </span>}
-                                <span>${casePrice.toFixed(2)}/case</span>
-                                {hasEach && eachPrice > 0 && <span> · ${eachPrice.toFixed(2)}/each</span>}
+                                {isEachMode
+                                  ? <span>${(eachPrice || (item.caseQty ? casePrice / item.caseQty : 0)).toFixed(2)}/each</span>
+                                  : <><span>${casePrice.toFixed(2)}/case</span>{(item.caseQty ?? 0) > 1 && eachPrice > 0 && <span> · ${eachPrice.toFixed(2)}/each</span>}</>
+                                }
                               </p>
                             </div>
                             <div className="text-right shrink-0">
@@ -605,9 +667,10 @@ export default function CountSheet() {
                               )}
                             </div>
                           </div>
-                          {/* Case count row */}
+                          {/* Count inputs */}
                           <div className="space-y-2">
-                            <div className="flex items-center gap-2">
+                            {/* Case count row — hidden in each mode */}
+                            {!isEachMode && <div className="flex items-center gap-2">
                               <span className="text-xs font-semibold text-muted-foreground w-10 shrink-0">CASE</span>
                               <button
                                 onClick={() => {
@@ -630,11 +693,13 @@ export default function CountSheet() {
                                 disabled={isCompleted}
                                 className="w-11 h-11 rounded-xl bg-primary text-primary-foreground text-xl font-bold flex items-center justify-center hover:opacity-90 transition-colors active:scale-95 disabled:opacity-40 shrink-0"
                               >+</button>
-                            </div>
-                            {/* Each count row — only shown when item has multiple units per case */}
+                            </div>}
+                            {/* Each count row — shown when item has multiple units per case OR in each mode */}
                             {hasEach && (
                               <div className="flex items-center gap-2">
-                                <span className="text-xs font-semibold text-muted-foreground w-10 shrink-0">EACH</span>
+                                <span className="text-xs font-semibold text-muted-foreground w-10 shrink-0">
+                                  {isEachMode ? "EACH" : "UNIT"}
+                                </span>
                                 <button
                                   onClick={() => {
                                     const e = parseFloat(eachesVal || "0");

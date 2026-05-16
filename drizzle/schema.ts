@@ -105,6 +105,9 @@ export const items = mysqlTable(
     // orderThreshold: fraction of par (0.0–1.0) below which an order is triggered.
     // Default 0.5 means "order when stock < 50% of par".
     orderThreshold: decimal("orderThreshold", { precision: 4, scale: 2 }).default("0.50"),
+    // countMode: how this item is counted — 'case' (default) or 'each' (individual units)
+    // When 'each', caseQty is used to convert eaches → cases for ordering
+    countMode: varchar("countMode", { length: 8 }).default("case").notNull(),
     notes: text("notes"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

@@ -330,7 +330,12 @@ export async function getBelowParItems(vendor?: string) {
   const entryMap = new Map(entries.map((e) => [e.itemId, e.quantity]));
   const orderItems = allItems
     .map((item) => {
-      const currentStock = parseFloat(entryMap.get(item.id) ?? "0");
+      const rawQty = parseFloat(entryMap.get(item.id) ?? "0");
+      // If item is counted in eaches, convert back to cases for order math
+      const currentStock =
+        item.countMode === "each" && item.caseQty && item.caseQty > 0
+          ? rawQty / item.caseQty
+          : rawQty;
       const parLevel = parseFloat(item.parLevel ?? "0");
       const thresholdRaw = item.orderThreshold ? parseFloat(item.orderThreshold) : null;
       const triggerLevel = thresholdRaw !== null ? thresholdRaw : parLevel * 0.5;

@@ -168,3 +168,14 @@
 
 - [x] Bug: after bulk save, per-row "unsaved" badge still shows — fixed with savedVersion counter passed to child rows
 - [x] Mobile: item name truncated/invisible — restructured row layout so name wraps on its own line above inputs
+
+## Round 11 — Count Mode (Case vs Each)
+
+- [x] DB: add `countMode` varchar column to items table (`case` | `each`, default `case`); migration applied
+- [x] Note: `caseQty` already existed (parsed from packSize), so no new unitsPerCase column needed
+- [x] Backend: add `items.setCountMode` procedure (admin-only) — updates countMode via updateItem
+- [x] Count Sheet: admin-only count mode toggle badge on each item row (CASE/EACH pill, amber when each mode)
+- [x] Count Sheet: when mode = each, hide CASE row and show only EACH input with correct per-unit price
+- [x] Count Sheet: when mode = each, store eaches directly in DB (no case conversion); convert for order math via caseQty
+- [x] Count Sheet: bulk fill helpers updated to respect countMode per item
+- [x] Count Sheet: load-from-DB logic updated to split eaches vs cases correctly per countMode
