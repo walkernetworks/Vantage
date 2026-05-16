@@ -163,3 +163,8 @@
 - [x] Update `generateCleanItemName` prompt: produce 2-4 word short names, strip size/spec/brand noise
 - [x] Apply AI naming silently on Webstaurant import — no separate preview column
 - [x] Removed "Proposed Name" preview column from Webstaurant import modal; vendor description shown as-is in preview
+
+## Round 10 — Par Levels Bug Fixes
+
+- [x] Bug: after bulk save, per-row "unsaved" badge still shows — fixed with savedVersion counter passed to child rows
+- [x] Mobile: item name truncated/invisible — restructured row layout so name wraps on its own line above inputs

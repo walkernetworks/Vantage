@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import {
@@ -38,6 +38,7 @@ function ParInput({
   selected,
   onToggleSelect,
   overrideValue,
+  savedVersion,
 }: {
   item: Item;
   onSave: (id: number, val: string) => void;
@@ -45,19 +46,40 @@ function ParInput({
   bulkMode: boolean;
   selected: boolean;
   onToggleSelect: (id: number) => void;
-  overrideValue?: string; // when set externally by bulk fill
+  overrideValue?: string;
+  savedVersion: number; // increments each time a bulk save completes
 }) {
   const [parValue, setParValue] = useState(item.parLevel ?? "0");
   const [thresholdValue, setThresholdValue] = useState(item.orderThreshold ?? "");
   const [parDirty, setParDirty] = useState(false);
   const [thresholdDirty, setThresholdDirty] = useState(false);
   const prevOverride = useRef<string | undefined>(undefined);
+  const prevSavedVersion = useRef(savedVersion);
 
-  // Apply external override (bulk fill)
+  // When a bulk save completes (savedVersion increments), clear dirty flags unconditionally.
+  // We check savedVersion via a ref to avoid stale closure issues.
+  useEffect(() => {
+    if (savedVersion !== prevSavedVersion.current) {
+      prevSavedVersion.current = savedVersion;
+      setParDirty(false);
+      setThresholdDirty(false);
+    }
+  }, [savedVersion]);
+
+  // Apply external override (bulk fill) — sets dirty so user knows to save
   if (overrideValue !== undefined && overrideValue !== prevOverride.current) {
     prevOverride.current = overrideValue;
     setParValue(overrideValue);
     setParDirty(true);
+  }
+
+  // When item data refreshes from server after save, sync local value
+  const prevParLevel = useRef(item.parLevel);
+  if (item.parLevel !== prevParLevel.current) {
+    prevParLevel.current = item.parLevel;
+    if (!parDirty) {
+      setParValue(item.parLevel ?? "0");
+    }
   }
 
   function handleParChange(v: string) {
@@ -91,16 +113,17 @@ function ParInput({
   return (
     <div
       className={cn(
-        "px-4 py-3 border-b border-border last:border-0 transition-colors",
+        "px-3 py-3 border-b border-border last:border-0 transition-colors",
         selected ? "bg-primary/5" : "hover:bg-muted/20"
       )}
     >
-      <div className="flex items-start gap-3">
+      {/* Mobile-first: stack name on top, inputs on bottom row */}
+      <div className="flex items-start gap-2">
         {/* Checkbox (bulk mode only) */}
         {bulkMode && (
           <button
             onClick={() => onToggleSelect(item.id)}
-            className="mt-1 shrink-0 text-muted-foreground hover:text-primary transition-colors"
+            className="mt-0.5 shrink-0 text-muted-foreground hover:text-primary transition-colors"
           >
             {selected ? (
               <CheckSquare size={18} className="text-primary" />
@@ -110,17 +133,22 @@ function ParInput({
           </button>
         )}
 
-        {/* Item info */}
+        {/* Item info — takes all available width */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-foreground truncate">{item.name}</span>
+          {/* Name row — always visible, wraps on mobile */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-semibold text-foreground leading-snug break-words">
+              {item.name}
+            </span>
             {anyDirty && (
-              <span className="flex-shrink-0 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+              <span className="shrink-0 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
                 unsaved
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+
+          {/* Meta row */}
+          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
             <span className="text-xs text-muted-foreground">{item.category}</span>
             <span className="text-xs text-muted-foreground">·</span>
             <span className="text-xs text-muted-foreground">{item.vendor}</span>
@@ -134,65 +162,65 @@ function ParInput({
               <>
                 <span className="text-xs text-muted-foreground">·</span>
                 <span className="text-xs text-muted-foreground">
-                  ${casePrice.toFixed(2)}/case
-                  {eachPrice !== null && ` · $${eachPrice.toFixed(2)}/each`}
+                  ${casePrice.toFixed(2)}/cs
+                  {eachPrice !== null && ` · $${eachPrice.toFixed(2)}/ea`}
                 </span>
               </>
             )}
           </div>
-        </div>
 
-        {/* Par + Threshold inputs */}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <div className="flex flex-col items-center gap-0.5">
-            <span className="text-xs text-muted-foreground">Par</span>
-            <input
-              type="number"
-              min="0"
-              step="1"
-              value={parValue}
-              onChange={(e) => handleParChange(e.target.value)}
-              onBlur={handleParBlur}
-              onKeyDown={handleKeyDown}
-              className={cn(
-                "w-16 h-10 text-center rounded-xl border text-sm font-semibold focus:outline-none focus:ring-2 transition-colors",
-                parDirty
-                  ? "border-amber-400 bg-amber-50 text-amber-900 focus:ring-amber-300"
-                  : "border-border bg-background text-foreground focus:ring-primary/30"
-              )}
-            />
+          {/* Inputs row — sits below the name on mobile, inline on wider screens */}
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <div className="flex flex-col items-center gap-0.5">
+              <span className="text-xs text-muted-foreground">Par</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={parValue}
+                onChange={(e) => handleParChange(e.target.value)}
+                onBlur={handleParBlur}
+                onKeyDown={handleKeyDown}
+                className={cn(
+                  "w-16 h-10 text-center rounded-xl border text-sm font-semibold focus:outline-none focus:ring-2 transition-colors",
+                  parDirty
+                    ? "border-amber-400 bg-amber-50 text-amber-900 focus:ring-amber-300"
+                    : "border-border bg-background text-foreground focus:ring-primary/30"
+                )}
+              />
+            </div>
+            <div className="flex flex-col items-center gap-0.5">
+              <span className="text-xs text-amber-600 font-medium">Order ≤</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={thresholdValue}
+                onChange={(e) => handleThresholdChange(e.target.value)}
+                onBlur={handleThresholdBlur}
+                onKeyDown={handleKeyDown}
+                placeholder="—"
+                className={cn(
+                  "w-16 h-10 text-center rounded-xl border text-sm font-semibold focus:outline-none focus:ring-2 transition-colors",
+                  thresholdDirty
+                    ? "border-amber-400 bg-amber-50 text-amber-900 focus:ring-amber-300"
+                    : "border-border bg-background text-foreground focus:ring-primary/30"
+                )}
+              />
+            </div>
+            {anyDirty && (
+              <button
+                onClick={() => {
+                  if (parDirty) { onSave(item.id, parValue); setParDirty(false); }
+                  if (thresholdDirty) { onSaveThreshold(item.id, thresholdValue); setThresholdDirty(false); }
+                }}
+                className="w-10 h-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center active:scale-95 transition-transform mt-5"
+                title="Save"
+              >
+                <Save size={14} />
+              </button>
+            )}
           </div>
-          <div className="flex flex-col items-center gap-0.5">
-            <span className="text-xs text-amber-600 font-medium">Order ≤</span>
-            <input
-              type="number"
-              min="0"
-              step="1"
-              value={thresholdValue}
-              onChange={(e) => handleThresholdChange(e.target.value)}
-              onBlur={handleThresholdBlur}
-              onKeyDown={handleKeyDown}
-              placeholder="—"
-              className={cn(
-                "w-16 h-10 text-center rounded-xl border text-sm font-semibold focus:outline-none focus:ring-2 transition-colors",
-                thresholdDirty
-                  ? "border-amber-400 bg-amber-50 text-amber-900 focus:ring-amber-300"
-                  : "border-border bg-background text-foreground focus:ring-primary/30"
-              )}
-            />
-          </div>
-          {anyDirty && (
-            <button
-              onClick={() => {
-                if (parDirty) { onSave(item.id, parValue); setParDirty(false); }
-                if (thresholdDirty) { onSaveThreshold(item.id, thresholdValue); setThresholdDirty(false); }
-              }}
-              className="w-10 h-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center active:scale-95 transition-transform mt-5"
-              title="Save"
-            >
-              <Save size={14} />
-            </button>
-          )}
         </div>
       </div>
     </div>
@@ -214,6 +242,8 @@ export default function ParLevels() {
   const [showSetAll, setShowSetAll] = useState(false);
   // Map of itemId → override value applied by bulk fill (copy-down or set-all)
   const [overrides, setOverrides] = useState<Record<number, string>>({});
+  // Increments on each successful bulk save so child rows can clear their dirty state
+  const [savedVersion, setSavedVersion] = useState(0);
 
   const queryInput = useMemo(
     () => ({ vendor: filterVendor || undefined, category: filterCategory || undefined }),
@@ -239,6 +269,8 @@ export default function ParLevels() {
     onSuccess: (_data, vars) => {
       utils.items.list.invalidate();
       toast.success(`${vars.updates.length} par level${vars.updates.length !== 1 ? "s" : ""} saved`);
+      // Increment savedVersion so child rows clear their dirty flags
+      setSavedVersion((v) => v + 1);
       setOverrides({});
       setSelectedIds(new Set());
       setBulkMode(false);
@@ -557,7 +589,7 @@ export default function ParLevels() {
               {filteredItems.length} item{filteredItems.length !== 1 ? "s" : ""}
             </span>
           </div>
-          <span className="text-xs text-muted-foreground">Par = target · Order ≤ = trigger</span>
+          <span className="text-xs text-muted-foreground hidden sm:block">Par = target · Order ≤ = trigger</span>
         </div>
 
         {isLoading ? (
@@ -580,6 +612,7 @@ export default function ParLevels() {
                 selected={selectedIds.has(item.id)}
                 onToggleSelect={toggleSelect}
                 overrideValue={overrides[item.id]}
+                savedVersion={savedVersion}
               />
             ))}
           </div>
