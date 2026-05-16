@@ -165,7 +165,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
               <img
                 src="/manus-storage/B&BLogo-Transparent_340094db.png"
                 alt="Beignets & Brew"
-                className="h-8 w-auto object-contain"
+                className="h-12 w-auto object-contain"
               />
             </Link>
           </div>
@@ -201,16 +201,14 @@ export default function AppLayout({ children }: AppLayoutProps) {
         )}
       >
         {/* Sidebar Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border">
-          <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center justify-between p-5 border-b border-border">
+          <div className="flex flex-col gap-2 min-w-0">
             <img
               src="/manus-storage/B&BLogo-Transparent_340094db.png"
               alt="Beignets & Brew"
-              className="h-9 w-auto object-contain shrink-0"
+              className="h-14 w-auto object-contain"
             />
-            <div className="min-w-0">
-              <p className="text-xs text-muted-foreground truncate">{user?.name ?? "Employee"}</p>
-            </div>
+            <p className="text-xs text-muted-foreground truncate">{user?.name ?? "Employee"}</p>
           </div>
           <button
             onClick={() => setSidebarOpen(false)}

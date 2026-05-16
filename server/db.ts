@@ -1083,3 +1083,122 @@ export async function importUniversalItems(
 
   return { created, updated, unchanged, priceChanges };
 }
+
+// ─── Dashboard Metrics ────────────────────────────────────────────────────────
+
+/**
+ * Returns three datasets for the main dashboard charts:
+ * 1. inventoryValueByCategory: current total value (price × parLevel) per category
+ * 2. priceFluctuationsByVendor: monthly avg price changes per importSource over last 12 months
+ * 3. orderCostTrend: estimated monthly order cost (items below par × price) from count sessions
+ */
+export async function getDashboardMetrics() {
+  const db = await getDb();
+  if (!db) return { inventoryValueByCategory: [], priceFluctuationsByVendor: [], orderCostTrend: [] };
+
+  // 1. Inventory value by category: sum(price * parLevel) per category
+  const categoryRows = await db
+    .select({
+      category: items.category,
+      totalValue: sql<string>`ROUND(SUM(COALESCE(${items.price}, 0) * COALESCE(${items.parLevel}, 0)), 2)`,
+      itemCount: sql<number>`COUNT(*)`,
+    })
+    .from(items)
+    .where(sql`${items.isActive} = 1`)
+    .groupBy(items.category)
+    .orderBy(sql`SUM(COALESCE(${items.price}, 0) * COALESCE(${items.parLevel}, 0)) DESC`);
+
+  // 2. Price fluctuations by vendor: monthly avg price change % per importSource (last 12 months)
+  const twelveMonthsAgo = new Date();
+  twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+
+  const priceRows = await db
+    .select({
+      importSource: priceHistory.importSource,
+      month: sql<string>`DATE_FORMAT(${priceHistory.importedAt}, '%Y-%m')`,
+      avgOldPrice: sql<string>`AVG(COALESCE(${priceHistory.oldPrice}, ${priceHistory.newPrice}))`,
+      avgNewPrice: sql<string>`AVG(${priceHistory.newPrice})`,
+      changeCount: sql<number>`COUNT(*)`,
+    })
+    .from(priceHistory)
+    .where(sql`${priceHistory.importedAt} >= ${twelveMonthsAgo.toISOString().slice(0, 10)}`)
+    .groupBy(priceHistory.importSource, sql`DATE_FORMAT(${priceHistory.importedAt}, '%Y-%m')`)
+    .orderBy(sql`DATE_FORMAT(${priceHistory.importedAt}, '%Y-%m') ASC`);
+
+  // 3. Order cost trend: from count sessions — sum of (price × max(0, parLevel - quantity)) per completed session
+  const sessionRows = await db
+    .select({
+      sessionId: countSessions.id,
+      sessionName: countSessions.name,
+      completedAt: countSessions.completedAt,
+      createdAt: countSessions.createdAt,
+    })
+    .from(countSessions)
+    .orderBy(desc(countSessions.createdAt))
+    .limit(24);
+
+  const orderCostData: { month: string; estimatedCost: number; sessionCount: number }[] = [];
+
+  if (sessionRows.length > 0) {
+    // For each session, compute estimated order cost = sum(price * max(0, parLevel - quantity))
+    const sessionIds = sessionRows.map((s) => s.sessionId);
+    const entryRows = await db
+      .select({
+        sessionId: countEntries.sessionId,
+        quantity: countEntries.quantity,
+        itemPrice: items.price,
+        itemParLevel: items.parLevel,
+      })
+      .from(countEntries)
+      .innerJoin(items, eq(countEntries.itemId, items.id))
+      .where(inArray(countEntries.sessionId, sessionIds));
+
+    // Group by session
+    const sessionCosts: Record<number, number> = {};
+    for (const entry of entryRows) {
+      const qty = parseFloat(entry.quantity ?? "0");
+      const par = parseFloat(entry.itemParLevel ?? "0");
+      const price = parseFloat(entry.itemPrice ?? "0");
+      const shortfall = Math.max(0, par - qty);
+      sessionCosts[entry.sessionId] = (sessionCosts[entry.sessionId] ?? 0) + shortfall * price;
+    }
+
+    // Group sessions by month
+    const monthMap: Record<string, { cost: number; count: number }> = {};
+    for (const session of sessionRows) {
+      const date = session.completedAt ?? session.createdAt;
+      const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      if (!monthMap[month]) monthMap[month] = { cost: 0, count: 0 };
+      monthMap[month].cost += sessionCosts[session.sessionId] ?? 0;
+      monthMap[month].count += 1;
+    }
+
+    for (const [month, { cost, count }] of Object.entries(monthMap).sort()) {
+      orderCostData.push({ month, estimatedCost: Math.round(cost * 100) / 100, sessionCount: count });
+    }
+  }
+
+  return {
+    inventoryValueByCategory: categoryRows.map((r) => ({
+      category: r.category,
+      totalValue: parseFloat(r.totalValue ?? "0"),
+      itemCount: r.itemCount,
+    })),
+    priceFluctuationsByVendor: priceRows.map((r) => ({
+      importSource: r.importSource,
+      month: r.month,
+      avgOldPrice: parseFloat(r.avgOldPrice ?? "0"),
+      avgNewPrice: parseFloat(r.avgNewPrice ?? "0"),
+      changeCount: r.changeCount,
+      changePct:
+        parseFloat(r.avgOldPrice ?? "0") > 0
+          ? Math.round(
+              ((parseFloat(r.avgNewPrice ?? "0") - parseFloat(r.avgOldPrice ?? "0")) /
+                parseFloat(r.avgOldPrice ?? "0")) *
+                1000
+            ) / 10
+          : 0,
+    })),
+    orderCostTrend: orderCostData,
+  };
+}

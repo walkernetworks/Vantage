@@ -238,3 +238,8 @@
 - [x] Build universal importAny tRPC procedure that accepts AI-mapped rows and upserts with price-change detection
 - [x] Update UniversalImportModal frontend to use new AI-mapped flow for any CSV format
 - [x] Support Alcohol2.csv distributor format (Storage Location, Category Name, Product Description, Brand, Pack Size, UOM, Price)
+
+## Round 21 — Logo Size & Dashboard Charts
+- [x] Increase B&B logo size in sidebar header and mobile top bar
+- [x] Add tRPC procedures for dashboard metrics: order costs over time, inventory value by category, price fluctuations by distributor
+- [x] Build dashboard charts: Cost of Orders (line), Inventory Value by Category (donut), Price Fluctuations by Distributor (multi-line)

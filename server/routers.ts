@@ -53,6 +53,7 @@ import {
   setUserRole,
   setUserActive,
   recalcAllEachPrices,
+  getDashboardMetrics,
   type PfgImportRow,
   type WebstaurantImportRow,
   type UniversalImportRow,
@@ -635,6 +636,12 @@ const adminUsersRouter = router({
     }),
 });
 
+// ─── Dashboard Router ───────────────────────────────────────────────────────────
+
+const dashboardRouter = router({
+  metrics: protectedProcedure.query(() => getDashboardMetrics()),
+});
+
 // ─── App Router ────────────────────────────────────────────────────────────────────
 
 export const appRouter = router({
@@ -653,6 +660,7 @@ export const appRouter = router({
   catering: cateringRouter,
   settings: settingsRouter,
   adminUsers: adminUsersRouter,
+  dashboard: dashboardRouter,
 });
 
 export type AppRouter = typeof appRouter;
