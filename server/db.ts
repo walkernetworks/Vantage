@@ -932,3 +932,154 @@ export async function bulkUpdateParLevels(
       .where(eq(items.id, u.id));
   }
 }
+
+// ─── Universal (AI-mapped) Import ─────────────────────────────────────────────
+
+export type UniversalImportRow = {
+  name: string;           // cleaned item name (required)
+  brand?: string;
+  category?: string;      // mapped to internal category
+  vendor?: string;
+  packSize?: string;
+  unitOfMeasure?: string;
+  price?: string;
+  storageArea?: string;
+  isAlcohol?: boolean;
+  alcoholCategory?: string;
+  notes?: string;
+};
+
+export type UniversalImportResult = {
+  created: number;
+  updated: number;
+  unchanged: number;
+  priceChanges: Array<{
+    itemId: number;
+    name: string;
+    brand: string;
+    oldPrice: string;
+    newPrice: string;
+    diff: string;
+    pctChange: string;
+  }>;
+};
+
+export async function importUniversalItems(
+  rows: UniversalImportRow[],
+  importSource: string
+): Promise<UniversalImportResult> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  let created = 0;
+  let updated = 0;
+  let unchanged = 0;
+  const priceChanges: UniversalImportResult["priceChanges"] = [];
+
+  for (const row of rows) {
+    if (!row.name?.trim()) continue;
+
+    const caseQty = parsePackSizeQty(row.packSize ?? null);
+    const newPrice = row.price ?? "0";
+    const eachPrice = computeEachPrice(newPrice, caseQty);
+
+    // Match by exact name (case-insensitive) — best effort for formats without product numbers
+    const existing = await db
+      .select()
+      .from(items)
+      .where(eq(items.name, row.name.trim()))
+      .limit(1);
+
+    if (existing.length === 0) {
+      await db.insert(items).values({
+        name: row.name.trim(),
+        brand: row.brand ?? null,
+        category: row.category ?? "Other",
+        vendor: row.vendor ?? importSource,
+        packSize: row.packSize ?? null,
+        unitOfMeasure: row.unitOfMeasure ?? "Case",
+        price: newPrice,
+        caseQty,
+        eachPrice,
+        parLevel: "0",
+        storageArea: row.storageArea ?? "Dry Storage",
+        isAlcohol: row.isAlcohol ?? false,
+        alcoholCategory: row.alcoholCategory ?? null,
+        notes: row.notes ?? null,
+        isActive: true,
+      });
+      created++;
+    } else {
+      const item = existing[0];
+
+      if (!item.isActive) {
+        await db
+          .update(items)
+          .set({
+            brand: row.brand ?? item.brand,
+            category: row.category ?? item.category,
+            vendor: row.vendor ?? item.vendor ?? importSource,
+            packSize: row.packSize ?? item.packSize,
+            unitOfMeasure: row.unitOfMeasure ?? item.unitOfMeasure,
+            price: newPrice,
+            caseQty,
+            eachPrice,
+            storageArea: row.storageArea ?? item.storageArea,
+            isAlcohol: row.isAlcohol ?? item.isAlcohol,
+            isActive: true,
+            updatedAt: new Date(),
+          })
+          .where(eq(items.id, item.id));
+        created++;
+        continue;
+      }
+
+      const oldPrice = item.price ?? "0";
+      if (parseFloat(oldPrice) !== parseFloat(newPrice)) {
+        await db.insert(priceHistory).values({
+          itemId: item.id,
+          oldPrice,
+          newPrice,
+          importSource,
+        });
+        const diff = parseFloat(newPrice) - parseFloat(oldPrice);
+        const pct = parseFloat(oldPrice) !== 0 ? (diff / parseFloat(oldPrice)) * 100 : 0;
+        priceChanges.push({
+          itemId: item.id,
+          name: item.name,
+          brand: row.brand ?? item.brand ?? "",
+          oldPrice,
+          newPrice,
+          diff: diff.toFixed(2),
+          pctChange: pct.toFixed(1),
+        });
+        await db
+          .update(items)
+          .set({
+            price: newPrice,
+            brand: row.brand ?? item.brand,
+            packSize: row.packSize ?? item.packSize,
+            caseQty,
+            eachPrice,
+            updatedAt: new Date(),
+          })
+          .where(eq(items.id, item.id));
+        updated++;
+      } else {
+        await db
+          .update(items)
+          .set({
+            brand: row.brand ?? item.brand,
+            packSize: row.packSize ?? item.packSize,
+            caseQty,
+            eachPrice,
+            updatedAt: new Date(),
+          })
+          .where(eq(items.id, item.id));
+        unchanged++;
+      }
+    }
+  }
+
+  return { created, updated, unchanged, priceChanges };
+}

@@ -38,6 +38,7 @@ import {
   importPfgItems,
   importWebstaurantItems,
   generateCleanItemName,
+  importUniversalItems,
   bulkUpdateParLevels,
   listCateringRecipes,
   listCountSessions,
@@ -54,6 +55,7 @@ import {
   recalcAllEachPrices,
   type PfgImportRow,
   type WebstaurantImportRow,
+  type UniversalImportRow,
 } from "./db";
 
 // ─── Shared Zod Schemas ───────────────────────────────────────────────────────
@@ -193,6 +195,204 @@ const itemsRouter = router({
     .input(z.object({ rawName: z.string(), brand: z.string().optional(), packSize: z.string().optional() }))
     .mutation(({ input }) =>
       generateCleanItemName(input.rawName, input.brand ?? null, input.packSize ?? null)
+    ),
+
+  // ── AI-powered universal CSV importer ──────────────────────────────────────
+  // Step 1: send raw CSV text → LLM maps columns → returns mapped rows for preview
+  analyzeAndMapCsv: adminProcedure
+    .input(z.object({ csvText: z.string().max(500_000) }))
+    .mutation(async ({ input }) => {
+      const { invokeLLM } = await import("./_core/llm");
+
+      // Parse header + up to 8 sample rows from the raw CSV
+      function parseCsvLine(line: string): string[] {
+        const result: string[] = [];
+        let current = "";
+        let inQuotes = false;
+        for (const ch of line) {
+          if (ch === '"') { inQuotes = !inQuotes; }
+          else if (ch === "," && !inQuotes) { result.push(current.trim()); current = ""; }
+          else { current += ch; }
+        }
+        result.push(current.trim());
+        return result;
+      }
+
+      const cleaned = input.csvText.replace(/^\uFEFF/, "").trim();
+      const lines = cleaned.split(/\r?\n/).filter((l) => l.trim());
+
+      // Find the header row: first row that has at least 3 non-empty cells
+      let headerIdx = 0;
+      for (let i = 0; i < Math.min(5, lines.length); i++) {
+        const cells = parseCsvLine(lines[i]).filter((c) => c.trim());
+        if (cells.length >= 3) { headerIdx = i; break; }
+      }
+
+      const headers = parseCsvLine(lines[headerIdx]);
+      const sampleRows = lines.slice(headerIdx + 1, headerIdx + 9).map(parseCsvLine);
+
+      // Build a compact representation for the LLM
+      const sampleTable = [
+        headers.join(" | "),
+        ...sampleRows.map((r) => r.join(" | ")),
+      ].join("\n");
+
+      const systemPrompt = `You are a data mapping assistant for a restaurant inventory system.
+You will be given a CSV header row and sample data rows from a vendor spreadsheet.
+Your job is to identify which column index (0-based) corresponds to each of these fields:
+- name: the product/item name or description (required)
+- brand: manufacturer or brand name
+- price: case price or unit price (a dollar amount)
+- packSize: pack size string like "6/750 ML", "12/1 L", "2/12 PK"
+- unitOfMeasure: unit like CS, EA, PK, BT
+- storageArea: where the item is stored (e.g. Bar, Walk-In, Dry Storage, Freezer, Merchandiser)
+- category: product category (e.g. Beer, Wine, Liquor, Bakery, Dairy)
+- vendor: the vendor/distributor name
+
+Return ONLY a JSON object with field names as keys and column index numbers as values.
+If a field is not present, omit it from the response.
+For the "name" field, prefer the most descriptive product description column.
+Example response: {"name":4,"brand":5,"price":13,"packSize":6,"unitOfMeasure":7,"storageArea":1,"category":2}`;
+
+      const llmResponse = await invokeLLM({
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: `CSV header and sample data:\n${sampleTable}` },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "column_mapping",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                name: { type: "number" },
+                brand: { type: "number" },
+                price: { type: "number" },
+                packSize: { type: "number" },
+                unitOfMeasure: { type: "number" },
+                storageArea: { type: "number" },
+                category: { type: "number" },
+                vendor: { type: "number" },
+              },
+              required: ["name"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+
+      const rawContent = llmResponse?.choices?.[0]?.message?.content;
+      const mappingJson = (typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent)) ?? "{}";
+      const mapping: Record<string, number> = JSON.parse(mappingJson);
+
+      // Apply mapping to all data rows
+      const dataRows = lines.slice(headerIdx + 1);
+      const mappedRows: UniversalImportRow[] = [];
+
+      // Determine if this looks like an alcohol import based on category column values
+      const categoryColIdx = mapping.category ?? -1;
+      const sampleCategories = sampleRows
+        .map((r) => (r[categoryColIdx] ?? "").toLowerCase())
+        .join(" ");
+      const looksLikeAlcohol =
+        sampleCategories.includes("alcohol") ||
+        sampleCategories.includes("beer") ||
+        sampleCategories.includes("wine") ||
+        sampleCategories.includes("liquor") ||
+        sampleCategories.includes("hemp");
+
+      for (const line of dataRows) {
+        if (!line.trim()) continue;
+        const cols = parseCsvLine(line);
+
+        const rawName = (cols[mapping.name] ?? "").trim();
+        if (!rawName) continue;
+
+        // Skip footer/summary rows
+        if (rawName.toLowerCase().startsWith("add items") || rawName.toLowerCase().startsWith("total")) continue;
+
+        const rawPrice = (cols[mapping.price ?? -1] ?? "").replace(/[$,*\s]/g, "");
+        const price = rawPrice && !isNaN(parseFloat(rawPrice)) ? parseFloat(rawPrice).toFixed(2) : undefined;
+
+        const rawCategory = (cols[mapping.category ?? -1] ?? "").trim();
+        // Map raw category to internal category
+        let internalCategory = "Other";
+        const catLower = rawCategory.toLowerCase();
+        if (catLower.includes("beer") || catLower.includes("na")) internalCategory = "Alcohol - 100";
+        else if (catLower.includes("wine")) internalCategory = "Alcohol - 100";
+        else if (catLower.includes("liquor") || catLower.includes("spirit")) internalCategory = "Alcohol - 100";
+        else if (catLower.includes("hemp") || catLower.includes("thc") || catLower.includes("cbd")) internalCategory = "Alcohol - 100";
+        else if (catLower.includes("alcohol")) internalCategory = "Alcohol - 100";
+        else if (catLower.includes("bakery") || catLower.includes("bread") || catLower.includes("beignet")) internalCategory = "Bakery";
+        else if (catLower.includes("dairy") || catLower.includes("cheese") || catLower.includes("milk")) internalCategory = "Dairy";
+        else if (catLower.includes("produce") || catLower.includes("vegetable") || catLower.includes("fruit")) internalCategory = "Produce";
+        else if (catLower.includes("protein") || catLower.includes("chicken") || catLower.includes("beef") || catLower.includes("pork")) internalCategory = "Protein";
+        else if (catLower.includes("coffee") || catLower.includes("beverage") || catLower.includes("drink")) internalCategory = "Coffee";
+        else if (catLower.includes("paper") || catLower.includes("supply") || catLower.includes("chemical") || catLower.includes("clean")) internalCategory = "Supplies";
+
+        const rawStorage = (cols[mapping.storageArea ?? -1] ?? "").trim();
+        let storageArea = "Dry Storage";
+        const storageLower = rawStorage.toLowerCase();
+        if (storageLower.includes("bar") || storageLower.includes("merchandiser")) storageArea = "Bar";
+        else if (storageLower.includes("cooler") || storageLower.includes("wi ") || storageLower.includes("walk")) storageArea = "Walk-In";
+        else if (storageLower.includes("freeze")) storageArea = "Freezer";
+        else if (storageLower.includes("dry")) storageArea = "Dry Storage";
+        else if (rawStorage) storageArea = rawStorage; // keep original if unrecognized
+
+        // Simple title-case clean name
+        const cleanName = rawName
+          .split(" ")
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join(" ");
+
+        mappedRows.push({
+          name: cleanName,
+          brand: mapping.brand !== undefined ? (cols[mapping.brand] ?? "").trim() || undefined : undefined,
+          price,
+          packSize: mapping.packSize !== undefined ? (cols[mapping.packSize] ?? "").trim() || undefined : undefined,
+          unitOfMeasure: mapping.unitOfMeasure !== undefined ? (cols[mapping.unitOfMeasure] ?? "").trim() || undefined : undefined,
+          storageArea,
+          category: internalCategory,
+          vendor: mapping.vendor !== undefined ? (cols[mapping.vendor] ?? "").trim() || undefined : undefined,
+          isAlcohol: looksLikeAlcohol,
+          alcoholCategory: looksLikeAlcohol ? "100" : undefined,
+        });
+      }
+
+      return {
+        mapping,
+        headers,
+        rows: mappedRows,
+        detectedSource: looksLikeAlcohol ? "Alcohol" : "General",
+      };
+    }),
+
+  // Step 2: import the AI-mapped rows
+  importUniversal: adminProcedure
+    .input(
+      z.object({
+        rows: z.array(
+          z.object({
+            name: z.string().min(1),
+            brand: z.string().optional(),
+            category: z.string().optional(),
+            vendor: z.string().optional(),
+            packSize: z.string().optional(),
+            unitOfMeasure: z.string().optional(),
+            price: z.string().optional(),
+            storageArea: z.string().optional(),
+            isAlcohol: z.boolean().optional(),
+            alcoholCategory: z.string().optional(),
+            notes: z.string().optional(),
+          })
+        ),
+        importSource: z.string().default("Universal"),
+      })
+    )
+    .mutation(({ input }) =>
+      importUniversalItems(input.rows as UniversalImportRow[], input.importSource)
     ),
 });
 

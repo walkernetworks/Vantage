@@ -232,3 +232,9 @@
 - [x] Unify Webstaurant import to run price-change detection (same as PFG), not just insert
 - [x] Add manual "Add Item" form to Item Catalog for alcohol and other non-order-guide items
 - [x] Apply Comfortaa as universal font across all text, headings, buttons, and inputs
+
+## Round 20 — AI-Powered Universal CSV Importer
+- [x] Build server-side AI column mapper: send CSV header + sample rows to LLM, get back field mapping JSON
+- [x] Build universal importAny tRPC procedure that accepts AI-mapped rows and upserts with price-change detection
+- [x] Update UniversalImportModal frontend to use new AI-mapped flow for any CSV format
+- [x] Support Alcohol2.csv distributor format (Storage Location, Category Name, Product Description, Brand, Pack Size, UOM, Price)

@@ -1655,10 +1655,23 @@ New items will be created; existing items (matched by Item #) will have prices u
 }
 
 // ── Universal Import Modal ─────────────────────────────────────────────────────
-// Detects PFG vs Webstaurant format automatically; falls back to a generic
-// "unknown format" message if neither is recognized.
+// Detects PFG vs Webstaurant format automatically; any other format goes through
+// the AI-powered column mapper (analyzeAndMapCsv) for universal support.
 
-type DetectedFormat = "pfg" | "webstaurant" | "unknown";
+type DetectedFormat = "pfg" | "webstaurant" | "ai";
+
+type AiMappedRow = {
+  name: string;
+  brand?: string;
+  category?: string;
+  vendor?: string;
+  packSize?: string;
+  unitOfMeasure?: string;
+  price?: string;
+  storageArea?: string;
+  isAlcohol?: boolean;
+  alcoholCategory?: string;
+};
 
 function detectFormat(text: string): DetectedFormat {
   const cleaned = text.replace(/^\uFEFF/, "").trim();
@@ -1666,22 +1679,25 @@ function detectFormat(text: string): DetectedFormat {
   if (firstLines.includes("category name") && firstLines.includes("product number")) {
     return "pfg";
   }
-  if (firstLines.includes("item number") && firstLines.includes("base price")) {
+  if (firstLines.includes("item number") && (firstLines.includes("base price") || firstLines.includes("vendor"))) {
     return "webstaurant";
   }
   // Webstaurant sometimes has a title row before the header
-  if (firstLines.includes("item number")) {
+  if (firstLines.includes("item number") && firstLines.includes("name")) {
     return "webstaurant";
   }
-  return "unknown";
+  // Everything else goes through AI mapping
+  return "ai";
 }
 
 function UniversalImportModal({ onClose }: { onClose: () => void }) {
-  type Step = "upload" | "pfg-preview" | "web-preview" | "web-generating" | "result";
+  type Step = "upload" | "pfg-preview" | "web-preview" | "web-generating" | "ai-analyzing" | "ai-preview" | "result";
   const [step, setStep] = useState<Step>("upload");
-  const [format, setFormat] = useState<DetectedFormat>("unknown");
+  const [format, setFormat] = useState<DetectedFormat>("ai");
   const [pfgRows, setPfgRows] = useState<PfgRow[]>([]);
   const [webRows, setWebRows] = useState<WebstaurantRow[]>([]);
+  const [aiRows, setAiRows] = useState<AiMappedRow[]>([]);
+  const [aiSource, setAiSource] = useState("Universal");
   const [filterCat, setFilterCat] = useState("");
   const [result, setResult] = useState<ImportResult | null>(null);
   const [aiProgress, setAiProgress] = useState(0);
@@ -1695,6 +1711,28 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
   });
 
   const importWebMutation = trpc.items.importWebstaurant.useMutation({
+    onSuccess: (res) => { setResult(res as ImportResult); setStep("result"); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const analyzeAndMapCsv = trpc.items.analyzeAndMapCsv.useMutation({
+    onSuccess: (res) => {
+      if (!res.rows || res.rows.length === 0) {
+        toast.error("AI could not find any valid rows in this file.");
+        setStep("upload");
+        return;
+      }
+      setAiRows(res.rows as AiMappedRow[]);
+      setAiSource(res.detectedSource ?? "Universal");
+      setStep("ai-preview");
+    },
+    onError: (e) => {
+      toast.error("AI analysis failed: " + e.message);
+      setStep("upload");
+    },
+  });
+
+  const importUniversalMutation = trpc.items.importUniversal.useMutation({
     onSuccess: (res) => { setResult(res as ImportResult); setStep("result"); },
     onError: (e) => toast.error(e.message),
   });
@@ -1725,7 +1763,9 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
         setWebRows(rows);
         setStep("web-preview");
       } else {
-        toast.error("Format not recognized. Please upload a PFG or Webstaurant Order Guide CSV.");
+        // Unknown format — send to AI for column mapping
+        setStep("ai-analyzing");
+        analyzeAndMapCsv.mutate({ csvText: text });
       }
     };
     reader.readAsText(file);
@@ -1752,8 +1792,8 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
     importWebMutation.mutate({ rows: enhanced });
   }
 
-  const formatLabel = format === "pfg" ? "PFG" : format === "webstaurant" ? "Webstaurant" : "";
-  const totalRows = format === "pfg" ? pfgRows.length : webRows.length;
+  const formatLabel = format === "pfg" ? "PFG" : format === "webstaurant" ? "Webstaurant" : aiSource;
+  const totalRows = format === "pfg" ? pfgRows.length : format === "webstaurant" ? webRows.length : aiRows.length;
 
   // Shared result UI
   function ResultStep() {
@@ -1892,9 +1932,9 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
             <p className="font-semibold flex items-center gap-2">
               <Upload size={16} /> Universal Order Guide Importer
             </p>
-            <p>Upload any order guide CSV — the system automatically detects whether it's a PFG or Webstaurant export.</p>
+            <p>Upload any vendor spreadsheet — PFG, Webstaurant, alcohol distributor, or any other format. AI automatically maps the columns.</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Supports: <span className="font-mono">PFG Order Guide</span> · <span className="font-mono">Webstaurant Saved List Export</span>
+              Supports: <span className="font-mono">PFG</span> · <span className="font-mono">Webstaurant</span> · <span className="font-mono">Any Distributor CSV</span>
             </p>
             <p className="text-xs text-muted-foreground">
               Re-uploading will update prices and track changes. Historical price data is preserved.
@@ -1909,7 +1949,7 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
             <Upload size={32} className="text-primary" />
             <div className="text-center">
               <p className="font-semibold text-foreground">Tap to select CSV file</p>
-              <p className="text-sm text-muted-foreground">PFG or Webstaurant · .csv or .txt</p>
+              <p className="text-sm text-muted-foreground">Any vendor format · .csv or .txt</p>
             </div>
           </button>
 
@@ -2022,6 +2062,96 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
               className="flex-1 btn-big bg-primary text-primary-foreground disabled:opacity-60"
             >
               Import {webRows.length} Items
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* AI analyzing — column mapping in progress */}
+      {step === "ai-analyzing" && (
+        <div className="space-y-5 py-4 text-center">
+          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+            <Upload size={28} className="text-primary animate-bounce" />
+          </div>
+          <div>
+            <p className="font-semibold text-foreground">Analyzing spreadsheet…</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              AI is reading the column headers and mapping them to inventory fields.
+            </p>
+          </div>
+          <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
+            <div className="h-full bg-primary rounded-full animate-pulse" style={{ width: "60%" }} />
+          </div>
+          <p className="text-xs text-muted-foreground">This usually takes a few seconds…</p>
+        </div>
+      )}
+
+      {/* AI Preview — show mapped rows before importing */}
+      {step === "ai-preview" && (
+        <div className="space-y-4">
+          <div>
+            <p className="font-semibold text-foreground">
+              {aiRows.length} items found{" "}
+              <span className="text-xs font-normal text-muted-foreground">({aiSource} format — AI mapped)</span>
+            </p>
+            <p className="text-sm text-muted-foreground">
+              New items will be created. Existing items (matched by name) will have pricing updated.
+            </p>
+          </div>
+          {/* Category filter chips */}
+          {(() => {
+            const uniqueCats = Array.from(new Set(aiRows.map((r) => r.category ?? "Other"))).sort();
+            const displayRows = filterCat ? aiRows.filter((r) => (r.category ?? "Other") === filterCat) : aiRows;
+            return (
+              <>
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={() => setFilterCat("")}
+                    className={cn("px-3 py-1 rounded-lg text-xs font-semibold transition-colors",
+                      !filterCat ? "bg-primary text-primary-foreground" : "bg-muted text-foreground")}
+                  >
+                    All ({aiRows.length})
+                  </button>
+                  {uniqueCats.map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => setFilterCat(filterCat === cat ? "" : cat)}
+                      className={cn("px-3 py-1 rounded-lg text-xs font-semibold transition-colors",
+                        filterCat === cat ? "bg-primary text-primary-foreground" : "bg-muted text-foreground")}
+                    >
+                      {cat} ({aiRows.filter((r) => (r.category ?? "Other") === cat).length})
+                    </button>
+                  ))}
+                </div>
+                <div className="max-h-72 overflow-y-auto rounded-xl border border-border divide-y divide-border">
+                  {displayRows.map((row, i) => (
+                    <div key={i} className="flex items-center justify-between px-3 py-2.5 text-sm bg-card">
+                      <div className="flex-1 min-w-0 mr-3">
+                        <p className="font-semibold text-foreground truncate">{row.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {row.brand && <span>{row.brand} · </span>}
+                          {row.packSize && <span>{row.packSize} · </span>}
+                          <span className="font-medium text-foreground">{row.category ?? "Other"}</span>
+                          {row.storageArea && <span> · {row.storageArea}</span>}
+                        </p>
+                      </div>
+                      <span className="font-bold text-foreground shrink-0">
+                        {row.price ? `$${parseFloat(row.price).toFixed(2)}` : "—"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
+          <div className="flex gap-3">
+            <button onClick={() => setStep("upload")} className="flex-1 btn-big bg-muted text-foreground">Back</button>
+            <button
+              onClick={() => importUniversalMutation.mutate({ rows: aiRows, importSource: aiSource })}
+              disabled={importUniversalMutation.isPending}
+              className="flex-1 btn-big bg-primary text-primary-foreground disabled:opacity-60"
+            >
+              {importUniversalMutation.isPending ? "Importing…" : `Import ${aiRows.length} Items`}
             </button>
           </div>
         </div>
