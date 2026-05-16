@@ -244,6 +244,14 @@ export default function ItemCatalog() {
   const [showFilters, setShowFilters] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
 
+  const recalcEachPricesMutation = trpc.items.recalcEachPrices.useMutation({
+    onSuccess: (res) => {
+      utils.items.list.invalidate();
+      toast.success(`Updated ${res.updated} of ${res.total} items with each prices`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const queryInput = useMemo(
     () => ({ vendor: filterVendor || undefined, category: filterCategory || undefined }),
     [filterVendor, filterCategory]
@@ -362,6 +370,14 @@ export default function ItemCatalog() {
               title="Import Webstaurant Order Guide"
             >
               <Upload size={20} />
+            </button>
+            <button
+              onClick={() => recalcEachPricesMutation.mutate()}
+              disabled={recalcEachPricesMutation.isPending}
+              className="p-3 rounded-xl bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors active:scale-95 disabled:opacity-50"
+              title="Recalculate each prices from pack size (run once after import)"
+            >
+              {recalcEachPricesMutation.isPending ? <span className="text-xs font-bold">...</span> : <span className="text-xs font-bold">÷</span>}
             </button>
             <button
               onClick={() => {

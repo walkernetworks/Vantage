@@ -50,6 +50,7 @@ import {
   listAllUsers,
   setUserRole,
   setUserActive,
+  recalcAllEachPrices,
   type PfgImportRow,
   type WebstaurantImportRow,
 } from "./db";
@@ -162,6 +163,9 @@ const itemsRouter = router({
   setCountMode: adminProcedure
     .input(z.object({ id: z.number(), countMode: z.enum(["case", "each"]) }))
     .mutation(({ input }) => updateItem(input.id, { countMode: input.countMode })),
+
+  recalcEachPrices: adminProcedure
+    .mutation(() => recalcAllEachPrices()),
 
   importWebstaurant: adminProcedure
     .input(

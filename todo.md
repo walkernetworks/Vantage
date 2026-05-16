@@ -179,3 +179,11 @@
 - [x] Count Sheet: when mode = each, store eaches directly in DB (no case conversion); convert for order math via caseQty
 - [x] Count Sheet: bulk fill helpers updated to respect countMode per item
 - [x] Count Sheet: load-from-DB logic updated to split eaches vs cases correctly per countMode
+
+## Round 12 — Each Mode: caseQty & eachPrice Fix
+
+- [x] Bug: parsePackSizeQty now handles leading dash ("- 25/Case"), CT/EA/PK suffixes ("12 CT"), and CS/N trailing formats
+- [x] Bug: eachPrice recomputed on setCountMode toggle — updateItem fetches current price+caseQty and stores eachPrice
+- [x] Fix: recalcAllEachPrices() backend function iterates all items and recomputes caseQty+eachPrice from packSize
+- [x] Fix: "Recalc Each Prices" admin button (÷ icon, amber) added to Item Catalog toolbar — run once after import to fix existing items
+- [x] Frontend: Count Sheet each mode already derives price client-side as casePrice/caseQty fallback when eachPrice is null

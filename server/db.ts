@@ -20,12 +20,32 @@ import { invokeLLM } from "./_core/llm";
 // Parses "6/24oz", "12/2 LB", "1/50 LB", "4/1 GA" etc. and returns the case qty
 export function parsePackSizeQty(packSize: string | null | undefined): number | null {
   if (!packSize) return null;
-  // Match leading number before a slash: "6/24oz" -> 6, "12/2 LB" -> 12
-  const match = packSize.trim().match(/^(\d+(?:\.\d+)?)\s*\//);
-  if (match) {
-    const qty = parseFloat(match[1]);
-    return isNaN(qty) || qty <= 0 ? null : qty;
+  const s = packSize.trim();
+
+  // Strip leading non-numeric prefix like "- " (Webstaurant format: "- 25/Case")
+  const stripped = s.replace(/^[-\s]+/, "");
+
+  // Pattern 1: N/... — leading number before slash: "6/6oz", "24/1oz", "25/Case"
+  const slashLeading = stripped.match(/^(\d+(?:\.\d+)?)\s*\//);
+  if (slashLeading) {
+    const qty = parseFloat(slashLeading[1]);
+    if (!isNaN(qty) && qty > 0) return qty;
   }
+
+  // Pattern 2: .../N — number after slash when leading is non-numeric: "CS/6", "EA/12"
+  const slashTrailing = stripped.match(/^[A-Za-z]+\s*\/(\d+(?:\.\d+)?)/);
+  if (slashTrailing) {
+    const qty = parseFloat(slashTrailing[1]);
+    if (!isNaN(qty) && qty > 0) return qty;
+  }
+
+  // Pattern 3: N CT / N EA / N PK — standalone count with unit suffix
+  const countUnit = stripped.match(/^(\d+(?:\.\d+)?)\s*(?:CT|EA|PK|PC|PCS|COUNT|EACH)\b/i);
+  if (countUnit) {
+    const qty = parseFloat(countUnit[1]);
+    if (!isNaN(qty) && qty > 0) return qty;
+  }
+
   return null;
 }
 
@@ -168,11 +188,24 @@ export async function createItem(data: typeof items.$inferInsert) {
 export async function updateItem(id: number, data: Partial<typeof items.$inferInsert>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  // Re-compute eachPrice if packSize or price changed
-  const enriched = (data.packSize !== undefined || data.price !== undefined)
-    ? enrichItemWithPackSize(data)
-    : data;
-  await db.update(items).set(enriched).where(eq(items.id, id));
+  // If packSize or price changed, recompute caseQty/eachPrice from the new values
+  if (data.packSize !== undefined || data.price !== undefined) {
+    const enriched = enrichItemWithPackSize(data);
+    await db.update(items).set(enriched).where(eq(items.id, id));
+    return;
+  }
+  // If only countMode changed (or any other field), fetch current price+packSize and
+  // recompute eachPrice so switching to each mode always shows the correct per-unit price
+  if (data.countMode !== undefined && data.eachPrice === undefined) {
+    const current = await getItemById(id);
+    if (current) {
+      const caseQty = current.caseQty ?? parsePackSizeQty(current.packSize);
+      const eachPrice = computeEachPrice(current.price, caseQty);
+      await db.update(items).set({ ...data, caseQty: caseQty ?? current.caseQty, eachPrice: eachPrice ?? current.eachPrice ?? null }).where(eq(items.id, id));
+      return;
+    }
+  }
+  await db.update(items).set(data).where(eq(items.id, id));
 }
 
 export async function deleteItem(id: number) {
@@ -186,6 +219,24 @@ export async function bulkCreateItems(data: (typeof items.$inferInsert)[]) {
   if (!db) throw new Error("DB not available");
   if (data.length === 0) return;
   await db.insert(items).values(data);
+}
+
+export async function recalcAllEachPrices() {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const allItems = await db.select().from(items);
+  let updated = 0;
+  for (const item of allItems) {
+    const caseQty = item.caseQty ?? parsePackSizeQty(item.packSize);
+    const eachPrice = computeEachPrice(item.price, caseQty);
+    if (caseQty !== item.caseQty || (eachPrice && eachPrice !== item.eachPrice)) {
+      await db.update(items)
+        .set({ caseQty: caseQty ?? item.caseQty, eachPrice: eachPrice ?? item.eachPrice })
+        .where(eq(items.id, item.id));
+      updated++;
+    }
+  }
+  return { updated, total: allItems.length };
 }
 
 // ─── Count Sessions ───────────────────────────────────────────────────────────
