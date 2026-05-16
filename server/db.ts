@@ -1097,33 +1097,46 @@ export async function getDashboardMetrics() {
   if (!db) return { inventoryValueByCategory: [], priceFluctuationsByVendor: [], orderCostTrend: [] };
 
   // 1. Inventory value by category: sum(price * parLevel) per category
-  const categoryRows = await db
-    .select({
-      category: items.category,
-      totalValue: sql<string>`ROUND(SUM(COALESCE(${items.price}, 0) * COALESCE(${items.parLevel}, 0)), 2)`,
-      itemCount: sql<number>`COUNT(*)`,
-    })
-    .from(items)
-    .where(sql`${items.isActive} = 1`)
-    .groupBy(items.category)
-    .orderBy(sql`SUM(COALESCE(${items.price}, 0) * COALESCE(${items.parLevel}, 0)) DESC`);
+  type CategoryRow = { category: string; totalValue: string; itemCount: number };
+  let categoryRows: CategoryRow[] = [];
+  try {
+    const result = await db.execute(
+      sql`SELECT category,
+             ROUND(SUM(COALESCE(price, 0) * COALESCE(parLevel, 0)), 2) AS totalValue,
+             COUNT(*) AS itemCount
+          FROM items
+          WHERE isActive = 1
+          GROUP BY category
+          ORDER BY totalValue DESC`
+    );
+    categoryRows = (result[0] as unknown as CategoryRow[]) ?? [];
+  } catch (e) {
+    console.warn("[dashboard] inventoryValueByCategory query failed:", e);
+  }
 
   // 2. Price fluctuations by vendor: monthly avg price change % per importSource (last 12 months)
   const twelveMonthsAgo = new Date();
   twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+  const cutoff = twelveMonthsAgo.toISOString().slice(0, 10);
 
-  const priceRows = await db
-    .select({
-      importSource: priceHistory.importSource,
-      month: sql<string>`DATE_FORMAT(${priceHistory.importedAt}, '%Y-%m')`,
-      avgOldPrice: sql<string>`AVG(COALESCE(${priceHistory.oldPrice}, ${priceHistory.newPrice}))`,
-      avgNewPrice: sql<string>`AVG(${priceHistory.newPrice})`,
-      changeCount: sql<number>`COUNT(*)`,
-    })
-    .from(priceHistory)
-    .where(sql`${priceHistory.importedAt} >= ${twelveMonthsAgo.toISOString().slice(0, 10)}`)
-    .groupBy(priceHistory.importSource, sql`DATE_FORMAT(${priceHistory.importedAt}, '%Y-%m')`)
-    .orderBy(sql`DATE_FORMAT(${priceHistory.importedAt}, '%Y-%m') ASC`);
+  type PriceRow = { importSource: string; month: string; avgOldPrice: string; avgNewPrice: string; changeCount: number };
+  let priceRows: PriceRow[] = [];
+  try {
+    const result = await db.execute(
+      sql`SELECT importSource,
+             DATE_FORMAT(importedAt, '%Y-%m') AS month,
+             AVG(COALESCE(oldPrice, newPrice)) AS avgOldPrice,
+             AVG(newPrice) AS avgNewPrice,
+             COUNT(*) AS changeCount
+          FROM price_history
+          WHERE importedAt >= ${cutoff}
+          GROUP BY importSource, DATE_FORMAT(importedAt, '%Y-%m')
+          ORDER BY month ASC`
+    );
+    priceRows = (result[0] as unknown as PriceRow[]) ?? [];
+  } catch (e) {
+    console.warn("[dashboard] priceFluctuationsByVendor query failed:", e);
+  }
 
   // 3. Order cost trend: from count sessions — sum of (price × max(0, parLevel - quantity)) per completed session
   const sessionRows = await db
