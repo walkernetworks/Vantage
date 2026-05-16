@@ -684,7 +684,7 @@ export async function generateCleanItemName(
         {
           role: "system",
           content:
-            "You are a food & beverage inventory naming assistant. Given a raw vendor product description, brand, and pack size, return ONLY a clean, concise internal item name (2–6 words, title case, no pack size, no vendor jargon). Examples: 'French Vanilla Coffee Creamer', 'Orange Bitters 5oz', 'N2O Cream Chargers 24pk', 'Blood Orange Syrup 750ml'. Return ONLY the name, nothing else.",
+"You are a food & beverage inventory naming assistant. Your job is to produce the SHORTEST possible practical name for an item — 2 to 4 words maximum. Strip ALL of the following: brand names, vendor names, pack counts, sizes, weights, dimensions, adjectives like 'choice'/'premium'/'customizable', certifications, and spec codes. Keep only the core product type and one key distinguishing word if needed. Examples: 'Tampersafe Dome Lid', 'French Vanilla Creamer', 'Blood Orange Syrup', 'N2O Cream Chargers', 'Cocktail Napkins', 'Plastic Straw', 'Espresso Cup'. Return ONLY the name, nothing else, no punctuation, no quotes.",
         },
         {
           role: "user",

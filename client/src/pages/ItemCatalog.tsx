@@ -1351,7 +1351,7 @@ function WebstaurantImportModal({ onClose }: { onClose: () => void }) {
           <div>
             <p className="font-semibold text-foreground">{rows.length} items found</p>
             <p className="text-sm text-muted-foreground">
-              AI will generate clean names for each item. New items will be created; existing items (matched by Item #) will have prices updated.
+New items will be created; existing items (matched by Item #) will have prices updated.
             </p>
           </div>
 
@@ -1360,10 +1360,8 @@ function WebstaurantImportModal({ onClose }: { onClose: () => void }) {
               <div key={i} className="px-3 py-2.5 text-sm bg-card">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
-                    {/* Proposed AI clean name */}
-                    <p className="font-semibold text-foreground text-xs">{row.cleanName}</p>
                     {/* Original vendor description */}
-                    <p className="text-xs text-muted-foreground truncate mt-0.5 italic">{row.rawName}</p>
+                    <p className="text-xs text-foreground truncate">{row.rawName}</p>
                     <p className="text-xs text-muted-foreground">
                       {row.brand} · #{row.webstaurantItemNumber}
                       {row.packSize && ` · ${row.packSize}`}
@@ -1375,9 +1373,7 @@ function WebstaurantImportModal({ onClose }: { onClose: () => void }) {
             ))}
           </div>
 
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
-            <strong>AI Name Generation:</strong> The bold name shown is a preliminary guess. Clicking Import will send each item to the AI to generate the final clean, concise internal name. The italic line below is the original vendor description that will be preserved as reference.
-          </div>
+
 
           <div className="flex gap-3">
             <button onClick={() => setStep("upload")} className="flex-1 btn-big bg-muted text-foreground">
@@ -1387,7 +1383,7 @@ function WebstaurantImportModal({ onClose }: { onClose: () => void }) {
               onClick={handleImportWithAI}
               className="flex-1 btn-big bg-purple-600 text-white disabled:opacity-60"
             >
-              Import {rows.length} Items (with AI Names)
+              Import {rows.length} Items
             </button>
           </div>
         </div>
@@ -1400,7 +1396,7 @@ function WebstaurantImportModal({ onClose }: { onClose: () => void }) {
             <Upload size={28} className="text-purple-600 animate-bounce" />
           </div>
           <div>
-            <p className="font-semibold text-foreground">Generating AI Names…</p>
+            <p className="font-semibold text-foreground">Importing items…</p>
             <p className="text-sm text-muted-foreground mt-1">
               Processing item {Math.round((aiProgress / 100) * rows.length)} of {rows.length}
             </p>

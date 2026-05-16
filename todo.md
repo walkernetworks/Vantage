@@ -157,3 +157,9 @@
 - [x] Remove Count History nav item from AppLayout sidebar
 - [x] Rename "Count Sheet" nav label to "Counts & History"
 - [x] Update page title inside CountSheet.tsx to match new label
+
+## Round 9 — AI Name Improvements
+
+- [x] Update `generateCleanItemName` prompt: produce 2-4 word short names, strip size/spec/brand noise
+- [x] Apply AI naming silently on Webstaurant import — no separate preview column
+- [x] Removed "Proposed Name" preview column from Webstaurant import modal; vendor description shown as-is in preview
