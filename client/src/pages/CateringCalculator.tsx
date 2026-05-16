@@ -324,14 +324,14 @@ export default function CateringCalculator() {
                       <div className={cn(
                         "rounded-2xl p-4 flex items-center justify-between",
                         shortItems.length > 0
-                          ? "bg-red-50 border border-red-200"
-                          : "bg-green-50 border border-green-200"
+                          ? "bg-destructive/5 border border-destructive/30"
+                          : "bg-accent/5 border border-accent/30"
                       )}>
                         <div>
-                          <p className={cn("text-xs font-semibold uppercase tracking-wider", shortItems.length > 0 ? "text-red-700" : "text-green-700")}>
+                          <p className={cn("text-xs font-semibold uppercase tracking-wider", shortItems.length > 0 ? "text-destructive" : "text-accent")}>
                             {shortItems.length > 0 ? "⚠️ Shortfalls Detected" : "✅ All Stock Sufficient"}
                           </p>
-                          <p className={cn("text-lg font-bold mt-0.5", shortItems.length > 0 ? "text-red-900" : "text-green-900")}>
+                          <p className={cn("text-lg font-bold mt-0.5", shortItems.length > 0 ? "text-destructive" : "text-accent")}>
                             {shortItems.length > 0
                               ? `${shortItems.length} item${shortItems.length !== 1 ? "s" : ""} need restocking for ${volumeNum} servings`
                               : `Ready for ${volumeNum} servings of ${selectedRecipe.name}`}

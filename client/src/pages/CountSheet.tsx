@@ -505,7 +505,7 @@ export default function CountSheet() {
                 {user?.role === "admin" && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setDeleteConfirm(s.id); }}
-                    className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-red-100 hover:text-red-600 active:scale-95 transition-all shrink-0"
+                    className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-destructive/10 hover:text-destructive active:scale-95 transition-all shrink-0"
                     title="Delete this count session"
                   >
                     <Trash2 size={14} />

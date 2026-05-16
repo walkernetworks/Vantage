@@ -953,12 +953,12 @@ function PfgImportModal({ onClose }: { onClose: () => void }) {
       {/* ── Step 1: Upload ── */}
       {step === "upload" && (
         <div className="space-y-5">
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800 space-y-1">
+          <div className="bg-secondary border border-border rounded-xl p-4 text-sm text-foreground space-y-1">
             <p className="font-semibold flex items-center gap-2">
               <Upload size={16} /> PFG Order Guide CSV
             </p>
             <p>Upload your PFG Order Guide export. The system will automatically map all columns and categories.</p>
-            <p className="text-xs text-amber-700 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               Expected columns: <span className="font-mono">Category Name, Product Description, Brand, Product Number, Pack Size, UOM, Price</span>
             </p>
           </div>
@@ -1060,13 +1060,13 @@ function PfgImportModal({ onClose }: { onClose: () => void }) {
         <div className="space-y-5">
           {/* Summary cards */}
           <div className="grid grid-cols-3 gap-3">
-            <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold text-green-700">{result.created}</p>
-              <p className="text-xs font-semibold text-green-600 mt-0.5">New Items</p>
+            <div className="bg-accent/10 border border-accent/30 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-accent">{result.created}</p>
+              <p className="text-xs font-semibold text-accent mt-0.5">New Items</p>
             </div>
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold text-blue-700">{result.updated}</p>
-              <p className="text-xs font-semibold text-blue-600 mt-0.5">Price Updated</p>
+            <div className="bg-ring/10 border border-ring/30 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-ring">{result.updated}</p>
+              <p className="text-xs font-semibold text-ring mt-0.5">Price Updated</p>
             </div>
             <div className="bg-muted border border-border rounded-xl p-3 text-center">
               <p className="text-2xl font-bold text-muted-foreground">{result.unchanged}</p>
@@ -1078,7 +1078,7 @@ function PfgImportModal({ onClose }: { onClose: () => void }) {
           {result.priceChanges.length > 0 ? (
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <AlertTriangle size={16} className="text-amber-500" />
+                <AlertTriangle size={16} className="text-primary" />
                 <p className="font-semibold text-foreground text-sm">
                   Price Changes Detected ({result.priceChanges.length})
                 </p>
@@ -1101,7 +1101,7 @@ function PfgImportModal({ onClose }: { onClose: () => void }) {
                       key={change.itemId}
                       className={cn(
                         "grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 px-3 py-3 items-center text-sm",
-                        isUp ? "bg-red-50/50" : "bg-green-50/50"
+                        isUp ? "bg-destructive/5" : "bg-accent/5"
                       )}
                     >
                       <div className="min-w-0">
@@ -1119,8 +1119,8 @@ function PfgImportModal({ onClose }: { onClose: () => void }) {
                         className={cn(
                           "text-xs font-bold font-mono px-1.5 py-0.5 rounded-md text-right",
                           isUp
-                            ? "bg-red-100 text-red-700"
-                            : "bg-green-100 text-green-700"
+                            ? "bg-destructive/10 text-destructive"
+                            : "bg-accent/20 text-accent"
                         )}
                       >
                         {isUp ? "+" : ""}${Math.abs(diff).toFixed(2)}
@@ -1130,8 +1130,8 @@ function PfgImportModal({ onClose }: { onClose: () => void }) {
                         className={cn(
                           "text-xs font-bold px-1.5 py-0.5 rounded-md flex items-center gap-0.5 justify-end",
                           isUp
-                            ? "bg-red-100 text-red-700"
-                            : "bg-green-100 text-green-700"
+                            ? "bg-destructive/10 text-destructive"
+                            : "bg-accent/20 text-accent"
                         )}
                       >
                         {isUp ? (
@@ -1160,20 +1160,20 @@ function PfgImportModal({ onClose }: { onClose: () => void }) {
                     <div className="space-y-1.5">
                       {increases.length > 0 && (
                         <div className="flex items-center justify-between text-sm">
-                          <span className="flex items-center gap-1.5 text-red-600">
+                          <span className="flex items-center gap-1.5 text-destructive">
                             <TrendingUp size={14} />
                             {increases.length} price increase{increases.length !== 1 ? "s" : ""}
                           </span>
-                          <span className="font-bold text-red-600">+${totalIncrease.toFixed(2)}</span>
+                          <span className="font-bold text-destructive">+${totalIncrease.toFixed(2)}</span>
                         </div>
                       )}
                       {decreases.length > 0 && (
                         <div className="flex items-center justify-between text-sm">
-                          <span className="flex items-center gap-1.5 text-green-600">
+                          <span className="flex items-center gap-1.5 text-accent">
                             <TrendingDown size={14} />
                             {decreases.length} price decrease{decreases.length !== 1 ? "s" : ""}
                           </span>
-                          <span className="font-bold text-green-600">${totalDecrease.toFixed(2)}</span>
+                          <span className="font-bold text-accent">${totalDecrease.toFixed(2)}</span>
                         </div>
                       )}
                     </div>
@@ -1182,11 +1182,11 @@ function PfgImportModal({ onClose }: { onClose: () => void }) {
               </div>
             </div>
           ) : (
-            <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl p-4">
-              <CheckCircle2 size={20} className="text-green-600 shrink-0" />
+            <div className="flex items-center gap-3 bg-accent/10 border border-accent/30 rounded-xl p-4">
+              <CheckCircle2 size={20} className="text-accent shrink-0" />
               <div>
-                <p className="font-semibold text-green-800 text-sm">No price changes detected</p>
-                <p className="text-xs text-green-700">All existing item prices match the imported guide.</p>
+                <p className="font-semibold text-foreground text-sm">No price changes detected</p>
+                <p className="text-xs text-muted-foreground">All existing item prices match the imported guide.</p>
               </div>
             </div>
           )}
@@ -1427,15 +1427,15 @@ function WebstaurantImportModal({ onClose }: { onClose: () => void }) {
       {/* Step 1: Upload */}
       {step === "upload" && (
         <div className="space-y-5">
-          <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-sm text-purple-800 space-y-1">
+          <div className="bg-secondary border border-border rounded-xl p-4 text-sm text-foreground space-y-1">
             <p className="font-semibold flex items-center gap-2">
               <Upload size={16} /> Webstaurant Order Guide CSV
             </p>
             <p>Export your order guide from WebstaurantStore (Saved Lists → Export CSV) then upload here.</p>
-            <p className="text-xs text-purple-700 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               Expected columns: <span className="font-mono">Item Number, Name, Vendor, Quantity, Base Price/Unit</span>
             </p>
-            <p className="text-xs text-purple-700">
+            <p className="text-xs text-muted-foreground">
               Re-uploading will update prices and track changes. Historical price data is preserved.
             </p>
           </div>
@@ -1443,9 +1443,9 @@ function WebstaurantImportModal({ onClose }: { onClose: () => void }) {
           <input ref={fileRef} type="file" accept=".csv,.txt" onChange={handleFileChange} className="hidden" />
           <button
             onClick={() => fileRef.current?.click()}
-            className="w-full h-32 rounded-2xl border-2 border-dashed border-purple-400/50 bg-purple-50 flex flex-col items-center justify-center gap-3 hover:bg-purple-100 transition-colors active:scale-[0.98]"
+            className="w-full h-32 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 flex flex-col items-center justify-center gap-3 hover:bg-primary/10 transition-colors active:scale-[0.98]"
           >
-            <Upload size={32} className="text-purple-600" />
+            <Upload size={32} className="text-primary" />
             <div className="text-center">
               <p className="font-semibold text-foreground">Tap to select Webstaurant CSV</p>
               <p className="text-sm text-muted-foreground">Supports .csv and .txt files</p>
@@ -1494,7 +1494,7 @@ New items will be created; existing items (matched by Item #) will have prices u
             </button>
             <button
               onClick={handleImportWithAI}
-              className="flex-1 btn-big bg-purple-600 text-white disabled:opacity-60"
+              className="flex-1 btn-big bg-primary text-primary-foreground disabled:opacity-60"
             >
               Import {rows.length} Items
             </button>
@@ -1505,8 +1505,8 @@ New items will be created; existing items (matched by Item #) will have prices u
       {/* Step 3: AI Generation in progress */}
       {step === "generating" && (
         <div className="space-y-5 py-4 text-center">
-          <div className="w-16 h-16 rounded-full bg-purple-100 flex items-center justify-center mx-auto">
-            <Upload size={28} className="text-purple-600 animate-bounce" />
+          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+            <Upload size={28} className="text-primary animate-bounce" />
           </div>
           <div>
             <p className="font-semibold text-foreground">Importing items…</p>
@@ -1516,7 +1516,7 @@ New items will be created; existing items (matched by Item #) will have prices u
           </div>
           <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
             <div
-              className="h-full bg-purple-500 rounded-full transition-all duration-300"
+              className="h-full bg-primary rounded-full transition-all duration-300"
               style={{ width: `${aiProgress}%` }}
             />
           </div>
@@ -1528,13 +1528,13 @@ New items will be created; existing items (matched by Item #) will have prices u
       {step === "result" && result && (
         <div className="space-y-5">
           <div className="grid grid-cols-3 gap-3">
-            <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold text-green-700">{result.created}</p>
-              <p className="text-xs font-semibold text-green-600 mt-0.5">New Items</p>
+            <div className="bg-accent/10 border border-accent/30 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-accent">{result.created}</p>
+              <p className="text-xs font-semibold text-accent mt-0.5">New Items</p>
             </div>
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold text-blue-700">{result.updated}</p>
-              <p className="text-xs font-semibold text-blue-600 mt-0.5">Price Updated</p>
+            <div className="bg-ring/10 border border-ring/30 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-ring">{result.updated}</p>
+              <p className="text-xs font-semibold text-ring mt-0.5">Price Updated</p>
             </div>
             <div className="bg-muted border border-border rounded-xl p-3 text-center">
               <p className="text-2xl font-bold text-muted-foreground">{result.unchanged}</p>
@@ -1545,7 +1545,7 @@ New items will be created; existing items (matched by Item #) will have prices u
           {result.priceChanges.length > 0 ? (
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <AlertTriangle size={16} className="text-amber-500" />
+                <AlertTriangle size={16} className="text-primary" />
                 <p className="font-semibold text-foreground text-sm">
                   Price Changes Detected ({result.priceChanges.length})
                 </p>
@@ -1567,7 +1567,7 @@ New items will be created; existing items (matched by Item #) will have prices u
                       key={change.itemId}
                       className={cn(
                         "grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 px-3 py-3 items-center text-sm",
-                        isUp ? "bg-red-50/50" : "bg-green-50/50"
+                        isUp ? "bg-destructive/5" : "bg-accent/5"
                       )}
                     >
                       <div className="min-w-0">
@@ -1579,10 +1579,10 @@ New items will be created; existing items (matched by Item #) will have prices u
                       <span className="font-bold font-mono text-xs text-right">
                         ${parseFloat(change.newPrice).toFixed(2)}
                       </span>
-                      <span className={cn("text-xs font-bold font-mono px-1.5 py-0.5 rounded-md text-right", isUp ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700")}>
+                      <span className={cn("text-xs font-bold font-mono px-1.5 py-0.5 rounded-md text-right", isUp ? "bg-destructive/10 text-destructive" : "bg-accent/20 text-accent")}>
                         {isUp ? "+" : ""}${Math.abs(diff).toFixed(2)}
                       </span>
-                      <span className={cn("text-xs font-bold px-1.5 py-0.5 rounded-md flex items-center gap-0.5 justify-end", isUp ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700")}>
+                      <span className={cn("text-xs font-bold px-1.5 py-0.5 rounded-md flex items-center gap-0.5 justify-end", isUp ? "bg-destructive/10 text-destructive" : "bg-accent/20 text-accent")}>
                         {isUp ? <ArrowUp size={10} /> : <ArrowDown size={10} />}
                         {Math.abs(pct).toFixed(1)}%
                       </span>
@@ -1601,20 +1601,20 @@ New items will be created; existing items (matched by Item #) will have prices u
                     <div className="space-y-1.5">
                       {increases.length > 0 && (
                         <div className="flex items-center justify-between text-sm">
-                          <span className="flex items-center gap-1.5 text-red-600">
+                          <span className="flex items-center gap-1.5 text-destructive">
                             <TrendingUp size={14} />
                             {increases.length} price increase{increases.length !== 1 ? "s" : ""}
                           </span>
-                          <span className="font-bold text-red-600">+${totalIncrease.toFixed(2)}</span>
+                          <span className="font-bold text-destructive">+${totalIncrease.toFixed(2)}</span>
                         </div>
                       )}
                       {decreases.length > 0 && (
                         <div className="flex items-center justify-between text-sm">
-                          <span className="flex items-center gap-1.5 text-green-600">
+                          <span className="flex items-center gap-1.5 text-accent">
                             <TrendingDown size={14} />
                             {decreases.length} price decrease{decreases.length !== 1 ? "s" : ""}
                           </span>
-                          <span className="font-bold text-green-600">${totalDecrease.toFixed(2)}</span>
+                          <span className="font-bold text-accent">${totalDecrease.toFixed(2)}</span>
                         </div>
                       )}
                     </div>
@@ -1623,11 +1623,11 @@ New items will be created; existing items (matched by Item #) will have prices u
               </div>
             </div>
           ) : (
-            <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl p-4">
-              <CheckCircle2 size={20} className="text-green-600 shrink-0" />
+            <div className="flex items-center gap-3 bg-accent/10 border border-accent/30 rounded-xl p-4">
+              <CheckCircle2 size={20} className="text-accent shrink-0" />
               <div>
-                <p className="font-semibold text-green-800 text-sm">No price changes detected</p>
-                <p className="text-xs text-green-700">All existing item prices match the imported guide.</p>
+                <p className="font-semibold text-foreground text-sm">No price changes detected</p>
+                <p className="text-xs text-muted-foreground">All existing item prices match the imported guide.</p>
               </div>
             </div>
           )}

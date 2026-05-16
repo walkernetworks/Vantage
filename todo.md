@@ -223,6 +223,6 @@
 
 ## Round 18 — Color Audit, Alcohol Removal, Universal Importer
 
-- [ ] Color audit: sweep all pages/components for hardcoded colors (amber, blue, green, etc.) and replace with brand palette CSS variables (primary=coral, accent=emerald, secondary=pink, muted=mint)
+- [x] Color audit: sweep all pages/components for hardcoded colors and replace with brand palette CSS variables
 - [x] Remove Alcohol Module (page, route, nav item, router, tests)
 - [x] Universal CSV importer — single modal auto-detects PFG vs Webstaurant format
