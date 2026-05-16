@@ -123,6 +123,7 @@ const itemsRouter = router({
     .input(z.object({
       ids: z.array(z.number()).min(1),
       patch: z.object({
+        brand: z.string().optional(),
         vendor: z.string().optional(),
         category: z.string().optional(),
         storageArea: z.string().optional(),

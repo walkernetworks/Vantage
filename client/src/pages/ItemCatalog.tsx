@@ -252,7 +252,7 @@ export default function ItemCatalog() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
   const [showBulkEdit, setShowBulkEdit] = useState(false);
-  const [bulkEditForm, setBulkEditForm] = useState({ vendor: "", category: "", storageArea: "", parLevel: "" });
+  const [bulkEditForm, setBulkEditForm] = useState({ brand: "", vendor: "", category: "", storageArea: "", parLevel: "" });
 
   const recalcEachPricesMutation = trpc.items.recalcEachPrices.useMutation({
     onSuccess: (res) => {
@@ -321,7 +321,7 @@ export default function ItemCatalog() {
       setSelectedIds(new Set());
       setShowBulkEdit(false);
       setBulkMode(false);
-      setBulkEditForm({ vendor: "", category: "", storageArea: "", parLevel: "" });
+      setBulkEditForm({ brand: "", vendor: "", category: "", storageArea: "", parLevel: "" });
       toast.success(`Updated ${count} item${count === 1 ? '' : 's'}`);
     },
     onError: (e) => toast.error(e.message),
@@ -924,6 +924,16 @@ export default function ItemCatalog() {
           </p>
           <div className="space-y-4">
             <div>
+              <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Brand / Manufacturer</label>
+              <input
+                type="text"
+                placeholder="e.g. Creature Comforts (leave blank to keep)"
+                value={bulkEditForm.brand}
+                onChange={(e) => setBulkEditForm((f) => ({ ...f, brand: e.target.value }))}
+                className="w-full px-3 py-2 rounded-xl border border-input bg-background text-sm"
+              />
+            </div>
+            <div>
               <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Vendor</label>
               <select
                 value={bulkEditForm.vendor}
@@ -975,7 +985,8 @@ export default function ItemCatalog() {
             </button>
             <button
               onClick={() => {
-                const patch: { vendor?: string; category?: string; storageArea?: string; parLevel?: number } = {};
+                const patch: { brand?: string; vendor?: string; category?: string; storageArea?: string; parLevel?: number } = {};
+                if (bulkEditForm.brand) patch.brand = bulkEditForm.brand;
                 if (bulkEditForm.vendor) patch.vendor = bulkEditForm.vendor;
                 if (bulkEditForm.category) patch.category = bulkEditForm.category;
                 if (bulkEditForm.storageArea) patch.storageArea = bulkEditForm.storageArea;

@@ -1255,6 +1255,7 @@ export async function getDashboardMetrics() {
 export async function bulkUpdateItems(
   ids: number[],
   patch: {
+    brand?: string;
     vendor?: string;
     category?: string;
     storageArea?: string;
@@ -1265,6 +1266,7 @@ export async function bulkUpdateItems(
   if (!db || ids.length === 0) return 0;
 
   const updateData: Record<string, unknown> = { updatedAt: new Date() };
+  if (patch.brand !== undefined) updateData.brand = patch.brand;
   if (patch.vendor !== undefined) updateData.vendor = patch.vendor;
   if (patch.category !== undefined) updateData.category = patch.category;
   if (patch.storageArea !== undefined) updateData.storageArea = patch.storageArea;
