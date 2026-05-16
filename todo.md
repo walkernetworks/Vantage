@@ -214,3 +214,9 @@
 ## Round 16 — Import Re-insert Bug Fix
 
 - [x] Bug: after deleting all items, re-uploading CSV only ran price-check — root cause was soft-delete: rows remained in DB with isActive=false. Fixed: both PFG and Webstaurant importers now check isActive on matched rows; if false, they reactivate the row and update all fields (counted as 'created'), bypassing the price-check path.
+
+## Round 17 — Brand Colors, Logo, Search Expansion
+
+- [x] Count Sheet search: expand to match brand, pfgProductNumber, webstaurantItemNumber, vendor, category, storageArea (not just item name)
+- [x] Brand color scheme: updated index.css CSS variables to B&B palette (Coral #ff7a6e, Pink #fcccc8, Mint #d3e5df, Emerald #57b296, Blue #73d0d1, Dark Gray #262626)
+- [x] Logo: uploaded B&BLogo-Transparent.png and placed in sidebar header, top header, and login page

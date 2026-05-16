@@ -307,7 +307,7 @@ export default function CountSheet() {
     }, 0);
   }, [countableItems, effectiveCounts]);
 
-  // Search-filtered items
+  // Search-filtered items — matches name, brand, manufacturer, product numbers, vendor, category, storage area
   const searchFilteredItems = useMemo(() => {
     if (!countSearch.trim()) return countableItems;
     const q = countSearch.toLowerCase();
@@ -316,7 +316,10 @@ export default function CountSheet() {
         item.name.toLowerCase().includes(q) ||
         item.category.toLowerCase().includes(q) ||
         (item.storageArea ?? "").toLowerCase().includes(q) ||
-        (item.vendor ?? "").toLowerCase().includes(q)
+        (item.vendor ?? "").toLowerCase().includes(q) ||
+        (item.brand ?? "").toLowerCase().includes(q) ||
+        (item.pfgProductNumber ?? "").toLowerCase().includes(q) ||
+        (item.webstaurantItemNumber ?? "").toLowerCase().includes(q)
     );
   }, [countableItems, countSearch]);
 

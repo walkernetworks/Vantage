@@ -7,7 +7,6 @@ import {
   Calculator,
   ChevronRight,
   ClipboardList,
-  Coffee,
   LogOut,
   Menu,
   Package,
@@ -34,7 +33,7 @@ const navItems: NavItem[] = [
   {
     href: "/",
     label: "Dashboard",
-    icon: <Coffee size={22} />,
+    icon: <BookOpen size={22} />,
     description: "Overview & quick stats",
   },
   {
@@ -126,11 +125,14 @@ export default function AppLayout({ children }: AppLayoutProps) {
         <div className="w-full max-w-sm text-center space-y-8 animate-in">
           {/* Logo */}
           <div className="space-y-3">
-            <div className="w-20 h-20 rounded-2xl bg-primary flex items-center justify-center mx-auto shadow-md">
-              <Coffee size={40} className="text-primary-foreground" />
+            <div className="mx-auto w-64 max-w-full">
+              <img
+                src="/manus-storage/B&BLogo-Transparent_340094db.png"
+                alt="Beignets & Brew"
+                className="w-full h-auto object-contain"
+              />
             </div>
             <div>
-              <h1 className="text-3xl font-serif text-foreground">Beignets & Brew</h1>
               <p className="text-muted-foreground mt-1">Inventory & Ordering System</p>
             </div>
           </div>
@@ -169,12 +171,11 @@ export default function AppLayout({ children }: AppLayoutProps) {
               <Menu size={22} className="text-foreground" />
             </button>
             <Link href="/" className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-                <Coffee size={16} className="text-primary-foreground" />
-              </div>
-              <span className="font-serif font-semibold text-foreground text-lg leading-none">
-                B&B
-              </span>
+              <img
+                src="/manus-storage/B&BLogo-Transparent_340094db.png"
+                alt="Beignets & Brew"
+                className="h-8 w-auto object-contain"
+              />
             </Link>
           </div>
 
@@ -210,13 +211,14 @@ export default function AppLayout({ children }: AppLayoutProps) {
       >
         {/* Sidebar Header */}
         <div className="flex items-center justify-between p-4 border-b border-border">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-              <Coffee size={20} className="text-primary-foreground" />
-            </div>
-            <div>
-              <p className="font-serif font-semibold text-foreground">Beignets & Brew</p>
-              <p className="text-xs text-muted-foreground">{user?.name ?? "Employee"}</p>
+          <div className="flex items-center gap-3 min-w-0">
+            <img
+              src="/manus-storage/B&BLogo-Transparent_340094db.png"
+              alt="Beignets & Brew"
+              className="h-9 w-auto object-contain shrink-0"
+            />
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground truncate">{user?.name ?? "Employee"}</p>
             </div>
           </div>
           <button

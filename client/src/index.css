@@ -4,56 +4,83 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* ── Design Tokens ─────────────────────────────────────────────────────────── */
+/* ── Design Tokens — Beignets & Brew Brand Palette ─────────────────────────── */
+/*
+  Coral     #ff7a6e  → primary actions, buttons, highlights
+  Pink      #fcccc8  → secondary, hover states
+  Pink Lt   #fdf4ef  → page backgrounds, cards
+  Mint      #d3e5df  → muted surfaces, subtle backgrounds
+  Emerald   #57b296  → success, positive indicators
+  Blue      #73d0d1  → info, focus rings
+  Dark Gray #262626  → foreground text
+*/
 @theme inline {
-  /* Warm cream / espresso palette */
-  --color-background:       oklch(97% 0.012 75);
-  --color-foreground:       oklch(18% 0.025 50);
-  --color-card:             oklch(99% 0.008 75);
-  --color-card-foreground:  oklch(18% 0.025 50);
-  --color-popover:          oklch(99% 0.008 75);
-  --color-popover-foreground: oklch(18% 0.025 50);
+  /* ── Backgrounds ── */
+  /* Warm off-white with a hint of pink warmth */
+  --color-background:       oklch(97.5% 0.010 30);
+  --color-foreground:       oklch(17% 0.010 30);   /* near #262626 dark gray */
 
-  /* Espresso brown primary */
-  --color-primary:          oklch(35% 0.07 50);
-  --color-primary-foreground: oklch(97% 0.012 75);
+  /* Card: very light pink-cream (#fdf4ef approximation) */
+  --color-card:             oklch(98% 0.014 40);
+  --color-card-foreground:  oklch(17% 0.010 30);
 
-  /* Warm amber secondary */
-  --color-secondary:        oklch(88% 0.04 75);
-  --color-secondary-foreground: oklch(25% 0.04 50);
+  --color-popover:          oklch(98% 0.014 40);
+  --color-popover-foreground: oklch(17% 0.010 30);
 
-  /* Muted warm gray */
-  --color-muted:            oklch(93% 0.018 75);
-  --color-muted-foreground: oklch(52% 0.025 55);
+  /* ── Primary — Coral #ff7a6e ── */
+  /* oklch approximation of #ff7a6e: L≈70%, C≈0.20, H≈25 */
+  --color-primary:          oklch(70% 0.20 25);
+  --color-primary-foreground: oklch(100% 0 0);
 
-  /* Accent: golden amber */
-  --color-accent:           oklch(78% 0.12 65);
-  --color-accent-foreground: oklch(18% 0.025 50);
+  /* ── Secondary — Pink #fcccc8 ── */
+  /* oklch approximation of #fcccc8: L≈87%, C≈0.07, H≈20 */
+  --color-secondary:        oklch(87% 0.07 20);
+  --color-secondary-foreground: oklch(25% 0.015 30);
 
-  /* Status colors */
+  /* ── Muted — Hint of Mint #d3e5df ── */
+  /* oklch approximation of #d3e5df: L≈89%, C≈0.04, H≈170 */
+  --color-muted:            oklch(89% 0.04 170);
+  --color-muted-foreground: oklch(45% 0.025 170);
+
+  /* ── Accent — Emerald Green #57b296 ── */
+  /* oklch approximation of #57b296: L≈67%, C≈0.12, H≈165 */
+  --color-accent:           oklch(67% 0.12 165);
+  --color-accent-foreground: oklch(100% 0 0);
+
+  /* ── Status colors ── */
+  /* Destructive: keep red for error states */
   --color-destructive:      oklch(55% 0.22 25);
   --color-destructive-foreground: oklch(97% 0.012 75);
-  --color-success:          oklch(55% 0.15 145);
-  --color-success-foreground: oklch(97% 0.012 75);
-  --color-warning:          oklch(72% 0.17 65);
-  --color-warning-foreground: oklch(18% 0.025 50);
 
-  --color-border:           oklch(88% 0.025 70);
-  --color-input:            oklch(88% 0.025 70);
-  --color-ring:             oklch(35% 0.07 50);
+  /* Success: Emerald #57b296 */
+  --color-success:          oklch(67% 0.12 165);
+  --color-success-foreground: oklch(100% 0 0);
 
-  /* Typography */
+  /* Warning: Coral-orange */
+  --color-warning:          oklch(70% 0.20 25);
+  --color-warning-foreground: oklch(100% 0 0);
+
+  /* ── Borders & Inputs ── */
+  /* Soft pink border derived from #fcccc8 slightly darker */
+  --color-border:           oklch(84% 0.06 20);
+  --color-input:            oklch(84% 0.06 20);
+
+  /* ── Focus Ring — Blue #73d0d1 ── */
+  /* oklch approximation of #73d0d1: L≈79%, C≈0.09, H≈195 */
+  --color-ring:             oklch(79% 0.09 195);
+
+  /* ── Typography ── */
   --font-sans:   "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-serif:  "Playfair Display", ui-serif, Georgia, serif;
 
-  /* Radius */
+  /* ── Radius ── */
   --radius: 0.75rem;
 
-  /* Shadows */
-  --shadow-sm:   0 1px 3px oklch(0% 0 0 / 0.06), 0 1px 2px oklch(0% 0 0 / 0.04);
-  --shadow:      0 4px 12px oklch(0% 0 0 / 0.08), 0 2px 4px oklch(0% 0 0 / 0.04);
-  --shadow-md:   0 8px 24px oklch(0% 0 0 / 0.10), 0 4px 8px oklch(0% 0 0 / 0.06);
-  --shadow-lg:   0 16px 40px oklch(0% 0 0 / 0.12), 0 8px 16px oklch(0% 0 0 / 0.08);
+  /* ── Shadows ── */
+  --shadow-sm:   0 1px 3px oklch(17% 0.010 30 / 0.06), 0 1px 2px oklch(17% 0.010 30 / 0.04);
+  --shadow:      0 4px 12px oklch(17% 0.010 30 / 0.08), 0 2px 4px oklch(17% 0.010 30 / 0.04);
+  --shadow-md:   0 8px 24px oklch(17% 0.010 30 / 0.10), 0 4px 8px oklch(17% 0.010 30 / 0.06);
+  --shadow-lg:   0 16px 40px oklch(17% 0.010 30 / 0.12), 0 8px 16px oklch(17% 0.010 30 / 0.08);
 }
 
 /* ── Base Styles ────────────────────────────────────────────────────────────── */
@@ -139,13 +166,16 @@
   .count-input:focus {
     outline: none;
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px oklch(35% 0.07 50 / 0.15);
+    box-shadow: 0 0 0 3px oklch(70% 0.20 25 / 0.18);
   }
 
   /* Status badges */
-  .badge-low { background: oklch(95% 0.06 25); color: oklch(45% 0.18 25); }
-  .badge-ok  { background: oklch(93% 0.06 145); color: oklch(40% 0.14 145); }
-  .badge-warn { background: oklch(95% 0.08 65); color: oklch(50% 0.15 65); }
+  /* low/error: coral-red tint */
+  .badge-low  { background: oklch(94% 0.06 25); color: oklch(45% 0.18 25); }
+  /* ok/success: emerald tint */
+  .badge-ok   { background: oklch(93% 0.05 165); color: oklch(40% 0.12 165); }
+  /* warn: pink tint */
+  .badge-warn { background: oklch(90% 0.06 20); color: oklch(45% 0.12 20); }
 
   /* Card hover lift */
   .card-hover {
@@ -170,7 +200,7 @@
 
   /* Shortfall highlight */
   .shortfall-row {
-    background: oklch(97% 0.04 25);
+    background: oklch(94% 0.06 25);
     border-left: 3px solid oklch(55% 0.22 25);
   }
 
@@ -225,7 +255,7 @@
 .form-input:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px oklch(35% 0.07 50 / 0.12);
+  box-shadow: 0 0 0 3px oklch(70% 0.20 25 / 0.15);
 }
 
 .form-input::placeholder {
