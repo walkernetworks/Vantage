@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
-import { CheckCircle, Clock, ClipboardList } from "lucide-react";
+import { CheckCircle, Clock, ClipboardList, User } from "lucide-react";
 import { Link } from "wouter";
 
 export default function CountHistory() {
@@ -54,6 +54,11 @@ export default function CountHistory() {
                       month: "short", day: "numeric", year: "numeric",
                       hour: "numeric", minute: "2-digit"
                     })}
+                    {(session as any).creatorName && (
+                      <span className="ml-2 inline-flex items-center gap-1 text-xs text-muted-foreground/70">
+                        <User size={11} /> {(session as any).creatorName}
+                      </span>
+                    )}
                   </p>
                   {session.completedAt && (
                     <p className="text-sm text-muted-foreground">
