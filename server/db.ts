@@ -1401,7 +1401,8 @@ export async function createPasswordResetToken(userId: number, token: string, ex
   const db = await getDb();
   if (!db) return;
   // Insert new token — old tokens expire naturally after 1 hour
-  await db.insert(passwordResetTokens).values({ userId, token, expiresAt });
+  // Explicitly set usedAt: null to avoid TiDB default-handling issues
+  await db.insert(passwordResetTokens).values({ userId, token, expiresAt, usedAt: null });
 }
 
 export async function getPasswordResetToken(token: string) {
