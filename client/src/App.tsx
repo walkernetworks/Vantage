@@ -15,25 +15,36 @@ import Settings from "./pages/Settings";
 import ParLevels from "./pages/ParLevels";
 import UserManagement from "./pages/UserManagement";
 import AccountSettings from "./pages/AccountSettings";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
 
 function Router() {
   return (
-    <AppLayout>
-      <Switch>
-        <Route path="/" component={Home} />
-        <Route path="/catalog" component={ItemCatalog} />
-        <Route path="/count" component={CountSheet} />
-        <Route path="/count/history" component={CountHistory} />
-        <Route path="/orders" component={OrderingDashboard} />
-        <Route path="/catering" component={CateringCalculator} />
-        <Route path="/par-levels" component={ParLevels} />
-        <Route path="/settings" component={Settings} />
-        <Route path="/admin/users" component={UserManagement} />
-        <Route path="/account" component={AccountSettings} />
-        <Route path="/404" component={NotFound} />
-        <Route component={NotFound} />
-      </Switch>
-    </AppLayout>
+    <Switch>
+      {/* Public auth routes — no AppLayout wrapper */}
+      <Route path="/login" component={Login} />
+      <Route path="/register" component={Register} />
+
+      {/* Protected app routes — wrapped in AppLayout */}
+      <Route>
+        <AppLayout>
+          <Switch>
+            <Route path="/" component={Home} />
+            <Route path="/catalog" component={ItemCatalog} />
+            <Route path="/count" component={CountSheet} />
+            <Route path="/count/history" component={CountHistory} />
+            <Route path="/orders" component={OrderingDashboard} />
+            <Route path="/catering" component={CateringCalculator} />
+            <Route path="/par-levels" component={ParLevels} />
+            <Route path="/settings" component={Settings} />
+            <Route path="/admin/users" component={UserManagement} />
+            <Route path="/account" component={AccountSettings} />
+            <Route path="/404" component={NotFound} />
+            <Route component={NotFound} />
+          </Switch>
+        </AppLayout>
+      </Route>
+    </Switch>
   );
 }
 

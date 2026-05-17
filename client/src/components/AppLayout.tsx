@@ -1,5 +1,4 @@
 import { useAuth } from "@/_core/hooks/useAuth";
-import { getLoginUrl } from "@/const";
 import { cn } from "@/lib/utils";
 import {
   BookOpen,
@@ -98,7 +97,9 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const logoutMutation = trpc.auth.logout.useMutation({
-    onSuccess: () => { window.location.href = "/"; },
+    onSuccess: () => {
+      window.location.href = "/login";
+    },
     onError: () => toast.error("Logout failed"),
   });
 
@@ -125,32 +126,9 @@ export default function AppLayout({ children }: AppLayoutProps) {
   }
 
   if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background px-4">
-        <div className="w-full max-w-sm text-center space-y-8 animate-in">
-          <div className="space-y-3">
-            <div className="mx-auto w-72 max-w-full">
-              <img
-                src="/manus-storage/BBLogo-Cropped_d8c3a53e.png"
-                alt="Beignets & Brew"
-                className="w-full h-auto object-contain"
-              />
-            </div>
-            <p className="text-muted-foreground mt-1">Inventory & Ordering System</p>
-          </div>
-          <div className="space-y-3">
-            <a
-              href={getLoginUrl()}
-              className="btn-big w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground hover:opacity-90 shadow-md"
-            >
-              Sign In to Continue
-              <ChevronRight size={18} />
-            </a>
-            <p className="text-xs text-muted-foreground">Secure login via Manus OAuth</p>
-          </div>
-        </div>
-      </div>
-    );
+    // Redirect to login page
+    window.location.href = "/login";
+    return null;
   }
 
   const isAdmin = user?.role === "admin";
@@ -200,70 +178,54 @@ export default function AppLayout({ children }: AppLayoutProps) {
                   <span className="text-[10px] font-semibold text-primary uppercase tracking-wide">Admin</span>
                 )}
               </div>
-              <ChevronRight
-                size={16}
-                className={cn(
-                  "text-muted-foreground transition-transform duration-200 hidden sm:block",
-                  dropdownOpen && "rotate-90"
-                )}
-              />
             </button>
 
-            {/* Dropdown panel */}
+            {/* Dropdown menu */}
             {dropdownOpen && (
-              <div className="absolute right-0 top-full mt-2 w-56 bg-card border border-border rounded-2xl shadow-lg overflow-hidden z-50 animate-in">
-                {/* User info header */}
-                <div className="px-4 py-3 border-b border-border bg-muted/40">
-                  <p className="text-sm font-semibold text-foreground truncate">{user?.name ?? "Employee"}</p>
-                  <p className="text-xs text-muted-foreground truncate">{user?.email ?? ""}</p>
-                  {isAdmin && (
-                    <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary text-primary-foreground uppercase tracking-wide">
-                      Admin
-                    </span>
-                  )}
+              <div className="absolute right-0 top-full mt-2 w-52 bg-card border border-border rounded-2xl shadow-lg overflow-hidden z-50 animate-in slide-in-from-top-2 duration-150">
+                <div className="px-4 py-3 border-b border-border">
+                  <p className="text-sm font-semibold text-foreground truncate">{user?.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
                 </div>
-
-                {/* Menu items */}
                 <div className="py-1">
                   <Link
                     href="/account"
                     onClick={() => setDropdownOpen(false)}
                     className="flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors"
                   >
-                    <User size={16} className="text-muted-foreground shrink-0" />
+                    <User size={16} className="text-muted-foreground" />
                     Account Settings
                   </Link>
-
                   {isAdmin && (
                     <Link
                       href="/admin/users"
                       onClick={() => setDropdownOpen(false)}
                       className="flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors"
                     >
-                      <Users size={16} className="text-muted-foreground shrink-0" />
+                      <Users size={16} className="text-muted-foreground" />
                       User Management
                     </Link>
                   )}
-
                   {isAdmin && (
                     <Link
                       href="/settings"
                       onClick={() => setDropdownOpen(false)}
                       className="flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors"
                     >
-                      <Settings size={16} className="text-muted-foreground shrink-0" />
+                      <Settings size={16} className="text-muted-foreground" />
                       App Settings
                     </Link>
                   )}
                 </div>
-
                 <div className="border-t border-border py-1">
                   <button
-                    onClick={() => { setDropdownOpen(false); logoutMutation.mutate(); }}
-                    disabled={logoutMutation.isPending}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      logoutMutation.mutate();
+                    }}
+                    className="flex items-center gap-3 px-4 py-2.5 text-sm text-destructive hover:bg-muted transition-colors w-full text-left"
                   >
-                    <LogOut size={16} className="shrink-0" />
+                    <LogOut size={16} />
                     Sign Out
                   </button>
                 </div>
@@ -273,92 +235,94 @@ export default function AppLayout({ children }: AppLayoutProps) {
         </div>
       </header>
 
-      {/* ── Mobile Sidebar Overlay ── */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
       {/* ── Sidebar Drawer ── */}
-      <aside
-        className={cn(
-          "fixed top-0 left-0 z-50 h-full w-72 bg-card shadow-lg flex flex-col transition-transform duration-300 ease-out safe-top",
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        )}
-      >
-        {/* Sidebar Header */}
-        <div className="flex items-center justify-between p-5 border-b border-border">
-          <div className="flex flex-col gap-2 min-w-0 flex-1">
-            <img
-              src="/manus-storage/BBLogo-Cropped_d8c3a53e.png"
-              alt="Beignets & Brew"
-              className="h-24 w-auto object-contain"
-              style={{ maxWidth: "210px" }}
-            />
-            <p className="text-xs text-muted-foreground truncate">{user?.name ?? "Employee"}</p>
-          </div>
-          <button
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-50 flex">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
             onClick={() => setSidebarOpen(false)}
-            className="p-2 rounded-xl hover:bg-muted transition-colors shrink-0"
-          >
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* Nav Items */}
-        <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-          {visibleNav.map((item) => {
-            const isActive = location === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
+          />
+          {/* Drawer */}
+          <div className="relative z-10 w-72 max-w-[85vw] bg-card h-full flex flex-col shadow-2xl animate-in slide-in-from-left duration-200">
+            {/* Drawer header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+              <div className="flex flex-col items-center w-full gap-1">
+                <img
+                  src="/manus-storage/BBLogo-Cropped_d8c3a53e.png"
+                  alt="Beignets & Brew"
+                  className="h-24 w-auto object-contain"
+                  style={{ maxWidth: "200px" }}
+                />
+              </div>
+              <button
                 onClick={() => setSidebarOpen(false)}
-                className={cn(
-                  "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-150",
-                  isActive
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-foreground hover:bg-muted active:scale-98"
-                )}
+                className="p-2 rounded-xl hover:bg-muted transition-colors shrink-0"
+                aria-label="Close menu"
               >
-                <span className={isActive ? "text-primary-foreground" : "text-muted-foreground"}>
-                  {item.icon}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-sm">{item.label}</p>
-                  <p
+                <X size={20} className="text-muted-foreground" />
+              </button>
+            </div>
+
+            {/* Nav items */}
+            <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-1">
+              {visibleNav.map((item) => {
+                const isActive = location === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setSidebarOpen(false)}
                     className={cn(
-                      "text-xs truncate",
-                      isActive ? "text-primary-foreground/70" : "text-muted-foreground"
+                      "flex items-center gap-4 px-4 py-3 rounded-xl transition-all",
+                      isActive
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-foreground hover:bg-muted"
                     )}
                   >
-                    {item.description}
-                  </p>
+                    <span className={isActive ? "text-primary-foreground" : "text-muted-foreground"}>
+                      {item.icon}
+                    </span>
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-semibold text-sm">{item.label}</span>
+                      <span className={cn("text-xs truncate", isActive ? "text-primary-foreground/70" : "text-muted-foreground")}>
+                        {item.description}
+                      </span>
+                    </div>
+                    {isActive && <ChevronRight size={16} className="ml-auto shrink-0 text-primary-foreground/70" />}
+                  </Link>
+                );
+              })}
+            </nav>
+
+            {/* User info at bottom */}
+            <div className="border-t border-border px-5 py-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center shrink-0">
+                  <span className="text-sm font-bold text-primary-foreground">
+                    {user?.name?.charAt(0)?.toUpperCase() ?? "U"}
+                  </span>
                 </div>
-                {isActive && <ChevronRight size={16} className="text-primary-foreground/70 shrink-0" />}
-              </Link>
-            );
-          })}
-        </nav>
-
-        {/* Sidebar Footer */}
-        <div className="p-3 border-t border-border safe-bottom">
-          <button
-            onClick={() => logoutMutation.mutate()}
-            disabled={logoutMutation.isPending}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-destructive hover:bg-destructive/10 transition-colors active:scale-97"
-          >
-            <LogOut size={20} />
-            <span className="font-semibold text-sm">Sign Out</span>
-          </button>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-foreground truncate">{user?.name ?? "Employee"}</p>
+                  <p className="text-xs text-muted-foreground truncate">{user?.email ?? ""}</p>
+                </div>
+                <button
+                  onClick={() => logoutMutation.mutate()}
+                  className="p-2 rounded-xl hover:bg-muted transition-colors text-muted-foreground hover:text-destructive"
+                  aria-label="Sign out"
+                >
+                  <LogOut size={18} />
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-      </aside>
+      )}
 
-      {/* ── Bottom Tab Bar (Mobile) ── */}
+      {/* ── Bottom Nav (mobile) ── */}
       <nav className="fixed bottom-0 left-0 right-0 z-30 bg-card border-t border-border safe-bottom md:hidden">
-        <div className="flex items-center justify-around h-16 px-2">
+        <div className="flex items-center justify-around px-2 py-2">
           {visibleNav.slice(0, 5).map((item) => {
             const isActive = location === item.href;
             return (
@@ -366,16 +330,14 @@ export default function AppLayout({ children }: AppLayoutProps) {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all duration-150 min-w-0",
-                  isActive ? "text-primary" : "text-muted-foreground"
+                  "flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all min-w-0",
+                  isActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 <span className={cn("transition-transform", isActive && "scale-110")}>
                   {item.icon}
                 </span>
-                <span className="text-[10px] font-semibold truncate max-w-[56px] text-center leading-none">
-                  {item.label.split(" ")[0]}
-                </span>
+                <span className="text-[10px] font-medium truncate max-w-[56px]">{item.label}</span>
               </Link>
             );
           })}
@@ -383,8 +345,8 @@ export default function AppLayout({ children }: AppLayoutProps) {
       </nav>
 
       {/* ── Main Content ── */}
-      <main className="flex-1 pb-20 md:pb-6">
-        <div className="animate-in">{children}</div>
+      <main className="flex-1 pb-20 md:pb-0">
+        {children}
       </main>
     </div>
   );

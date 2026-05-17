@@ -259,3 +259,30 @@
 - [x] AI enrichment for all CSV imports: brand inference, pack size parsing, clean names, category suggestions
 - [x] Bulk edit in Item Catalog (select multiple → change vendor/category/storage/par)
 - [x] Logo size fix (cropped PNG already uploaded)
+
+## Round 25 — Email+Password Auth & GitHub
+- [ ] Replace Manus OAuth with email+password auth (register, login, logout, session cookie)
+- [ ] Add password hash column to users table (bcrypt)
+- [ ] Build server-side register/login/logout/me tRPC procedures
+- [ ] Build frontend Login and Register pages
+- [ ] Update useAuth hook to use new email/password auth
+- [ ] Remove Manus OAuth references (getLoginUrl, VITE_OAUTH_PORTAL_URL, etc.)
+- [ ] Push project to GitHub repo walkernetworks/Vantage
+
+## Auth Migration — Email+Password (replacing Manus OAuth)
+- [x] DB schema: passwordHash column added to users, openId made nullable, email unique
+- [x] Migration SQL applied to database
+- [x] server/_core/localAuth.ts: signLocalSession, verifyLocalSession, authenticateLocalRequest (HS256 JWT)
+- [x] server/_core/context.ts: uses authenticateLocalRequest instead of sdk.authenticateRequest
+- [x] server/db.ts: getUserById, getUserByEmail, createLocalUser, updateUserPassword, updateUserProfile helpers
+- [x] server/routers.ts: auth.register and auth.login procedures (bcryptjs hashing, JWT cookie)
+- [x] server/_core/index.ts: removed registerOAuthRoutes() call
+- [x] client/src/pages/Login.tsx: email+password login form with B&B branding
+- [x] client/src/pages/Register.tsx: registration form with B&B branding
+- [x] client/src/_core/hooks/useAuth.ts: redirects to /login instead of Manus OAuth URL
+- [x] client/src/components/AppLayout.tsx: unauthenticated redirect to /login
+- [x] client/src/App.tsx: /login and /register routes outside AppLayout
+- [x] client/src/main.tsx: global error handler redirects to /login instead of OAuth
+- [x] client/src/const.ts: getLoginUrl() returns /login (no more Manus OAuth URL)
+- [x] server/auth.localauth.test.ts: 4 tests for register/login procedures
+- [x] TypeScript clean (0 errors), 45 tests pass

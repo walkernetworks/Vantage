@@ -1275,3 +1275,64 @@ export async function bulkUpdateItems(
   await db.update(items).set(updateData).where(inArray(items.id, ids));
   return ids.length;
 }
+
+// ─── Local Auth Helpers ───────────────────────────────────────────────────────
+
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getUserByEmail(email: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(users)
+    .where(eq(users.email, email.toLowerCase().trim()))
+    .limit(1);
+  return result[0];
+}
+
+export async function createLocalUser(data: {
+  name: string;
+  email: string;
+  passwordHash: string;
+  role?: "user" | "admin";
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(users).values({
+    name: data.name,
+    email: data.email.toLowerCase().trim(),
+    passwordHash: data.passwordHash,
+    loginMethod: "email",
+    role: data.role ?? "user",
+    lastSignedIn: new Date(),
+  });
+  const insertId = (result as any)[0]?.insertId ?? (result as any).insertId;
+  return getUserById(Number(insertId));
+}
+
+export async function updateUserPassword(userId: number, passwordHash: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(users)
+    .set({ passwordHash, updatedAt: new Date() })
+    .where(eq(users.id, userId));
+}
+
+export async function updateUserProfile(
+  userId: number,
+  data: { name?: string }
+) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(users)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(users.id, userId));
+}
