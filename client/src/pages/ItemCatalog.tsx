@@ -41,6 +41,7 @@ type ItemForm = {
   alcoholCategory: string;
   notes: string;
   webstaurantItemNumber: string;
+  pfgProductNumber: string;
 };
 
 const emptyForm: ItemForm = {
@@ -57,6 +58,7 @@ const emptyForm: ItemForm = {
   alcoholCategory: "",
   notes: "",
   webstaurantItemNumber: "",
+  pfgProductNumber: "",
 };
 
 // ── PFG Category → Internal Category mapping ──────────────────────────────────
@@ -373,6 +375,7 @@ export default function ItemCatalog() {
       alcoholCategory: item.alcoholCategory ?? "",
       notes: item.notes ?? "",
       webstaurantItemNumber: (item as any).webstaurantItemNumber ?? "",
+      pfgProductNumber: (item as any).pfgProductNumber ?? "",
     });
     setEditId(item.id);
     setShowForm(true);
@@ -393,6 +396,7 @@ export default function ItemCatalog() {
       alcoholCategory: form.alcoholCategory || undefined,
       notes: form.notes || undefined,
       webstaurantItemNumber: form.webstaurantItemNumber || undefined,
+      pfgProductNumber: form.pfgProductNumber || undefined,
     };
     if (editId) {
       updateMutation.mutate({ id: editId, data });
@@ -660,10 +664,19 @@ export default function ItemCatalog() {
                           {(item as any).brand && (
                             <p className="text-xs text-muted-foreground mt-0.5">{(item as any).brand}</p>
                           )}
-                          {(item as any).webstaurantItemNumber && (
-                            <p className="text-xs text-muted-foreground/70 mt-0.5 font-mono">
-                              #{(item as any).webstaurantItemNumber}
-                            </p>
+                          {((item as any).pfgProductNumber || (item as any).webstaurantItemNumber) && (
+                            <div className="flex flex-wrap gap-x-3 mt-0.5">
+                              {(item as any).pfgProductNumber && (
+                                <p className="text-xs text-muted-foreground/70 font-mono">
+                                  PFG #{(item as any).pfgProductNumber}
+                                </p>
+                              )}
+                              {(item as any).webstaurantItemNumber && (
+                                <p className="text-xs text-muted-foreground/70 font-mono">
+                                  WS #{(item as any).webstaurantItemNumber}
+                                </p>
+                              )}
+                            </div>
                           )}
                           <div className="flex flex-wrap items-center gap-2 mt-1.5">
                             <span
@@ -760,15 +773,26 @@ export default function ItemCatalog() {
               />
             </FormField>
 
-            <FormField label="Item / Product Number">
-              <input
-                type="text"
-                value={form.webstaurantItemNumber}
-                onChange={(e) => setForm({ ...form, webstaurantItemNumber: e.target.value })}
-                placeholder="e.g. 123456"
-                className="form-input font-mono"
-              />
-            </FormField>
+            <div className="grid grid-cols-2 gap-3">
+              <FormField label="PFG Product #">
+                <input
+                  type="text"
+                  value={form.pfgProductNumber}
+                  onChange={(e) => setForm({ ...form, pfgProductNumber: e.target.value })}
+                  placeholder="e.g. 12345"
+                  className="form-input font-mono"
+                />
+              </FormField>
+              <FormField label="Webstaurant Item #">
+                <input
+                  type="text"
+                  value={form.webstaurantItemNumber}
+                  onChange={(e) => setForm({ ...form, webstaurantItemNumber: e.target.value })}
+                  placeholder="e.g. 123456"
+                  className="form-input font-mono"
+                />
+              </FormField>
+            </div>
 
             <div className="grid grid-cols-2 gap-3">
               <FormField label="Category *">
