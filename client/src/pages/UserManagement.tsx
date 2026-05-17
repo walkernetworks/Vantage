@@ -276,10 +276,10 @@ export default function UserManagement() {
                 }`}
               >
                 {/* Top row */}
-                <div className="flex items-start gap-3">
+                <div className="flex flex-col gap-2">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold truncate">{u.name ?? "—"}</span>
+                      <span className="font-semibold">{u.name ?? u.email ?? "—"}</span>
                       <Badge
                         variant={u.role === "admin" ? "default" : "secondary"}
                         className="text-xs shrink-0"
@@ -308,14 +308,15 @@ export default function UserManagement() {
                   </div>
 
                   {/* Action buttons */}
-                  <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={() => toggleExpand(u.id)}
                       className="gap-1 text-xs"
                     >
-                      Permissions
+                      <span className="hidden sm:inline">Permissions</span>
+                      <span className="sm:hidden">Perms</span>
                       {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                     </Button>
 
@@ -328,9 +329,10 @@ export default function UserManagement() {
                         setResetTempPassword(null);
                       }}
                       className="gap-1 text-xs"
+                      title="Reset Password"
                     >
                       <KeyRound size={12} />
-                      Reset PW
+                      <span className="hidden sm:inline">Reset PW</span>
                     </Button>
 
                     {!isCurrentUser && (
@@ -345,9 +347,10 @@ export default function UserManagement() {
                         }
                         disabled={setRole.isPending}
                         className="gap-1 text-xs"
+                        title={u.role === "admin" ? "Demote to Employee" : "Promote to Admin"}
                       >
                         <ShieldCheck size={12} />
-                        {u.role === "admin" ? "Demote" : "Promote"}
+                        <span className="hidden sm:inline">{u.role === "admin" ? "Demote" : "Promote"}</span>
                       </Button>
                     )}
 
@@ -360,9 +363,10 @@ export default function UserManagement() {
                         }
                         disabled={setActive.isPending}
                         className="gap-1 text-xs"
+                        title={u.isActive ? "Deactivate" : "Reactivate"}
                       >
                         {u.isActive ? <UserX size={12} /> : <UserCheck size={12} />}
-                        {u.isActive ? "Deactivate" : "Reactivate"}
+                        <span className="hidden sm:inline">{u.isActive ? "Deactivate" : "Reactivate"}</span>
                       </Button>
                     )}
                   </div>
