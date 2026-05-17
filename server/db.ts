@@ -8,6 +8,7 @@ import {
   countEntries,
   countSessions,
   items,
+  passwordResetTokens,
   priceHistory,
   settingsCategories,
   settingsVendors,
@@ -1392,4 +1393,37 @@ export async function updateUserProfile(
     .update(users)
     .set({ ...data, updatedAt: new Date() })
     .where(eq(users.id, userId));
+}
+
+// ─── Password Reset Tokens ────────────────────────────────────────────────────
+
+export async function createPasswordResetToken(userId: number, token: string, expiresAt: Date) {
+  const db = await getDb();
+  if (!db) return;
+  // Invalidate any existing unused tokens for this user first
+  await db
+    .update(passwordResetTokens)
+    .set({ usedAt: new Date() })
+    .where(and(eq(passwordResetTokens.userId, userId), sql`${passwordResetTokens.usedAt} IS NULL`));
+  await db.insert(passwordResetTokens).values({ userId, token, expiresAt });
+}
+
+export async function getPasswordResetToken(token: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(passwordResetTokens)
+    .where(eq(passwordResetTokens.token, token))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function markTokenUsed(tokenId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(passwordResetTokens)
+    .set({ usedAt: new Date() })
+    .where(eq(passwordResetTokens.id, tokenId));
 }
