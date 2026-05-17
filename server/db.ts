@@ -1400,9 +1400,11 @@ export async function updateUserProfile(
 export async function createPasswordResetToken(userId: number, token: string, expiresAt: Date) {
   const db = await getDb();
   if (!db) return;
-  // Insert new token — old tokens expire naturally after 1 hour
-  // Explicitly set usedAt: null to avoid TiDB default-handling issues
-  await db.insert(passwordResetTokens).values({ userId, token, expiresAt, usedAt: null });
+  // Use raw SQL to insert only the required columns, avoiding Drizzle
+  // serializing NULL as empty string for the optional usedAt timestamp column
+  await db.execute(
+    sql`INSERT INTO password_reset_tokens (userId, token, expiresAt) VALUES (${userId}, ${token}, ${expiresAt})`
+  );
 }
 
 export async function getPasswordResetToken(token: string) {
