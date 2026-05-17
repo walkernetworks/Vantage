@@ -18,6 +18,8 @@ import AccountSettings from "./pages/AccountSettings";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ForcePasswordReset from "./pages/ForcePasswordReset";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 
 function Router() {
   return (
@@ -26,6 +28,8 @@ function Router() {
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
       <Route path="/reset-password" component={ForcePasswordReset} />
+      <Route path="/forgot-password" component={ForgotPassword} />
+      <Route path="/reset-password-link" component={ResetPassword} />
 
       {/* Protected app routes — wrapped in AppLayout */}
       <Route>
