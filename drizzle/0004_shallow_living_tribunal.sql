@@ -1,0 +1,1 @@
+ALTER TABLE `items` ADD `orderThreshold` decimal(4,2) DEFAULT '0.50';

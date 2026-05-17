@@ -1,0 +1,263 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+/* Comfortaa loaded via index.html */
+
+@custom-variant dark (&:is(.dark *));
+
+/* ── Design Tokens — Beignets & Brew Brand Palette ─────────────────────────── */
+/*
+  Coral     #ff7a6e  → primary actions, buttons, highlights
+  Pink      #fcccc8  → secondary, hover states
+  Pink Lt   #fdf4ef  → page backgrounds, cards
+  Mint      #d3e5df  → muted surfaces, subtle backgrounds
+  Emerald   #57b296  → success, positive indicators
+  Blue      #73d0d1  → info, focus rings
+  Dark Gray #262626  → foreground text
+*/
+@theme inline {
+  /* ── Backgrounds ── */
+  /* Warm off-white with a hint of pink warmth */
+  --color-background:       oklch(97.5% 0.010 30);
+  --color-foreground:       oklch(17% 0.010 30);   /* near #262626 dark gray */
+
+  /* Card: very light pink-cream (#fdf4ef approximation) */
+  --color-card:             oklch(98% 0.014 40);
+  --color-card-foreground:  oklch(17% 0.010 30);
+
+  --color-popover:          oklch(98% 0.014 40);
+  --color-popover-foreground: oklch(17% 0.010 30);
+
+  /* ── Primary — Coral #ff7a6e ── */
+  /* oklch approximation of #ff7a6e: L≈70%, C≈0.20, H≈25 */
+  --color-primary:          oklch(70% 0.20 25);
+  --color-primary-foreground: oklch(100% 0 0);
+
+  /* ── Secondary — Pink #fcccc8 ── */
+  /* oklch approximation of #fcccc8: L≈87%, C≈0.07, H≈20 */
+  --color-secondary:        oklch(87% 0.07 20);
+  --color-secondary-foreground: oklch(25% 0.015 30);
+
+  /* ── Muted — Hint of Mint #d3e5df ── */
+  /* oklch approximation of #d3e5df: L≈89%, C≈0.04, H≈170 */
+  --color-muted:            oklch(89% 0.04 170);
+  --color-muted-foreground: oklch(45% 0.025 170);
+
+  /* ── Accent — Emerald Green #57b296 ── */
+  /* oklch approximation of #57b296: L≈67%, C≈0.12, H≈165 */
+  --color-accent:           oklch(67% 0.12 165);
+  --color-accent-foreground: oklch(100% 0 0);
+
+  /* ── Status colors ── */
+  /* Destructive: keep red for error states */
+  --color-destructive:      oklch(55% 0.22 25);
+  --color-destructive-foreground: oklch(97% 0.012 75);
+
+  /* Success: Emerald #57b296 */
+  --color-success:          oklch(67% 0.12 165);
+  --color-success-foreground: oklch(100% 0 0);
+
+  /* Warning: Coral-orange */
+  --color-warning:          oklch(70% 0.20 25);
+  --color-warning-foreground: oklch(100% 0 0);
+
+  /* ── Borders & Inputs ── */
+  /* Soft pink border derived from #fcccc8 slightly darker */
+  --color-border:           oklch(84% 0.06 20);
+  --color-input:            oklch(84% 0.06 20);
+
+  /* ── Focus Ring — Blue #73d0d1 ── */
+  /* oklch approximation of #73d0d1: L≈79%, C≈0.09, H≈195 */
+  --color-ring:             oklch(79% 0.09 195);
+
+  /* ── Typography — Comfortaa universal font ── */
+  --font-sans:   "Comfortaa", ui-sans-serif, system-ui, sans-serif;
+  --font-serif:  "Comfortaa", ui-sans-serif, system-ui, sans-serif;
+
+  /* ── Radius ── */
+  --radius: 0.75rem;
+
+  /* ── Shadows ── */
+  --shadow-sm:   0 1px 3px oklch(17% 0.010 30 / 0.06), 0 1px 2px oklch(17% 0.010 30 / 0.04);
+  --shadow:      0 4px 12px oklch(17% 0.010 30 / 0.08), 0 2px 4px oklch(17% 0.010 30 / 0.04);
+  --shadow-md:   0 8px 24px oklch(17% 0.010 30 / 0.10), 0 4px 8px oklch(17% 0.010 30 / 0.06);
+  --shadow-lg:   0 16px 40px oklch(17% 0.010 30 / 0.12), 0 8px 16px oklch(17% 0.010 30 / 0.08);
+}
+
+/* ── Base Styles ────────────────────────────────────────────────────────────── */
+@layer base {
+  * {
+    border-color: var(--color-border);
+    outline-color: var(--color-ring);
+  }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: "Comfortaa", ui-sans-serif, system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  /* Bigger touch targets on mobile */
+  button, [role="button"], a, input, select, textarea {
+    touch-action: manipulation;
+  }
+}
+
+/* ── Container ──────────────────────────────────────────────────────────────── */
+@layer utilities {
+  .container {
+    width: 100%;
+    max-width: 1280px;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  @media (min-width: 640px) {
+    .container { padding-left: 1.5rem; padding-right: 1.5rem; }
+  }
+
+  /* Flex fix */
+  .flex { min-width: 0; min-height: 0; }
+
+  /* Big button mobile tap target */
+  .btn-big {
+    min-height: 3rem;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    border-radius: var(--radius);
+    transition: all 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .btn-big:active {
+    transform: scale(0.97);
+  }
+
+  /* Number input for count sheet */
+  .count-input {
+    min-height: 3.5rem;
+    font-size: 1.25rem;
+    font-weight: 600;
+    text-align: center;
+    border-radius: var(--radius);
+    border: 2px solid var(--color-border);
+    background: var(--color-card);
+    width: 100%;
+    transition: border-color 160ms ease-out, box-shadow 160ms ease-out;
+  }
+
+  .count-input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px oklch(70% 0.20 25 / 0.18);
+  }
+
+  /* Status badges */
+  /* low/error: coral-red tint */
+  .badge-low  { background: oklch(94% 0.06 25); color: oklch(45% 0.18 25); }
+  /* ok/success: emerald tint */
+  .badge-ok   { background: oklch(93% 0.05 165); color: oklch(40% 0.12 165); }
+  /* warn: pink tint */
+  .badge-warn { background: oklch(90% 0.06 20); color: oklch(45% 0.12 20); }
+
+  /* Card hover lift */
+  .card-hover {
+    transition: box-shadow 200ms cubic-bezier(0.23, 1, 0.32, 1), transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .card-hover:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+  }
+
+  /* Shimmer skeleton */
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  .skeleton {
+    background: linear-gradient(90deg, var(--color-muted) 25%, var(--color-border) 50%, var(--color-muted) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: calc(var(--radius) * 0.5);
+  }
+
+  /* Shortfall highlight */
+  .shortfall-row {
+    background: oklch(94% 0.06 25);
+    border-left: 3px solid oklch(55% 0.22 25);
+  }
+
+  /* Safe area padding for mobile */
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .safe-top    { padding-top:    env(safe-area-inset-top, 0px); }
+}
+
+/* ── Animations ─────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: no-preference) {
+  .animate-in {
+    animation: fadeInUp 200ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  }
+
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes modalIn {
+    from { opacity: 0; transform: translateY(16px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+}
+
+/* ── Card Hover ─────────────────────────────────────────────────────────────── */
+.card-hover {
+  transition: box-shadow 150ms ease-out, transform 150ms ease-out;
+}
+.card-hover:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+.card-hover:active {
+  transform: scale(0.98);
+}
+
+/* ── Form Input ─────────────────────────────────────────────────────────────── */
+.form-input {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.625rem 0.875rem;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--color-border);
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-size: 1rem;
+  font-family: var(--font-sans);
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+  appearance: auto;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px oklch(70% 0.20 25 / 0.15);
+}
+
+.form-input::placeholder {
+  color: var(--color-muted-foreground);
+}
