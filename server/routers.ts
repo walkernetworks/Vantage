@@ -56,6 +56,7 @@ import {
   listAllUsers,
   setUserRole,
   setUserActive,
+  updateUserPassword,
   recalcAllEachPrices,
   getDashboardMetrics,
   bulkUpdateItems,
@@ -776,6 +777,44 @@ const adminUsersRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "You cannot deactivate yourself" });
       }
       await setUserActive(input.userId, input.isActive);
+      return { success: true };
+    }),
+
+  createUser: adminProcedure
+    .input(
+      z.object({
+        name: z.string().min(1, "Name is required"),
+        email: z.string().email("Invalid email address"),
+        password: z.string().min(8, "Password must be at least 8 characters"),
+        role: z.enum(["user", "admin"]).default("user"),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const existing = await getUserByEmail(input.email);
+      if (existing) {
+        throw new TRPCError({ code: "CONFLICT", message: "An account with that email already exists." });
+      }
+      const passwordHash = await bcrypt.hash(input.password, 12);
+      const user = await createLocalUser({
+        name: input.name,
+        email: input.email,
+        passwordHash,
+        role: input.role,
+      });
+      if (!user) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to create user." });
+      return { success: true, user: { id: user.id, name: user.name, email: user.email, role: user.role } };
+    }),
+
+  resetPassword: adminProcedure
+    .input(
+      z.object({
+        userId: z.number(),
+        newPassword: z.string().min(8, "Password must be at least 8 characters"),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const passwordHash = await bcrypt.hash(input.newPassword, 12);
+      await updateUserPassword(input.userId, passwordHash);
       return { success: true };
     }),
 });
