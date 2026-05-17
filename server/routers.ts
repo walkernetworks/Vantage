@@ -66,6 +66,7 @@ import {
   type WebstaurantImportRow,
   type UniversalImportRow,
 } from "./db";
+import { sendWelcomeEmail, sendPasswordResetEmail } from "./email";
 
 // ─── Shared Zod Schemas ───────────────────────────────────────────────────────
 
@@ -792,7 +793,7 @@ const adminUsersRouter = router({
         permissions: z.array(z.string()).nullable().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const existing = await getUserByEmail(input.email);
       if (existing) {
         throw new TRPCError({ code: "CONFLICT", message: "An account with that email already exists." });
@@ -810,9 +811,24 @@ const adminUsersRouter = router({
         permissions: input.permissions ?? null,
       });
       if (!user) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to create user." });
+
+      // Send welcome email — fire-and-forget, never block user creation
+      const origin = (ctx.req as any)?.headers?.origin as string | undefined;
+      const loginUrl = origin ? `${origin}/login` : "https://getvantageapp.io/login";
+      const emailResult = await sendWelcomeEmail({
+        to: input.email,
+        name: input.name,
+        tempPassword,
+        loginUrl,
+      });
+      if (!emailResult.success) {
+        console.warn("[createUser] Welcome email failed:", emailResult.error);
+      }
+
       return {
         success: true,
         tempPassword,
+        emailSent: emailResult.success,
         user: { id: user.id, name: user.name, email: user.email, role: user.role },
       };
     }),
@@ -823,14 +839,32 @@ const adminUsersRouter = router({
         userId: z.number(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       // Generate a new temp password and force reset on next login
       const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#";
       const tempPassword = Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
       const passwordHash = await bcrypt.hash(tempPassword, 12);
       await updateUserPassword(input.userId, passwordHash);
       await setMustResetPassword(input.userId, true);
-      return { success: true, tempPassword };
+
+      // Look up user email to send the reset email
+      const targetUser = await listAllUsers().then((users) => users.find((u) => u.id === input.userId));
+      if (targetUser?.email) {
+        const origin = (ctx.req as any)?.headers?.origin as string | undefined;
+        const loginUrl = origin ? `${origin}/login` : "https://getvantageapp.io/login";
+        const emailResult = await sendPasswordResetEmail({
+          to: targetUser.email,
+          name: targetUser.name ?? targetUser.email,
+          tempPassword,
+          loginUrl,
+        });
+        if (!emailResult.success) {
+          console.warn("[resetPassword] Reset email failed:", emailResult.error);
+        }
+        return { success: true, tempPassword, emailSent: emailResult.success };
+      }
+
+      return { success: true, tempPassword, emailSent: false };
     }),
 
   updatePermissions: adminProcedure
