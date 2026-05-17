@@ -59,8 +59,7 @@ export default function UserManagement() {
       <div>
         <h1 className="text-2xl font-serif text-foreground">User Management</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Accounts are created automatically on first sign-in via Manus OAuth.
-          Promote staff to Admin or deactivate accounts here.
+          Create accounts for your team and manage their access levels here.
         </p>
       </div>
 
@@ -68,10 +67,9 @@ export default function UserManagement() {
       <div className="bg-secondary border border-border rounded-2xl p-4 text-sm text-foreground space-y-1">
         <p className="font-semibold">How access works</p>
         <p>
-          A new team member must <strong>sign in once</strong> using their Manus account — this creates
-          their record below. You can then promote them to <strong>Admin</strong> (full access) or leave
-          them as <strong>Employee</strong> (Count Sheet + Catering only). Deactivated accounts are
-          blocked from logging in.
+          Use <strong>Add User</strong> to create an account for a new team member. Set their role to
+          <strong>Admin</strong> (full access) or <strong>Employee</strong> (Count Sheet + Catering only).
+          Deactivated accounts are blocked from signing in.
         </p>
       </div>
 
