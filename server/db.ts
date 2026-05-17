@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql, aliasedTable } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2";
 import {
@@ -322,7 +322,23 @@ export async function getCountSession(id: number) {
 export async function listCountSessions() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(countSessions).orderBy(desc(countSessions.createdAt)).limit(50);
+  const creator = aliasedTable(users, "creator");
+  const rows = await db
+    .select({
+      id: countSessions.id,
+      name: countSessions.name,
+      notes: countSessions.notes,
+      createdBy: countSessions.createdBy,
+      creatorName: creator.name,
+      completedAt: countSessions.completedAt,
+      createdAt: countSessions.createdAt,
+      updatedAt: countSessions.updatedAt,
+    })
+    .from(countSessions)
+    .leftJoin(creator, eq(countSessions.createdBy, creator.id))
+    .orderBy(desc(countSessions.createdAt))
+    .limit(50);
+  return rows;
 }
 
 export async function completeCountSession(id: number) {
@@ -352,7 +368,13 @@ export async function getCountEntries(sessionId: number) {
   return db.select().from(countEntries).where(eq(countEntries.sessionId, sessionId));
 }
 
-export async function upsertCountEntry(sessionId: number, itemId: number, quantity: string, notes?: string) {
+export async function upsertCountEntry(
+  sessionId: number,
+  itemId: number,
+  quantity: string,
+  notes?: string,
+  updatedBy?: number
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const existing = await db
@@ -364,10 +386,16 @@ export async function upsertCountEntry(sessionId: number, itemId: number, quanti
   if (existing.length > 0) {
     await db
       .update(countEntries)
-      .set({ quantity, notes: notes ?? null })
+      .set({ quantity, notes: notes ?? null, updatedBy: updatedBy ?? null })
       .where(and(eq(countEntries.sessionId, sessionId), eq(countEntries.itemId, itemId)));
   } else {
-    await db.insert(countEntries).values({ sessionId, itemId, quantity, notes: notes ?? null });
+    await db.insert(countEntries).values({
+      sessionId,
+      itemId,
+      quantity,
+      notes: notes ?? null,
+      updatedBy: updatedBy ?? null,
+    });
   }
 }
 
@@ -378,11 +406,15 @@ export async function getSessionWithEntries(sessionId: number) {
   const session = await db.select().from(countSessions).where(eq(countSessions.id, sessionId)).limit(1);
   if (!session[0]) return null;
 
+  const editor = aliasedTable(users, "editor");
   const entries = await db
     .select({
       entryId: countEntries.id,
       quantity: countEntries.quantity,
       notes: countEntries.notes,
+      updatedBy: countEntries.updatedBy,
+      editorName: editor.name,
+      updatedAt: countEntries.updatedAt,
       itemId: items.id,
       itemName: items.name,
       category: items.category,
@@ -397,6 +429,7 @@ export async function getSessionWithEntries(sessionId: number) {
     })
     .from(countEntries)
     .innerJoin(items, eq(countEntries.itemId, items.id))
+    .leftJoin(editor, eq(countEntries.updatedBy, editor.id))
     .where(eq(countEntries.sessionId, sessionId));
 
   return { session: session[0], entries };
