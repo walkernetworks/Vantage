@@ -83,6 +83,7 @@ const itemInputSchema = z.object({
   isAlcohol: z.boolean().optional(),
   alcoholCategory: z.string().optional(),
   notes: z.string().optional(),
+  itemNumber: z.string().optional(),
 });
 
 // ─── Admin guard ──────────────────────────────────────────────────────────────
@@ -156,7 +157,7 @@ const itemsRouter = router({
       z.object({
         rows: z.array(
           z.object({
-            pfgProductNumber: z.string(),
+            itemNumber: z.string(),
             name: z.string(),
             brand: z.string(),
             category: z.string(),
@@ -201,7 +202,7 @@ const itemsRouter = router({
       z.object({
         rows: z.array(
           z.object({
-            webstaurantItemNumber: z.string(),
+            itemNumber: z.string(),
             rawName: z.string(),
             cleanName: z.string(),
             brand: z.string(),
