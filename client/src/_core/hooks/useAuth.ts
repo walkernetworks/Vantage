@@ -62,7 +62,7 @@ export function useAuth(options?: UseAuthOptions) {
     if (typeof window === "undefined") return;
     // Don't redirect if already on a public auth page
     const path = window.location.pathname;
-    if (path === "/login" || path === "/register") return;
+    if (path === "/login" || path === "/register" || path === "/reset-password") return;
     if (path === redirectPath) return;
 
     window.location.href = redirectPath;

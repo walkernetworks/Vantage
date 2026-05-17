@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { logoDataUrl } from "@/lib/logo";
 
 export default function Login() {
   const [, navigate] = useLocation();
@@ -30,7 +31,7 @@ export default function Login() {
         <div className="text-center space-y-2">
           <div className="mx-auto w-64 max-w-full">
             <img
-              src="/manus-storage/BBLogo-Cropped_d8c3a53e.png"
+              src={logoDataUrl}
               alt="Beignets & Brew"
               className="w-full h-auto object-contain"
             />

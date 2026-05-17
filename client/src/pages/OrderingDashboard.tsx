@@ -24,7 +24,7 @@ type BelowParItem = {
   price: string | null;
   parLevel: string | null;
   orderThreshold: string | null;
-  pfgProductNumber: string | null;
+  itemNumber: string | null;
   currentStock: string;
   casesNeeded: number;
   needsOrder: boolean;
@@ -45,7 +45,7 @@ function exportToCSV(items: BelowParItem[], vendor: string, sessionLabel: string
     const price = parseFloat(item.price ?? "0");
     rows.push([
       item.vendor ?? "",
-      item.pfgProductNumber ?? "",
+      item.itemNumber ?? "",
       item.name ?? "",
       item.category ?? "",
       item.packSize ?? "",
@@ -81,7 +81,7 @@ function exportToPDF(
     const price = parseFloat(item.price ?? "0");
     return `<tr>
       <td>${item.vendor ?? ""}</td>
-      <td style="font-family:monospace">${item.pfgProductNumber ?? "—"}</td>
+      <td style="font-family:monospace">${item.itemNumber ?? "—"}</td>
       <td>${item.name ?? ""}</td>
       <td>${item.packSize ?? "—"}</td>
       <td style="text-align:center">${parseFloat(item.currentStock).toFixed(1)}</td>
@@ -334,9 +334,9 @@ export default function OrderingDashboard() {
                         <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full", VENDOR_COLORS[item.vendor ?? ""] ?? "bg-gray-100 text-gray-700")}>
                           {item.vendor}
                         </span>
-                        {item.pfgProductNumber && (
+                        {item.itemNumber && (
                           <span className="text-xs font-mono bg-muted text-muted-foreground px-2 py-0.5 rounded-full border border-border">
-                            #{item.pfgProductNumber}
+                            #{item.itemNumber}
                           </span>
                         )}
                         {item.category && (

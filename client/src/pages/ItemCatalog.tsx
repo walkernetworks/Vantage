@@ -40,6 +40,7 @@ type ItemForm = {
   isAlcohol: boolean;
   alcoholCategory: string;
   notes: string;
+  itemNumber: string;
 };
 
 const emptyForm: ItemForm = {
@@ -55,6 +56,7 @@ const emptyForm: ItemForm = {
   isAlcohol: false,
   alcoholCategory: "",
   notes: "",
+  itemNumber: "",
 };
 
 // ── PFG Category → Internal Category mapping ──────────────────────────────────
@@ -95,7 +97,7 @@ const PFG_STORAGE_MAP: Record<string, string> = {
 };
 
 type PfgRow = {
-  pfgProductNumber: string;
+  itemNumber: string;
   name: string;
   brand: string;
   category: string;
@@ -195,7 +197,7 @@ function parsePfgCsv(text: string): PfgRow[] {
       .join(" ");
 
     const brand = (cols[idx.brand] ?? "").trim();
-    const pfgProductNumber = (cols[idx.productNumber] ?? "").trim();
+    const itemNumber = (cols[idx.productNumber] ?? "").trim();
     const packSize = (cols[idx.packSize] ?? "").trim();
     const unitOfMeasure = (cols[idx.uom] ?? "CS").trim();
     const rawPrice = (cols[idx.price] ?? "").trim().replace(/[$,]/g, "");
@@ -211,7 +213,7 @@ function parsePfgCsv(text: string): PfgRow[] {
         : undefined;
 
     rows.push({
-      pfgProductNumber,
+      itemNumber,
       name,
       brand,
       category: internalCategory,
@@ -351,8 +353,7 @@ export default function ItemCatalog() {
       item.category.toLowerCase().includes(q) ||
       item.vendor.toLowerCase().includes(q) ||
       ((item as any).brand ?? "").toLowerCase().includes(q) ||
-      ((item as any).pfgProductNumber ?? "").toLowerCase().includes(q) ||
-      ((item as any).webstaurantItemNumber ?? "").toLowerCase().includes(q)
+      ((item as any).itemNumber ?? "").toLowerCase().includes(q)
     );
   });
 
@@ -370,6 +371,7 @@ export default function ItemCatalog() {
       isAlcohol: item.isAlcohol,
       alcoholCategory: item.alcoholCategory ?? "",
       notes: item.notes ?? "",
+      itemNumber: (item as any).itemNumber ?? "",
     });
     setEditId(item.id);
     setShowForm(true);
@@ -389,6 +391,7 @@ export default function ItemCatalog() {
       storageArea: form.storageArea || undefined,
       alcoholCategory: form.alcoholCategory || undefined,
       notes: form.notes || undefined,
+      itemNumber: form.itemNumber || undefined,
     };
     if (editId) {
       updateMutation.mutate({ id: editId, data });
@@ -656,6 +659,11 @@ export default function ItemCatalog() {
                           {(item as any).brand && (
                             <p className="text-xs text-muted-foreground mt-0.5">{(item as any).brand}</p>
                           )}
+                          {(item as any).itemNumber && (
+                            <p className="text-xs text-muted-foreground/70 mt-0.5 font-mono">
+                              #{(item as any).itemNumber}
+                            </p>
+                          )}
                           <div className="flex flex-wrap items-center gap-2 mt-1.5">
                             <span
                               className={cn(
@@ -748,6 +756,16 @@ export default function ItemCatalog() {
                 onChange={(e) => setForm({ ...form, brand: e.target.value })}
                 placeholder="e.g. Svedka, Tito's, Heineken"
                 className="form-input"
+              />
+            </FormField>
+
+            <FormField label="Item #">
+              <input
+                type="text"
+                value={form.itemNumber}
+                onChange={(e) => setForm({ ...form, itemNumber: e.target.value })}
+                placeholder="e.g. 12345"
+                className="form-input font-mono"
               />
             </FormField>
 
@@ -1161,7 +1179,7 @@ function PfgImportModal({ onClose }: { onClose: () => void }) {
                 <div className="flex-1 min-w-0 mr-3">
                   <p className="font-semibold text-foreground truncate">{row.name}</p>
                   <p className="text-xs text-muted-foreground truncate">
-                    {row.brand} · #{row.pfgProductNumber} · {row.packSize}
+                    {row.brand} · #{(row as any).itemNumber} · {row.packSize}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     → <span className="font-medium text-foreground">{row.category}</span>
@@ -1401,7 +1419,7 @@ function FormField({ label, children }: { label: string; children: React.ReactNo
 // Last row has "*Add items to your cart..." — skip it
 
 type WebstaurantRow = {
-  webstaurantItemNumber: string;
+  itemNumber: string;
   rawName: string;
   cleanName: string;
   brand: string;
@@ -1475,7 +1493,7 @@ function parseWebstaurantCsv(text: string): WebstaurantRow[] {
       .join(" ");
 
     rows.push({
-      webstaurantItemNumber: itemNumber,
+      itemNumber: itemNumber,
       rawName: fullName,
       cleanName,
       brand,
@@ -1612,7 +1630,7 @@ New items will be created; existing items (matched by Item #) will have prices u
                     {/* Original vendor description */}
                     <p className="text-xs text-foreground truncate">{row.rawName}</p>
                     <p className="text-xs text-muted-foreground">
-                      {row.brand} · #{row.webstaurantItemNumber}
+                      {row.brand} · #{(row as any).itemNumber}
                       {row.packSize && ` · ${row.packSize}`}
                     </p>
                   </div>
@@ -2177,7 +2195,7 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
                       <div className="flex-1 min-w-0 mr-3">
                         <p className="font-semibold text-foreground truncate">{row.name}</p>
                         <p className="text-xs text-muted-foreground truncate">
-                          {row.brand} · #{row.pfgProductNumber} · {row.packSize}
+                          {row.brand} · #{(row as any).itemNumber} · {row.packSize}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           → <span className="font-medium text-foreground">{row.category}</span>
@@ -2221,7 +2239,7 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-foreground truncate">{row.rawName}</p>
                     <p className="text-xs text-muted-foreground">
-                      {row.brand} · #{row.webstaurantItemNumber}
+                      {row.brand} · #{(row as any).itemNumber}
                       {row.packSize && ` · ${row.packSize}`}
                     </p>
                   </div>
