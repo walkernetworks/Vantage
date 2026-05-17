@@ -302,3 +302,29 @@
 - [ ] Par List: show item number column
 - [ ] Count Sheet: show item number column
 - [ ] Edit Item dialog: show item number field
+
+## Round 28 — itemNumber Migration Complete
+
+- [x] DB schema: replaced pfgProductNumber + webstaurantItemNumber with unified itemNumber column
+- [x] DB migration: applied itemNumber column change to TiDB Cloud (178 items migrated)
+- [x] server/db.ts: importPfgItems and importWebstaurantItems both use itemNumber
+- [x] server/routers.ts: itemNumber in all item schemas
+- [x] CountSheet.tsx: replaced pfgProductNumber/webstaurantItemNumber with itemNumber
+- [x] ParLevels.tsx: replaced pfgProductNumber/webstaurantItemNumber with itemNumber
+- [x] OrderingDashboard.tsx: replaced pfgProductNumber with itemNumber in type, CSV export, PDF export, item card
+- [x] ItemCatalog.tsx: replaced pfgProductNumber/webstaurantItemNumber in PFG and Webstaurant import preview rows
+- [x] TypeScript check: 0 errors
+- [x] Tests: 45 passing
+- [x] All 18 changed files pushed to GitHub via direct API (no orphan branch)
+
+## Round 27 — Permissions & Auth (completed)
+
+- [x] DB schema: added permissions (JSON) and mustResetPassword (boolean) columns to users table
+- [x] DB migration: applied to TiDB Cloud
+- [x] server/db.ts: createLocalUser, updateUserPermissions, setMustResetPassword helpers
+- [x] server/routers.ts: adminUsers.createUser, adminUsers.resetPassword, adminUsers.updatePermissions procedures
+- [x] UserManagement.tsx: Add User with auto-generated temp password (shown once, copy button), permission toggles per user, Reset Password
+- [x] ForcePasswordReset.tsx: /reset-password page for first-login forced password change
+- [x] AppLayout.tsx: redirects to /reset-password when mustResetPassword=true
+- [x] Logo: embedded as base64 data URL in client/src/lib/logo.ts (no Render static file issues)
+- [x] All Manus branding removed from user-facing UI
