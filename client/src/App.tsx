@@ -17,6 +17,7 @@ import UserManagement from "./pages/UserManagement";
 import AccountSettings from "./pages/AccountSettings";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import ForcePasswordReset from "./pages/ForcePasswordReset";
 
 function Router() {
   return (
@@ -24,6 +25,7 @@ function Router() {
       {/* Public auth routes — no AppLayout wrapper */}
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
+      <Route path="/reset-password" component={ForcePasswordReset} />
 
       {/* Protected app routes — wrapped in AppLayout */}
       <Route>
