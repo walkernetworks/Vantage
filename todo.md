@@ -261,13 +261,13 @@
 - [x] Logo size fix (cropped PNG already uploaded)
 
 ## Round 25 — Email+Password Auth & GitHub
-- [ ] Replace Manus OAuth with email+password auth (register, login, logout, session cookie)
-- [ ] Add password hash column to users table (bcrypt)
-- [ ] Build server-side register/login/logout/me tRPC procedures
-- [ ] Build frontend Login and Register pages
-- [ ] Update useAuth hook to use new email/password auth
-- [ ] Remove Manus OAuth references (getLoginUrl, VITE_OAUTH_PORTAL_URL, etc.)
-- [ ] Push project to GitHub repo walkernetworks/Vantage
+- [x] Replace Manus OAuth with email+password auth (register, login, logout, session cookie)
+- [x] Add password hash column to users table (bcrypt)
+- [x] Build server-side register/login/logout/me tRPC procedures
+- [x] Build frontend Login and Register pages
+- [x] Update useAuth hook to use new email/password auth
+- [x] Remove Manus OAuth references (getLoginUrl, VITE_OAUTH_PORTAL_URL, etc.)
+- [x] Push project to GitHub repo walkernetworks/Vantage
 
 ## Auth Migration — Email+Password (replacing Manus OAuth)
 - [x] DB schema: passwordHash column added to users, openId made nullable, email unique
@@ -289,16 +289,62 @@
 
 ## Round 27 — Permissions, Temp Password, Item Numbers
 
-- [ ] DB schema: add `permissions` JSON column and `mustResetPassword` boolean to users table
-- [ ] DB migration: apply schema changes to TiDB Cloud production database
-- [ ] Server: update createUser to auto-generate temp password, set mustResetPassword=true
-- [ ] Server: add adminUsers.updatePermissions procedure
-- [ ] Server: add auth.changePassword procedure (for forced reset flow)
-- [ ] Server: enforce permissions on protected procedures (check ctx.user.permissions)
-- [ ] UserManagement UI: show permission toggles per user (8 permissions)
-- [ ] UserManagement UI: show generated temp password on user creation (copy to clipboard)
-- [ ] Add /change-password forced-reset page shown when mustResetPassword=true
-- [ ] Item Catalogue: show item number column
-- [ ] Par List: show item number column
-- [ ] Count Sheet: show item number column
-- [ ] Edit Item dialog: show item number field
+- [x] DB schema: add `permissions` JSON column and `mustResetPassword` boolean to users table
+- [x] DB migration: apply schema changes to TiDB Cloud production database
+- [x] Server: update createUser to auto-generate temp password, set mustResetPassword=true
+- [x] Server: add adminUsers.updatePermissions procedure
+- [x] Server: add auth.changePassword procedure (for forced reset flow)
+- [x] Server: enforce permissions on protected procedures (check ctx.user.permissions)
+- [x] UserManagement UI: show permission toggles per user (8 permissions)
+- [x] UserManagement UI: show generated temp password on user creation (copy to clipboard)
+- [x] Add /change-password forced-reset page shown when mustResetPassword=true
+- [x] Item Catalogue: show item number column
+- [x] Par List: show item number column
+- [x] Count Sheet: show item number column
+- [x] Edit Item dialog: show item number field
+
+## Round 28 — itemNumber Migration Complete
+
+- [x] DB schema: replaced pfgProductNumber + webstaurantItemNumber with unified itemNumber column
+- [x] DB migration: applied itemNumber column change to TiDB Cloud (178 items migrated)
+- [x] server/db.ts: importPfgItems and importWebstaurantItems both use itemNumber
+- [x] server/routers.ts: itemNumber in all item schemas
+- [x] CountSheet.tsx: replaced pfgProductNumber/webstaurantItemNumber with itemNumber
+- [x] ParLevels.tsx: replaced pfgProductNumber/webstaurantItemNumber with itemNumber
+- [x] OrderingDashboard.tsx: replaced pfgProductNumber with itemNumber in type, CSV export, PDF export, item card
+- [x] ItemCatalog.tsx: replaced pfgProductNumber/webstaurantItemNumber in PFG and Webstaurant import preview rows
+- [x] TypeScript check: 0 errors
+- [x] Tests: 45 passing
+- [x] All 18 changed files pushed to GitHub via direct API (no orphan branch)
+
+## Round 27 — Permissions & Auth (completed)
+
+- [x] DB schema: added permissions (JSON) and mustResetPassword (boolean) columns to users table
+- [x] DB migration: applied to TiDB Cloud
+- [x] server/db.ts: createLocalUser, updateUserPermissions, setMustResetPassword helpers
+- [x] server/routers.ts: adminUsers.createUser, adminUsers.resetPassword, adminUsers.updatePermissions procedures
+- [x] UserManagement.tsx: Add User with auto-generated temp password (shown once, copy button), permission toggles per user, Reset Password
+- [x] ForcePasswordReset.tsx: /reset-password page for first-login forced password change
+- [x] AppLayout.tsx: redirects to /reset-password when mustResetPassword=true
+- [x] Logo: embedded as base64 data URL in client/src/lib/logo.ts (no Render static file issues)
+- [x] All Manus branding removed from user-facing UI
+
+## Round 29 — Count Session Collaboration & Auto-Save
+
+### Who created each session
+- [x] Backend: update listCountSessions to LEFT JOIN users table and return creatorName (users.name)
+- [x] Frontend CountSheet: show "Started by <name>" beneath each session chip in the history list
+- [x] Frontend CountSheet: show "Started by <name>" in the active session banner
+
+### Per-entry last-edited-by tracking
+- [x] DB schema: add `updatedBy` int column (FK → users.id) to count_entries table
+- [x] DB migration: apply updatedBy column to TiDB Cloud
+- [x] Backend: update upsertEntry to accept and store updatedBy (ctx.user.id)
+- [x] Backend: update getSessionWithEntries to return updatedBy + editorName (JOIN users)
+- [x] Frontend CountSheet: show "Last edited by <name>" tooltip or small label on each item row when entry exists
+
+### Instant auto-save (no debounce data loss)
+- [x] Frontend CountSheet: reduce debounce from 800ms to 300ms so saves fire faster
+- [x] Frontend CountSheet: add onBlur save — fire upsertEntry immediately when user leaves an input field (catches tab/swipe away before debounce fires)
+- [x] Frontend CountSheet: show per-item save indicator (spinner while pending, green check when saved, red dot on error)
+- [x] Frontend CountSheet: prevent completing a session while any entry is still pending save (disable Complete button with tooltip "Saving…")
