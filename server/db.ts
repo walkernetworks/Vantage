@@ -534,7 +534,7 @@ export async function removeRecipeItem(id: number) {
 // ─── PFG Import & Price History ─────────────────────────────────────────────────────
 
 export type PfgImportRow = {
-  pfgProductNumber: string;
+  itemNumber: string;
   name: string;
   brand: string;
   category: string;
@@ -576,7 +576,7 @@ export async function importPfgItems(rows: PfgImportRow[]): Promise<PfgImportRes
     const existing = await db
       .select()
       .from(items)
-      .where(eq(items.pfgProductNumber, row.pfgProductNumber))
+      .where(and(eq(items.vendor, "PFG"), eq(items.itemNumber, row.itemNumber)))
       .limit(1);
 
     const caseQty = parsePackSizeQty(row.packSize);
@@ -598,7 +598,7 @@ export async function importPfgItems(rows: PfgImportRow[]): Promise<PfgImportRes
         storageArea: row.storageArea ?? "Dry Storage",
         isAlcohol: row.isAlcohol,
         alcoholCategory: row.alcoholCategory ?? null,
-        pfgProductNumber: row.pfgProductNumber,
+        itemNumber: row.itemNumber,
         isActive: true,
       });
       created++;
@@ -848,7 +848,7 @@ export async function generateCleanItemName(
 // ─── Webstaurant Import ───────────────────────────────────────────────────────
 
 export type WebstaurantImportRow = {
-  webstaurantItemNumber: string;
+  itemNumber: string;
   rawName: string;          // original vendor description
   cleanName: string;        // AI-generated clean name
   brand: string;
@@ -886,7 +886,7 @@ export async function importWebstaurantItems(
     const existing = await db
       .select()
       .from(items)
-      .where(eq(items.webstaurantItemNumber, row.webstaurantItemNumber))
+      .where(and(eq(items.vendor, "Webstaurant"), eq(items.itemNumber, row.itemNumber)))
       .limit(1);
 
     const caseQty = parsePackSizeQty(row.packSize);
@@ -907,7 +907,7 @@ export async function importWebstaurantItems(
         parLevel: "0",
         storageArea: "Dry Storage",
         isAlcohol: false,
-        webstaurantItemNumber: row.webstaurantItemNumber,
+        itemNumber: row.itemNumber,
         isActive: true,
       });
       created++;
