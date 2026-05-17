@@ -1,73 +1,131 @@
-import { useAuth } from "@/_core/hooks/useAuth";
+import { useState } from "react";
 import { trpc } from "@/lib/trpc";
-import { cn } from "@/lib/utils";
-import {
-  CheckCircle2,
-  Crown,
-  ShieldOff,
-  UserCheck,
-  UserMinus,
-  Users,
-  XCircle,
-} from "lucide-react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { UserPlus, KeyRound, Eye, EyeOff } from "lucide-react";
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function timeAgo(date: Date): string {
-  const now = Date.now();
-  const diff = now - new Date(date).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 2) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
-// ─── Component ────────────────────────────────────────────────────────────────
+type User = {
+  id: number;
+  name: string | null;
+  email: string | null;
+  role: "user" | "admin";
+  isActive: boolean;
+  createdAt: Date;
+};
 
 export default function UserManagement() {
-  const { user: me } = useAuth();
   const utils = trpc.useUtils();
 
   const { data: users = [], isLoading } = trpc.adminUsers.list.useQuery();
 
-  const setRoleMutation = trpc.adminUsers.setRole.useMutation({
-    onSuccess: () => {
+  // ── Add User dialog state ──────────────────────────────────────────────────
+  const [addOpen, setAddOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newRole, setNewRole] = useState<"user" | "admin">("user");
+  const [showNewPw, setShowNewPw] = useState(false);
+
+  // ── Reset Password dialog state ────────────────────────────────────────────
+  const [resetTarget, setResetTarget] = useState<User | null>(null);
+  const [resetPassword, setResetPw] = useState("");
+  const [showResetPw, setShowResetPw] = useState(false);
+
+  // ── Mutations ──────────────────────────────────────────────────────────────
+  const createUserMutation = trpc.adminUsers.createUser.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Account created for ${data.user?.name ?? newEmail}`);
       utils.adminUsers.list.invalidate();
-      toast.success("Role updated");
+      setAddOpen(false);
+      setNewName("");
+      setNewEmail("");
+      setNewPassword("");
+      setNewRole("user");
     },
-    onError: (e) => toast.error(e.message),
+    onError: (err) => toast.error(err.message || "Failed to create user"),
+  });
+
+  const resetPasswordMutation = trpc.adminUsers.resetPassword.useMutation({
+    onSuccess: () => {
+      toast.success("Password updated successfully");
+      setResetTarget(null);
+      setResetPw("");
+    },
+    onError: (err) => toast.error(err.message || "Failed to reset password"),
+  });
+
+  const setRoleMutation = trpc.adminUsers.setRole.useMutation({
+    onSuccess: () => utils.adminUsers.list.invalidate(),
+    onError: (err) => toast.error(err.message || "Failed to update role"),
   });
 
   const setActiveMutation = trpc.adminUsers.setActive.useMutation({
-    onSuccess: (_, vars) => {
-      utils.adminUsers.list.invalidate();
-      toast.success(vars.isActive ? "User reactivated" : "User deactivated");
-    },
-    onError: (e) => toast.error(e.message),
+    onSuccess: () => utils.adminUsers.list.invalidate(),
+    onError: (err) => toast.error(err.message || "Failed to update status"),
   });
 
-  const isBusy = setRoleMutation.isPending || setActiveMutation.isPending;
+  function handleCreateUser(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newName.trim() || !newEmail.trim() || !newPassword) return;
+    createUserMutation.mutate({
+      name: newName.trim(),
+      email: newEmail.trim(),
+      password: newPassword,
+      role: newRole,
+    });
+  }
+
+  function handleResetPassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (!resetTarget || !resetPassword) return;
+    resetPasswordMutation.mutate({ userId: resetTarget.id, newPassword: resetPassword });
+  }
+
+  const admins = users.filter((u) => u.role === "admin" && u.isActive).length;
+  const employees = users.filter((u) => u.role === "user" && u.isActive).length;
+  const inactive = users.filter((u) => !u.isActive).length;
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-serif text-foreground">User Management</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Create accounts for your team and manage their access levels here.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-serif text-foreground">User Management</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Create accounts for your team and manage their access levels here.
+          </p>
+        </div>
+        <Button
+          onClick={() => setAddOpen(true)}
+          className="shrink-0 flex items-center gap-2"
+        >
+          <UserPlus size={16} />
+          Add User
+        </Button>
       </div>
 
       {/* How it works callout */}
       <div className="bg-secondary border border-border rounded-2xl p-4 text-sm text-foreground space-y-1">
         <p className="font-semibold">How access works</p>
         <p>
-          Use <strong>Add User</strong> to create an account for a new team member. Set their role to
+          Use <strong>Add User</strong> to create an account for a new team member. Set their role to{" "}
           <strong>Admin</strong> (full access) or <strong>Employee</strong> (Count Sheet + Catering only).
           Deactivated accounts are blocked from signing in.
         </p>
@@ -81,12 +139,12 @@ export default function UserManagement() {
             <p className="text-xs text-muted-foreground font-medium">Total</p>
           </div>
           <div className="bg-card rounded-2xl border border-border p-3 shadow-sm text-center">
-            <p className="text-2xl font-bold text-primary">{users.filter((u) => u.role === "admin").length}</p>
+            <p className="text-2xl font-bold text-foreground">{admins}</p>
             <p className="text-xs text-muted-foreground font-medium">Admins</p>
           </div>
           <div className="bg-card rounded-2xl border border-border p-3 shadow-sm text-center">
-            <p className="text-2xl font-bold text-accent">{users.filter((u) => u.isActive).length}</p>
-            <p className="text-xs text-muted-foreground font-medium">Active</p>
+            <p className="text-2xl font-bold text-foreground">{employees}</p>
+            <p className="text-xs text-muted-foreground font-medium">Employees</p>
           </div>
         </div>
       )}
@@ -95,160 +153,222 @@ export default function UserManagement() {
       {isLoading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-20 rounded-2xl skeleton" />
+            <div key={i} className="bg-card rounded-2xl border border-border p-4 animate-pulse h-20" />
           ))}
         </div>
       ) : users.length === 0 ? (
-        <div className="text-center py-16 space-y-3">
-          <Users size={48} className="mx-auto text-muted-foreground/40" />
-          <div>
-            <p className="font-semibold text-foreground">No users yet</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Users appear here after they sign in for the first time.
-            </p>
-          </div>
+        <div className="text-center py-12 text-muted-foreground text-sm">
+          No users yet. Click <strong>Add User</strong> to get started.
         </div>
       ) : (
         <div className="space-y-3">
-          {users.map((user) => {
-            const isMe = user.id === me?.id;
-            const isAdmin = user.role === "admin";
-
-            return (
-              <div
-                key={user.id}
-                className={cn(
-                  "bg-card rounded-2xl border shadow-sm p-4 transition-opacity",
-                  !user.isActive && "opacity-60",
-                  user.isActive ? "border-border" : "border-dashed border-border"
-                )}
-              >
-                {/* Top row: avatar + name + badges */}
-                <div className="flex items-start gap-3">
-                  {/* Avatar */}
-                  <div
-                    className={cn(
-                      "w-11 h-11 rounded-xl flex items-center justify-center text-lg font-bold shrink-0",
-                      isAdmin
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-accent text-accent-foreground"
+          {users.map((user) => (
+            <div
+              key={user.id}
+              className={`bg-card rounded-2xl border border-border p-4 shadow-sm transition-opacity ${
+                !user.isActive ? "opacity-50" : ""
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-foreground truncate">
+                      {user.name ?? "(no name)"}
+                    </span>
+                    <Badge
+                      variant={user.role === "admin" ? "default" : "secondary"}
+                      className="text-xs"
+                    >
+                      {user.role === "admin" ? "Admin" : "Employee"}
+                    </Badge>
+                    {!user.isActive && (
+                      <Badge variant="outline" className="text-xs text-muted-foreground">
+                        Inactive
+                      </Badge>
                     )}
-                  >
-                    {user.name?.charAt(0)?.toUpperCase() ?? "?"}
                   </div>
-
-                  {/* Name / email / meta */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-semibold text-foreground leading-tight">
-                        {user.name ?? "Unknown"}
-                        {isMe && (
-                          <span className="ml-1.5 text-xs font-normal text-muted-foreground">(you)</span>
-                        )}
-                      </p>
-                      {/* Role badge */}
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full",
-                          isAdmin
-                            ? "bg-primary/10 text-primary border border-primary/20"
-                            : "bg-muted text-muted-foreground border border-border"
-                        )}
-                      >
-                        {isAdmin ? <Crown size={10} /> : <UserCheck size={10} />}
-                        {isAdmin ? "Admin" : "Employee"}
-                      </span>
-                      {/* Active badge */}
-                      {!user.isActive && (
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-destructive/10 text-destructive border border-destructive/20">
-                          <XCircle size={10} />
-                          Deactivated
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                      {user.email ?? "No email on file"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Last sign-in: {timeAgo(user.lastSignedIn)}
-                    </p>
-                  </div>
+                  <p className="text-sm text-muted-foreground truncate mt-0.5">
+                    {user.email ?? "—"}
+                  </p>
                 </div>
 
-                {/* Action row */}
-                {!isMe && (
-                  <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
-                    {/* Role toggle */}
-                    <button
-                      disabled={isBusy}
-                      onClick={() =>
-                        setRoleMutation.mutate({
-                          userId: user.id,
-                          role: isAdmin ? "user" : "admin",
-                        })
-                      }
-                      className={cn(
-                        "flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-colors active:scale-95",
-                        isAdmin
-                          ? "bg-muted text-foreground border-border hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
-                          : "bg-primary/10 text-primary border-primary/20 hover:bg-primary hover:text-primary-foreground"
-                      )}
-                    >
-                      {isAdmin ? (
-                        <>
-                          <ShieldOff size={13} />
-                          Demote to Employee
-                        </>
-                      ) : (
-                        <>
-                          <Crown size={13} />
-                          Promote to Admin
-                        </>
-                      )}
-                    </button>
+                {/* Actions */}
+                <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                  {/* Reset Password */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs flex items-center gap-1"
+                    onClick={() => {
+                      setResetTarget(user as User);
+                      setResetPw("");
+                      setShowResetPw(false);
+                    }}
+                  >
+                    <KeyRound size={12} />
+                    Reset PW
+                  </Button>
 
-                    {/* Active toggle */}
-                    <button
-                      disabled={isBusy}
-                      onClick={() =>
-                        setActiveMutation.mutate({
-                          userId: user.id,
-                          isActive: !user.isActive,
-                        })
-                      }
-                      className={cn(
-                        "flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-colors active:scale-95",
-                        user.isActive
-                          ? "bg-muted text-foreground border-border hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
-                          : "bg-accent/20 text-accent border-accent/30 hover:bg-accent hover:text-accent-foreground"
-                      )}
-                    >
-                      {user.isActive ? (
-                        <>
-                          <UserMinus size={13} />
-                          Deactivate
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 size={13} />
-                          Reactivate
-                        </>
-                      )}
-                    </button>
-                  </div>
-                )}
+                  {/* Promote / Demote */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs"
+                    disabled={setRoleMutation.isPending}
+                    onClick={() =>
+                      setRoleMutation.mutate({
+                        userId: user.id,
+                        role: user.role === "admin" ? "user" : "admin",
+                      })
+                    }
+                  >
+                    {user.role === "admin" ? "Demote" : "Promote"}
+                  </Button>
 
-                {/* Self-row note */}
-                {isMe && (
-                  <p className="mt-3 pt-3 border-t border-border text-xs text-muted-foreground italic">
-                    This is your account — role and status cannot be changed by yourself.
-                  </p>
-                )}
+                  {/* Activate / Deactivate */}
+                  <Button
+                    variant={user.isActive ? "destructive" : "outline"}
+                    size="sm"
+                    className="text-xs"
+                    disabled={setActiveMutation.isPending}
+                    onClick={() =>
+                      setActiveMutation.mutate({ userId: user.id, isActive: !user.isActive })
+                    }
+                  >
+                    {user.isActive ? "Deactivate" : "Reactivate"}
+                  </Button>
+                </div>
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
+
+      {inactive > 0 && (
+        <p className="text-xs text-muted-foreground text-center">
+          {inactive} inactive account{inactive !== 1 ? "s" : ""} hidden from stats
+        </p>
+      )}
+
+      {/* ── Add User Dialog ──────────────────────────────────────────────── */}
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add New User</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCreateUser} className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="new-name">Full Name</Label>
+              <Input
+                id="new-name"
+                placeholder="Jane Smith"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="new-email">Email</Label>
+              <Input
+                id="new-email"
+                type="email"
+                placeholder="jane@example.com"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="new-password">Password</Label>
+              <div className="relative">
+                <Input
+                  id="new-password"
+                  type={showNewPw ? "text" : "password"}
+                  placeholder="Min. 8 characters"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  minLength={8}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowNewPw((v) => !v)}
+                  tabIndex={-1}
+                >
+                  {showNewPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="new-role">Role</Label>
+              <Select value={newRole} onValueChange={(v) => setNewRole(v as "user" | "admin")}>
+                <SelectTrigger id="new-role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user">Employee — Count Sheet &amp; Catering only</SelectItem>
+                  <SelectItem value="admin">Admin — Full access</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter className="pt-2">
+              <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={createUserMutation.isPending}>
+                {createUserMutation.isPending ? "Creating…" : "Create Account"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Reset Password Dialog ────────────────────────────────────────── */}
+      <Dialog open={!!resetTarget} onOpenChange={(open) => !open && setResetTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reset Password</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Setting a new password for <strong>{resetTarget?.name ?? resetTarget?.email}</strong>.
+          </p>
+          <form onSubmit={handleResetPassword} className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="reset-password">New Password</Label>
+              <div className="relative">
+                <Input
+                  id="reset-password"
+                  type={showResetPw ? "text" : "password"}
+                  placeholder="Min. 8 characters"
+                  value={resetPassword}
+                  onChange={(e) => setResetPw(e.target.value)}
+                  required
+                  minLength={8}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowResetPw((v) => !v)}
+                  tabIndex={-1}
+                >
+                  {showResetPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+            <DialogFooter className="pt-2">
+              <Button type="button" variant="outline" onClick={() => setResetTarget(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={resetPasswordMutation.isPending}>
+                {resetPasswordMutation.isPending ? "Saving…" : "Update Password"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
