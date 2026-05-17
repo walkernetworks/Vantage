@@ -1400,10 +1400,10 @@ export async function updateUserProfile(
 export async function createPasswordResetToken(userId: number, token: string, expiresAt: Date) {
   const db = await getDb();
   if (!db) return;
-  // Use raw SQL to insert only the required columns, avoiding Drizzle
-  // serializing NULL as empty string for the optional usedAt timestamp column
+  // Format date as MySQL datetime string (TiDB rejects JS Date.toString() format)
+  const expiresAtStr = expiresAt.toISOString().slice(0, 19).replace('T', ' ');
   await db.execute(
-    sql`INSERT INTO password_reset_tokens (userId, token, expiresAt) VALUES (${userId}, ${token}, ${expiresAt})`
+    sql`INSERT INTO password_reset_tokens (userId, token, expiresAt) VALUES (${userId}, ${token}, ${expiresAtStr})`
   );
 }
 
