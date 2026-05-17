@@ -157,10 +157,15 @@ export default function UserManagement() {
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [createdName, setCreatedName] = useState("");
 
+  const [emailSent, setEmailSent] = useState(false);
+  const [createdEmail, setCreatedEmail] = useState("");
+
   const createUser = trpc.adminUsers.createUser.useMutation({
     onSuccess: (data) => {
       setTempPassword(data.tempPassword);
       setCreatedName(createName);
+      setEmailSent((data as any).emailSent ?? false);
+      setCreatedEmail(createEmail);
       utils.adminUsers.list.invalidate();
       setCreateName("");
       setCreateEmail("");
@@ -183,6 +188,9 @@ export default function UserManagement() {
     onSuccess: (data) => {
       setResetTempPassword(data.tempPassword);
       utils.adminUsers.list.invalidate();
+      if ((data as any).emailSent) {
+        toast.success("Password reset email sent to " + resetUserName);
+      }
     },
     onError: (e) => toast.error(e.message),
   });
@@ -393,8 +401,16 @@ export default function UserManagement() {
           {tempPassword ? (
             <div className="space-y-4">
               <p className="text-sm">
-                Account created for <strong>{createdName}</strong>. Share this temporary password —
-                they will be prompted to change it on first login.
+                Account created for <strong>{createdName}</strong>.
+                {emailSent ? (
+                  <span className="block mt-1 text-accent font-medium">
+                    ✓ A welcome email with login instructions was sent to {createdEmail}.
+                  </span>
+                ) : (
+                  <span className="block mt-1 text-muted-foreground">
+                    Share this temporary password — they will be prompted to change it on first login.
+                  </span>
+                )}
               </p>
               <div className="flex items-center justify-between rounded-xl px-4 py-3 font-mono text-lg font-bold bg-muted border border-border">
                 <span>{tempPassword}</span>
@@ -408,6 +424,8 @@ export default function UserManagement() {
                   onClick={() => {
                     setShowCreate(false);
                     setTempPassword(null);
+                    setEmailSent(false);
+                    setCreatedEmail("");
                   }}
                 >
                   Done
