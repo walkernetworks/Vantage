@@ -28,6 +28,7 @@ import {
   SlidersHorizontal,
   Square,
   Trash2,
+  User,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -49,6 +50,7 @@ export default function CountSheet() {
   // localEachCounts stores the EACH count for items that have caseQty > 1
   const [localEachCounts, setLocalEachCounts] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState<Record<number, boolean>>({});
+  const [saveError, setSaveError] = useState<Record<number, boolean>>({});
 
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [countSearch, setCountSearch] = useState("");
@@ -80,11 +82,13 @@ export default function CountSheet() {
   const upsertEntryMutation = trpc.counts.upsertEntry.useMutation({
     onSuccess: (_, vars) => {
       setSaving((prev) => ({ ...prev, [vars.itemId]: false }));
+      setSaveError((prev) => ({ ...prev, [vars.itemId]: false }));
       utils.counts.getSessionWithEntries.invalidate({ id: activeSessionId! });
     },
     onError: (e, vars) => {
       setSaving((prev) => ({ ...prev, [vars.itemId]: false }));
-      toast.error("Failed to save count");
+      setSaveError((prev) => ({ ...prev, [vars.itemId]: true }));
+      toast.error("Failed to save count — please retry");
     },
   });
 
@@ -191,7 +195,16 @@ export default function CountSheet() {
     setSaving((prev) => ({ ...prev, [item.id]: true }));
     saveTimer.current[item.id] = setTimeout(() => {
       upsertEntryMutation.mutate({ sessionId: activeSessionId, itemId: item.id, quantity: total });
-    }, 800);
+    }, 300);
+  }
+
+  function handleCaseCountBlur(item: { id: number; caseQty: number | null; countMode?: string | null }, value: string) {
+    if (!activeSessionId) return;
+    clearTimeout(saveTimer.current[item.id]);
+    const eachesVal = localEachCounts[item.id] ?? "";
+    const total = computeStoredQuantity(item, value, eachesVal);
+    setSaving((prev) => ({ ...prev, [item.id]: true }));
+    upsertEntryMutation.mutate({ sessionId: activeSessionId, itemId: item.id, quantity: total });
   }
 
   function handleEachCountChange(item: { id: number; caseQty: number | null; countMode?: string | null }, value: string) {
@@ -203,7 +216,16 @@ export default function CountSheet() {
     setSaving((prev) => ({ ...prev, [item.id]: true }));
     saveTimer.current[item.id] = setTimeout(() => {
       upsertEntryMutation.mutate({ sessionId: activeSessionId, itemId: item.id, quantity: total });
-    }, 800);
+    }, 300);
+  }
+
+  function handleEachCountBlur(item: { id: number; caseQty: number | null; countMode?: string | null }, value: string) {
+    if (!activeSessionId) return;
+    clearTimeout(saveTimer.current[item.id]);
+    const casesVal = localCounts[item.id] ?? "";
+    const total = computeStoredQuantity(item, casesVal, value);
+    setSaving((prev) => ({ ...prev, [item.id]: true }));
+    upsertEntryMutation.mutate({ sessionId: activeSessionId, itemId: item.id, quantity: total });
   }
 
   // Build entry map for value calculation
@@ -360,6 +382,11 @@ export default function CountSheet() {
             <p className="text-sm text-muted-foreground mt-0.5">
               {sessionData.session.name ?? "Inventory Count"} ·{" "}
               {new Date(sessionData.session.createdAt).toLocaleDateString()}
+              {(sessionData.session as any).creatorName && (
+                <span className="ml-1 inline-flex items-center gap-1">
+                  · <User size={11} className="inline" /> {(sessionData.session as any).creatorName}
+                </span>
+              )}
             </p>
           )}
         </div>
@@ -492,12 +519,19 @@ export default function CountSheet() {
                       : "bg-card text-foreground border-border hover:bg-muted"
                   )}
                 >
-                  {s.name ?? "Count"} ·{" "}
-                  {new Date(s.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                  {!s.completedAt ? (
-                    <span className="ml-1.5 w-2 h-2 rounded-full bg-primary inline-block" title="In progress" />
-                  ) : (
-                    <span className="ml-1.5 w-2 h-2 rounded-full bg-accent inline-block" title="Completed" />
+                  <span className="block leading-tight">
+                    {s.name ?? "Count"} ·{" "}
+                    {new Date(s.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    {!s.completedAt ? (
+                      <span className="ml-1.5 w-2 h-2 rounded-full bg-primary inline-block" title="In progress" />
+                    ) : (
+                      <span className="ml-1.5 w-2 h-2 rounded-full bg-accent inline-block" title="Completed" />
+                    )}
+                  </span>
+                  {(s as any).creatorName && (
+                    <span className="block text-[10px] font-normal opacity-70 mt-0.5">
+                      <User size={9} className="inline mr-0.5" />{(s as any).creatorName}
+                    </span>
                   )}
                 </button>
                 {/* Delete button — always visible for admins */}
@@ -546,11 +580,12 @@ export default function CountSheet() {
           {!isCompleted ? (
             <button
               onClick={() => completeMutation.mutate({ id: activeSessionId })}
-              disabled={completeMutation.isPending}
+              disabled={completeMutation.isPending || Object.values(saving).some(Boolean)}
+              title={Object.values(saving).some(Boolean) ? "Waiting for saves to finish…" : undefined}
               className="ml-auto flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-accent-foreground text-sm font-semibold hover:opacity-90 transition-colors active:scale-95 disabled:opacity-60"
             >
               <CheckCircle size={16} />
-              {completeMutation.isPending ? "Completing…" : "Complete"}
+              {completeMutation.isPending ? "Completing…" : Object.values(saving).some(Boolean) ? "Saving…" : "Complete"}
             </button>
           ) : (
             <button
@@ -667,6 +702,9 @@ export default function CountSheet() {
                         value = (parseFloat(casesVal || "0") || 0) * casePrice + ((item.caseQty ?? 0) > 1 ? (parseFloat(eachesVal || "0") || 0) * eachPrice : 0);
                       }
                       const isSaving = saving[item.id];
+                      const hasError = saveError[item.id];
+                      const savedEntry = sessionData?.entries?.find((e) => e.itemId === item.id);
+                      const editorName = (savedEntry as any)?.editorName;
                       return (
                         <div key={item.id} className={cn("p-4", bulkMode && selectedIds.has(item.id) && "bg-primary/5")}>
                           <div className="flex items-center justify-between gap-3 mb-3">
@@ -718,9 +756,15 @@ export default function CountSheet() {
                               {value > 0 && (
                                 <p className="text-sm font-bold text-foreground">${value.toFixed(2)}</p>
                               )}
-                              {isSaving && (
+                              {isSaving ? (
                                 <RefreshCw size={12} className="text-muted-foreground animate-spin ml-auto" />
-                              )}
+                              ) : hasError ? (
+                                <span className="text-[10px] font-semibold text-destructive ml-auto block">Save failed</span>
+                              ) : editorName && !isSaving ? (
+                                <span className="text-[10px] text-muted-foreground/60 ml-auto block flex items-center gap-0.5 justify-end">
+                                  <User size={9} />{editorName}
+                                </span>
+                              ) : null}
                             </div>
                           </div>
                           {/* Count inputs */}
@@ -740,6 +784,7 @@ export default function CountSheet() {
                                 type="number" inputMode="numeric" min="0" step="1"
                                 value={casesVal}
                                 onChange={(e) => handleCaseCountChange(item, e.target.value)}
+                                onBlur={(e) => handleCaseCountBlur(item, e.target.value)}
                                 disabled={isCompleted}
                                 placeholder="0"
                                 className="count-input disabled:opacity-60"
@@ -768,6 +813,7 @@ export default function CountSheet() {
                                   type="number" inputMode="numeric" min="0" step="1"
                                   value={eachesVal}
                                   onChange={(e) => handleEachCountChange(item, e.target.value)}
+                                  onBlur={(e) => handleEachCountBlur(item, e.target.value)}
                                   disabled={isCompleted}
                                   placeholder="0"
                                   className="count-input disabled:opacity-60"
