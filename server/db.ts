@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql, alias } from "drizzle-orm";
+import { and, desc, eq, inArray, sql, aliasedTable } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2";
 import {
@@ -322,7 +322,7 @@ export async function getCountSession(id: number) {
 export async function listCountSessions() {
   const db = await getDb();
   if (!db) return [];
-  const creator = alias(users, "creator");
+  const creator = aliasedTable(users, "creator");
   const rows = await db
     .select({
       id: countSessions.id,
@@ -406,7 +406,7 @@ export async function getSessionWithEntries(sessionId: number) {
   const session = await db.select().from(countSessions).where(eq(countSessions.id, sessionId)).limit(1);
   if (!session[0]) return null;
 
-  const editor = alias(users, "editor");
+  const editor = aliasedTable(users, "editor");
   const entries = await db
     .select({
       entryId: countEntries.id,
