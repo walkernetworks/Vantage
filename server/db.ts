@@ -165,6 +165,8 @@ export async function listAllUsers() {
       email: users.email,
       role: users.role,
       isActive: users.isActive,
+      permissions: users.permissions,
+      mustResetPassword: users.mustResetPassword,
       lastSignedIn: users.lastSignedIn,
       createdAt: users.createdAt,
     })
@@ -182,6 +184,18 @@ export async function setUserActive(userId: number, isActive: boolean) {
   const db = await getDb();
   if (!db) return;
   await db.update(users).set({ isActive }).where(eq(users.id, userId));
+}
+
+export async function updateUserPermissions(userId: number, permissions: string[] | null) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ permissions, updatedAt: new Date() }).where(eq(users.id, userId));
+}
+
+export async function setMustResetPassword(userId: number, mustResetPassword: boolean) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ mustResetPassword, updatedAt: new Date() }).where(eq(users.id, userId));
 }
 
 // ─── Items ────────────────────────────────────────────────────────────────────
@@ -1307,6 +1321,8 @@ export async function createLocalUser(data: {
   email: string;
   passwordHash: string;
   role?: "user" | "admin";
+  mustResetPassword?: boolean;
+  permissions?: string[] | null;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -1316,18 +1332,20 @@ export async function createLocalUser(data: {
     passwordHash: data.passwordHash,
     loginMethod: "email",
     role: data.role ?? "user",
+    mustResetPassword: data.mustResetPassword ?? false,
+    permissions: data.permissions ?? null,
     lastSignedIn: new Date(),
   });
   const insertId = (result as any)[0]?.insertId ?? (result as any).insertId;
   return getUserById(Number(insertId));
 }
 
-export async function updateUserPassword(userId: number, passwordHash: string) {
+export async function updateUserPassword(userId: number, passwordHash: string, clearMustReset = false) {
   const db = await getDb();
   if (!db) return;
   await db
     .update(users)
-    .set({ passwordHash, updatedAt: new Date() })
+    .set({ passwordHash, mustResetPassword: clearMustReset ? false : undefined, updatedAt: new Date() })
     .where(eq(users.id, userId));
 }
 
