@@ -360,3 +360,17 @@
 - [x] Update adminUsers.resetPassword procedure to call sendPasswordResetEmail after reset
 - [x] Graceful fallback: if email fails, still return tempPassword (don't throw) and log warning
 - [x] UserManagement.tsx: show "Email sent to <email>" toast on successful user creation
+
+## Round 31 — Forgot Password Self-Service Flow
+
+- [x] DB schema: add passwordResetTokens table (id, userId, token, expiresAt, usedAt, createdAt)
+- [x] DB migration: apply passwordResetTokens table to TiDB Cloud
+- [x] server/db.ts: add createPasswordResetToken, getPasswordResetToken, markTokenUsed helpers
+- [x] server/email.ts: add sendPasswordResetRequestEmail(to, name, resetUrl)
+- [x] server/routers.ts: add auth.requestPasswordReset publicProcedure (input: email) — creates token, sends email, always returns success (no user enumeration)
+- [x] server/routers.ts: add auth.resetPasswordWithToken publicProcedure (input: token, newPassword) — validates token, updates password, marks token used
+- [x] Frontend: add "Forgot password?" link on Login page
+- [x] Frontend: create /forgot-password page — email input form, success state
+- [x] Frontend: create /reset-password-link page — reads ?token= from URL, new password + confirm form
+- [x] Frontend: register /forgot-password and /reset-password-link routes in App.tsx
+- [x] Write vitest tests for requestPasswordReset and resetPasswordWithToken procedures
