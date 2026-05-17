@@ -9,6 +9,9 @@ import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import {
   getUserByEmail,
   createLocalUser,
+  createPasswordResetToken,
+  getPasswordResetToken,
+  markTokenUsed,
   addRecipeItem,
   addCategory,
   addStorageArea,
@@ -66,7 +69,7 @@ import {
   type WebstaurantImportRow,
   type UniversalImportRow,
 } from "./db";
-import { sendWelcomeEmail, sendPasswordResetEmail } from "./email";
+import { sendWelcomeEmail, sendPasswordResetEmail, sendPasswordResetRequestEmail } from "./email";
 
 // ─── Shared Zod Schemas ───────────────────────────────────────────────────────
 
@@ -990,6 +993,55 @@ export const appRouter = router({
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
+
+    requestPasswordReset: publicProcedure
+      .input(z.object({ email: z.string().email(), origin: z.string().url() }))
+      .mutation(async ({ input }) => {
+        // Always return success to prevent user enumeration
+        const user = await getUserByEmail(input.email);
+        if (!user || !user.isActive) return { success: true };
+
+        // Generate a cryptographically secure token
+        const { randomBytes } = await import("crypto");
+        const token = randomBytes(48).toString("hex");
+        const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+        await createPasswordResetToken(user.id, token, expiresAt);
+
+        const resetUrl = `${input.origin}/reset-password-link?token=${token}`;
+        await sendPasswordResetRequestEmail({
+          to: user.email!,
+          name: user.name ?? user.email!,
+          resetUrl,
+        });
+
+        return { success: true };
+      }),
+
+    resetPasswordWithToken: publicProcedure
+      .input(
+        z.object({
+          token: z.string().min(1),
+          newPassword: z.string().min(8, "Password must be at least 8 characters"),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const record = await getPasswordResetToken(input.token);
+        if (!record) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid or expired reset link." });
+        }
+        if (record.usedAt) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "This reset link has already been used." });
+        }
+        if (new Date() > new Date(record.expiresAt)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "This reset link has expired. Please request a new one." });
+        }
+
+        const passwordHash = await bcrypt.hash(input.newPassword, 12);
+        await updateUserPassword(record.userId, passwordHash, true);
+        await markTokenUsed(record.id);
+
+        return { success: true };
+      }),
   }),
   items: itemsRouter,
   counts: countsRouter,
