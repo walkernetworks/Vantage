@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql, aliasedTable } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql, aliasedTable } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2";
 import {
@@ -1404,7 +1404,7 @@ export async function createPasswordResetToken(userId: number, token: string, ex
   await db
     .update(passwordResetTokens)
     .set({ usedAt: new Date() })
-    .where(and(eq(passwordResetTokens.userId, userId), sql`${passwordResetTokens.usedAt} IS NULL`));
+    .where(and(eq(passwordResetTokens.userId, userId), isNull(passwordResetTokens.usedAt)));
   await db.insert(passwordResetTokens).values({ userId, token, expiresAt });
 }
 
