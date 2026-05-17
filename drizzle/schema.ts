@@ -223,3 +223,20 @@ export const priceHistory = mysqlTable(
 
 export type PriceHistory = typeof priceHistory.$inferSelect;
 export type InsertPriceHistory = typeof priceHistory.$inferInsert;
+
+// ─── Password Reset Tokens ────────────────────────────────────────────────────
+export const passwordResetTokens = mysqlTable(
+  "password_reset_tokens",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId")
+      .notNull()
+      .references(() => users.id),
+    token: varchar("token", { length: 128 }).notNull().unique(),
+    expiresAt: timestamp("expiresAt").notNull(),
+    usedAt: timestamp("usedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (t) => [index("idx_prt_token").on(t.token), index("idx_prt_user").on(t.userId)]
+);
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
