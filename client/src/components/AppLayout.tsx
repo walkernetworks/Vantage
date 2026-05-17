@@ -132,6 +132,12 @@ export default function AppLayout({ children }: AppLayoutProps) {
     return null;
   }
 
+  // Force password reset for users with mustResetPassword flag
+  if ((user as any)?.mustResetPassword && location !== "/reset-password") {
+    window.location.href = "/reset-password";
+    return null;
+  }
+
   const isAdmin = user?.role === "admin";
   const visibleNav = navItems.filter((item) => !item.hidden && (!item.adminOnly || isAdmin));
 
