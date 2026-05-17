@@ -91,23 +91,26 @@ export function computeEachPrice(price: string | null | undefined, caseQty: numb
 }
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _pool: ReturnType<typeof mysql.createPool> | null = null;
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      const pool = mysql.createPool({
+      _pool = mysql.createPool({
         uri: process.env.DATABASE_URL,
         ssl: { rejectUnauthorized: true },
         waitForConnections: true,
         connectionLimit: 10,
       });
-      _db = drizzle(pool);
+      _db = drizzle(_pool);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
+      _pool = null;
     }
   }
   return _db;
 }
+export function getRawPool() { return _pool; }
 
 // ─── Users ────────────────────────────────────────────────────────────────────
 
@@ -1398,26 +1401,15 @@ export async function updateUserProfile(
 // ─── Password Reset Tokens ────────────────────────────────────────────────────
 
 export async function createPasswordResetToken(userId: number, token: string, expiresAt: Date) {
-  const db = await getDb();
-  if (!db) return;
-  // Format date as MySQL datetime string (TiDB rejects JS Date.toString() format)
+  await getDb(); // ensure pool is initialized
+  const pool = getRawPool();
+  if (!pool) return;
+  // Use raw mysql2 pool to bypass Drizzle ORM null-serialization issues
   const expiresAtStr = expiresAt.toISOString().slice(0, 19).replace('T', ' ');
-  try {
-    await db.execute(
-      sql`INSERT INTO password_reset_tokens (userId, token, expiresAt) VALUES (${userId}, ${token}, ${expiresAtStr})`
-    );
-    console.log('[createPasswordResetToken] INSERT succeeded for userId:', userId);
-  } catch (err: any) {
-    console.error('[createPasswordResetToken] INSERT FAILED:', {
-      code: err?.code,
-      errno: err?.errno,
-      sqlMessage: err?.sqlMessage,
-      sqlState: err?.sqlState,
-      message: err?.message,
-      sql: err?.sql,
-    });
-    throw err;
-  }
+  await pool.promise().execute(
+    'INSERT INTO password_reset_tokens (userId, token, expiresAt) VALUES (?, ?, ?)',
+    [userId, token, expiresAtStr]
+  );
 }
 
 export async function getPasswordResetToken(token: string) {
