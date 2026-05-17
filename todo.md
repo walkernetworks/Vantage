@@ -286,3 +286,19 @@
 - [x] client/src/const.ts: getLoginUrl() returns /login (no more Manus OAuth URL)
 - [x] server/auth.localauth.test.ts: 4 tests for register/login procedures
 - [x] TypeScript clean (0 errors), 45 tests pass
+
+## Round 27 — Permissions, Temp Password, Item Numbers
+
+- [ ] DB schema: add `permissions` JSON column and `mustResetPassword` boolean to users table
+- [ ] DB migration: apply schema changes to TiDB Cloud production database
+- [ ] Server: update createUser to auto-generate temp password, set mustResetPassword=true
+- [ ] Server: add adminUsers.updatePermissions procedure
+- [ ] Server: add auth.changePassword procedure (for forced reset flow)
+- [ ] Server: enforce permissions on protected procedures (check ctx.user.permissions)
+- [ ] UserManagement UI: show permission toggles per user (8 permissions)
+- [ ] UserManagement UI: show generated temp password on user creation (copy to clipboard)
+- [ ] Add /change-password forced-reset page shown when mustResetPassword=true
+- [ ] Item Catalogue: show item number column
+- [ ] Par List: show item number column
+- [ ] Count Sheet: show item number column
+- [ ] Edit Item dialog: show item number field
