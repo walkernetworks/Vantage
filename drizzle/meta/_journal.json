@@ -50,6 +50,13 @@
       "when": 1778978188975,
       "tag": "0006_ordinary_pretty_boy",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1779036677023,
+      "tag": "0007_swift_newton_destine",
+      "breakpoints": true
     }
   ]
 }
