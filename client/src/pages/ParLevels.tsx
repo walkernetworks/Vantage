@@ -152,10 +152,16 @@ function ParInput({
             <span className="text-xs text-muted-foreground">{item.category}</span>
             <span className="text-xs text-muted-foreground">·</span>
             <span className="text-xs text-muted-foreground">{item.vendor}</span>
+            {(item as any).pfgProductNumber && (
+              <>
+                <span className="text-xs text-muted-foreground">·</span>
+                <span className="text-xs text-muted-foreground font-mono">PFG #{(item as any).pfgProductNumber}</span>
+              </>
+            )}
             {(item as any).webstaurantItemNumber && (
               <>
                 <span className="text-xs text-muted-foreground">·</span>
-                <span className="text-xs text-muted-foreground font-mono">#{(item as any).webstaurantItemNumber}</span>
+                <span className="text-xs text-muted-foreground font-mono">WS #{(item as any).webstaurantItemNumber}</span>
               </>
             )}
             {item.packSize && (
