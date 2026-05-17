@@ -998,7 +998,9 @@ export const appRouter = router({
       .input(z.object({ email: z.string().email(), origin: z.string().url() }))
       .mutation(async ({ input }) => {
         // Always return success to prevent user enumeration
+        console.log("[requestPasswordReset] email:", input.email, "origin:", input.origin);
         const user = await getUserByEmail(input.email);
+        console.log("[requestPasswordReset] user found:", !!user, "isActive:", user?.isActive);
         if (!user || !user.isActive) return { success: true };
 
         // Generate a cryptographically secure token
@@ -1006,13 +1008,15 @@ export const appRouter = router({
         const token = randomBytes(48).toString("hex");
         const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
         await createPasswordResetToken(user.id, token, expiresAt);
+        console.log("[requestPasswordReset] token created, sending email to:", user.email);
 
         const resetUrl = `${input.origin}/reset-password-link?token=${token}`;
-        await sendPasswordResetRequestEmail({
+        const emailResult = await sendPasswordResetRequestEmail({
           to: user.email!,
           name: user.name ?? user.email!,
           resetUrl,
         });
+        console.log("[requestPasswordReset] email result:", JSON.stringify(emailResult));
 
         return { success: true };
       }),
