@@ -348,3 +348,15 @@
 - [x] Frontend CountSheet: add onBlur save — fire upsertEntry immediately when user leaves an input field (catches tab/swipe away before debounce fires)
 - [x] Frontend CountSheet: show per-item save indicator (spinner while pending, green check when saved, red dot on error)
 - [x] Frontend CountSheet: prevent completing a session while any entry is still pending save (disable Complete button with tooltip "Saving…")
+
+## Round 30 — Welcome Email on User Creation
+
+- [x] Install Resend npm package for transactional email
+- [x] Add RESEND_API_KEY secret to environment
+- [x] Add RESEND_FROM_EMAIL secret (sender address, e.g. no-reply@beignetsbrew.com)
+- [x] Build server/email.ts helper: sendWelcomeEmail(to, name, tempPassword, loginUrl)
+- [x] Build server/email.ts helper: sendPasswordResetEmail(to, name, tempPassword, loginUrl)
+- [x] Update adminUsers.createUser procedure to call sendWelcomeEmail after user created
+- [x] Update adminUsers.resetPassword procedure to call sendPasswordResetEmail after reset
+- [x] Graceful fallback: if email fails, still return tempPassword (don't throw) and log warning
+- [x] UserManagement.tsx: show "Email sent to <email>" toast on successful user creation
