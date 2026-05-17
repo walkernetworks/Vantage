@@ -318,8 +318,7 @@ export default function CountSheet() {
         (item.storageArea ?? "").toLowerCase().includes(q) ||
         (item.vendor ?? "").toLowerCase().includes(q) ||
         (item.brand ?? "").toLowerCase().includes(q) ||
-        (item.pfgProductNumber ?? "").toLowerCase().includes(q) ||
-        (item.webstaurantItemNumber ?? "").toLowerCase().includes(q)
+        ((item as any).itemNumber ?? "").toLowerCase().includes(q)
     );
   }, [countableItems, countSearch]);
 
@@ -702,19 +701,10 @@ export default function CountSheet() {
                                   </button>
                                 )}
                               </div>
-                              {((item as any).pfgProductNumber || (item as any).webstaurantItemNumber) && (
-                                <div className="flex flex-wrap gap-x-3 mt-0.5">
-                                  {(item as any).pfgProductNumber && (
-                                    <p className="text-xs text-muted-foreground/60 font-mono">
-                                      PFG #{(item as any).pfgProductNumber}
-                                    </p>
-                                  )}
-                                  {(item as any).webstaurantItemNumber && (
-                                    <p className="text-xs text-muted-foreground/60 font-mono">
-                                      WS #{(item as any).webstaurantItemNumber}
-                                    </p>
-                                  )}
-                                </div>
+                              {(item as any).itemNumber && (
+                                <p className="text-xs text-muted-foreground/70 mt-0.5 font-mono">
+                                  #{(item as any).itemNumber}
+                                </p>
                               )}
                               <p className="text-xs text-muted-foreground mt-0.5">
                                 {item.packSize && <span>{item.packSize} · </span>}
