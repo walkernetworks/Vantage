@@ -1402,9 +1402,22 @@ export async function createPasswordResetToken(userId: number, token: string, ex
   if (!db) return;
   // Format date as MySQL datetime string (TiDB rejects JS Date.toString() format)
   const expiresAtStr = expiresAt.toISOString().slice(0, 19).replace('T', ' ');
-  await db.execute(
-    sql`INSERT INTO password_reset_tokens (userId, token, expiresAt) VALUES (${userId}, ${token}, ${expiresAtStr})`
-  );
+  try {
+    await db.execute(
+      sql`INSERT INTO password_reset_tokens (userId, token, expiresAt) VALUES (${userId}, ${token}, ${expiresAtStr})`
+    );
+    console.log('[createPasswordResetToken] INSERT succeeded for userId:', userId);
+  } catch (err: any) {
+    console.error('[createPasswordResetToken] INSERT FAILED:', {
+      code: err?.code,
+      errno: err?.errno,
+      sqlMessage: err?.sqlMessage,
+      sqlState: err?.sqlState,
+      message: err?.message,
+      sql: err?.sql,
+    });
+    throw err;
+  }
 }
 
 export async function getPasswordResetToken(token: string) {
