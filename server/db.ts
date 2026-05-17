@@ -1400,11 +1400,7 @@ export async function updateUserProfile(
 export async function createPasswordResetToken(userId: number, token: string, expiresAt: Date) {
   const db = await getDb();
   if (!db) return;
-  // Invalidate any existing unused tokens for this user first
-  await db
-    .update(passwordResetTokens)
-    .set({ usedAt: new Date() })
-    .where(and(eq(passwordResetTokens.userId, userId), isNull(passwordResetTokens.usedAt)));
+  // Insert new token — old tokens expire naturally after 1 hour
   await db.insert(passwordResetTokens).values({ userId, token, expiresAt });
 }
 
