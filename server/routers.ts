@@ -57,6 +57,8 @@ import {
   setUserRole,
   setUserActive,
   updateUserPassword,
+  updateUserPermissions,
+  setMustResetPassword,
   recalcAllEachPrices,
   getDashboardMetrics,
   bulkUpdateItems,
@@ -785,8 +787,8 @@ const adminUsersRouter = router({
       z.object({
         name: z.string().min(1, "Name is required"),
         email: z.string().email("Invalid email address"),
-        password: z.string().min(8, "Password must be at least 8 characters"),
         role: z.enum(["user", "admin"]).default("user"),
+        permissions: z.array(z.string()).nullable().optional(),
       })
     )
     .mutation(async ({ input }) => {
@@ -794,27 +796,51 @@ const adminUsersRouter = router({
       if (existing) {
         throw new TRPCError({ code: "CONFLICT", message: "An account with that email already exists." });
       }
-      const passwordHash = await bcrypt.hash(input.password, 12);
+      // Generate a random 12-char temp password
+      const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#";
+      const tempPassword = Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+      const passwordHash = await bcrypt.hash(tempPassword, 12);
       const user = await createLocalUser({
         name: input.name,
         email: input.email,
         passwordHash,
         role: input.role,
+        mustResetPassword: true,
+        permissions: input.permissions ?? null,
       });
       if (!user) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to create user." });
-      return { success: true, user: { id: user.id, name: user.name, email: user.email, role: user.role } };
+      return {
+        success: true,
+        tempPassword,
+        user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      };
     }),
 
   resetPassword: adminProcedure
     .input(
       z.object({
         userId: z.number(),
-        newPassword: z.string().min(8, "Password must be at least 8 characters"),
       })
     )
     .mutation(async ({ input }) => {
-      const passwordHash = await bcrypt.hash(input.newPassword, 12);
+      // Generate a new temp password and force reset on next login
+      const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#";
+      const tempPassword = Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+      const passwordHash = await bcrypt.hash(tempPassword, 12);
       await updateUserPassword(input.userId, passwordHash);
+      await setMustResetPassword(input.userId, true);
+      return { success: true, tempPassword };
+    }),
+
+  updatePermissions: adminProcedure
+    .input(
+      z.object({
+        userId: z.number(),
+        permissions: z.array(z.string()).nullable(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      await updateUserPermissions(input.userId, input.permissions);
       return { success: true };
     }),
 });
@@ -905,7 +931,23 @@ export const appRouter = router({
         });
         const cookieOptions = getSessionCookieOptions(ctx.req);
         ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
-        return { success: true, user: { id: user.id, name: user.name, email: user.email, role: user.role } };
+        return {
+          success: true,
+          mustResetPassword: user.mustResetPassword ?? false,
+          user: { id: user.id, name: user.name, email: user.email, role: user.role },
+        };
+      }),
+
+    changePassword: protectedProcedure
+      .input(
+        z.object({
+          newPassword: z.string().min(8, "Password must be at least 8 characters"),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const passwordHash = await bcrypt.hash(input.newPassword, 12);
+        await updateUserPassword(ctx.user.id, passwordHash, true);
+        return { success: true };
       }),
 
     logout: publicProcedure.mutation(({ ctx }) => {
