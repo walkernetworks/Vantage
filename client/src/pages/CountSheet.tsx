@@ -702,6 +702,11 @@ export default function CountSheet() {
                                   </button>
                                 )}
                               </div>
+                              {(item as any).webstaurantItemNumber && (
+                                <p className="text-xs text-muted-foreground/60 font-mono mt-0.5">
+                                  #{(item as any).webstaurantItemNumber}
+                                </p>
+                              )}
                               <p className="text-xs text-muted-foreground mt-0.5">
                                 {item.packSize && <span>{item.packSize} · </span>}
                                 {isEachMode
