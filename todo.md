@@ -374,3 +374,7 @@
 - [x] Frontend: create /reset-password-link page — reads ?token= from URL, new password + confirm form
 - [x] Frontend: register /forgot-password and /reset-password-link routes in App.tsx
 - [x] Write vitest tests for requestPasswordReset and resetPasswordWithToken procedures
+
+## Round 32 — UserManagement UI Fixes
+- [x] Fix missing name: show email as fallback when user.name is null
+- [x] Fix button row overflow: stack action buttons on small screens / Safari
