@@ -702,10 +702,19 @@ export default function CountSheet() {
                                   </button>
                                 )}
                               </div>
-                              {(item as any).webstaurantItemNumber && (
-                                <p className="text-xs text-muted-foreground/60 font-mono mt-0.5">
-                                  #{(item as any).webstaurantItemNumber}
-                                </p>
+                              {((item as any).pfgProductNumber || (item as any).webstaurantItemNumber) && (
+                                <div className="flex flex-wrap gap-x-3 mt-0.5">
+                                  {(item as any).pfgProductNumber && (
+                                    <p className="text-xs text-muted-foreground/60 font-mono">
+                                      PFG #{(item as any).pfgProductNumber}
+                                    </p>
+                                  )}
+                                  {(item as any).webstaurantItemNumber && (
+                                    <p className="text-xs text-muted-foreground/60 font-mono">
+                                      WS #{(item as any).webstaurantItemNumber}
+                                    </p>
+                                  )}
+                                </div>
                               )}
                               <p className="text-xs text-muted-foreground mt-0.5">
                                 {item.packSize && <span>{item.packSize} · </span>}
