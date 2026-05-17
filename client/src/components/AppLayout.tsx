@@ -1,6 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { cn } from "@/lib/utils";
-import { logoDataUrl } from "@/lib/logo";
 import {
   BookOpen,
   ChevronRight,
@@ -151,7 +150,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
             </button>
             <Link href="/" className="flex items-center">
               <img
-                src={logoDataUrl}
+                src="/manus-storage/BBLogo-Cropped_d8c3a53e.png"
                 alt="Beignets & Brew"
                 className="h-16 w-auto object-contain"
                 style={{ maxWidth: "220px" }}
@@ -250,7 +249,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
             <div className="flex items-center justify-between px-5 py-4 border-b border-border">
               <div className="flex flex-col items-center w-full gap-1">
                 <img
-                  src={logoDataUrl}
+                  src="/manus-storage/BBLogo-Cropped_d8c3a53e.png"
                   alt="Beignets & Brew"
                   className="h-24 w-auto object-contain"
                   style={{ maxWidth: "200px" }}
