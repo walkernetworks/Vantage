@@ -1,0 +1,1 @@
+ALTER TABLE `count_entries` MODIFY COLUMN `quantity` decimal(10,4) NOT NULL DEFAULT '0';
