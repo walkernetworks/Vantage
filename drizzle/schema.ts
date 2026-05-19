@@ -152,7 +152,7 @@ export const countEntries = mysqlTable(
     itemId: int("itemId")
       .notNull()
       .references(() => items.id),
-    quantity: decimal("quantity", { precision: 10, scale: 2 }).default("0").notNull(),
+    quantity: decimal("quantity", { precision: 10, scale: 4 }).default("0").notNull(),
     notes: text("notes"),
     updatedBy: int("updatedBy").references(() => users.id),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
