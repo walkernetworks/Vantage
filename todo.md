@@ -378,3 +378,12 @@
 ## Round 32 — UserManagement UI Fixes
 - [x] Fix missing name: show email as fallback when user.name is null
 - [x] Fix button row overflow: stack action buttons on small screens / Safari
+
+## Round 33 — Count Sheet Glove Each-Count Bug Fix
+
+- [x] Bug: entering a value in the "each" field for glove items (Glove Nitrile Large/Medium Powder Free Amethyst) caused the value to disappear immediately
+- [x] Root cause: packSize "10/100 CT" was parsed as caseQty=1000 (10×100 individual gloves). Storing 2 eaches = 2/1000 = 0.002, which DECIMAL(10,2) rounded to 0.00 and read back as empty
+- [x] Fix 1: widen count_entries.quantity from DECIMAL(10,2) to DECIMAL(10,4) in schema and both databases
+- [x] Fix 2: update glove items in dev and production DB — set caseQty=10 (boxes per case) and eachPrice=$3.59/box, so "each" unit = 1 box of 100 gloves
+- [x] Applied to dev database (Manus TiDB) and production database (beignets_brew on gateway01)
+- [x] TypeScript: 0 errors, 53 tests pass
