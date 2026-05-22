@@ -387,3 +387,13 @@
 - [x] Fix 2: update glove items in dev and production DB — set caseQty=10 (boxes per case) and eachPrice=$3.59/box, so "each" unit = 1 box of 100 gloves
 - [x] Applied to dev database (Manus TiDB) and production database (beignets_brew on gateway01)
 - [x] TypeScript: 0 errors, 53 tests pass
+
+## Round 34 — Pack Size Parser Fix (System-Wide)
+
+- [x] Root cause: parsePackSizeQty multiplied all segments for N/M CT/PK/EA formats, giving wrong caseQty for all multi-pack items (cups, lids, straws, napkins, forks, gloves, paper towels, register rolls)
+- [x] New rule: 2-segment + CT/EA/PC: if first=1 use second number (single-pack), if first>1 use first number (outer pack count)
+- [x] PK unit kept as multiply (2/12 PK = 24 individual cans/bottles — count by unit)
+- [x] 1/N CT items preserved correctly (1/100 CT = 100 per case, 1/1000 CT = 1000 per case)
+- [x] 24 items recalculated in both dev and production databases
+- [x] Added 23 unit tests for parsePackSizeQty covering all patterns (76 tests total pass)
+- [x] TypeScript: 0 errors

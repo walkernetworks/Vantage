@@ -27,17 +27,21 @@ export function parsePackSizeQty(packSize: string | null | undefined): number | 
   // Strip leading non-numeric prefix like "- " (Webstaurant format: "- 25/Case")
   const stripped = s.replace(/^[-\s]+/, "");
 
-  // Pattern 0: Multi-slash — "4/6/12 OZ", "6/4/12 OZ", "2/12 PK", "12/750 ML"
+  // Pattern 0: Multi-slash — "4/6/12 OZ", "6/4/12 OZ", "2/12 PK", "12/750 ML", "10/100 CT"
   // Rules:
-  //   3+ numeric segments followed by a unit (OZ, ML, L, etc.) → multiply all but last (last is serving size)
-  //   2 numeric segments followed by a unit ("12/750 ML") → first number is case qty
-  //   2 numeric segments followed by PK/CT/EA → multiply both
+  //   3+ segments + size unit (OZ, ML…) → multiply all but last (last is serving size)
+  //   2 segments + size unit            → first number is case qty ("12/750 ML" = 12 bottles)
+  //   2 segments + PK                   → multiply both ("2/12 PK" = 24 individual cans/bottles)
+  //   2 segments + CT/EA/PC + first=1   → use second number ("1/100 CT" = 100 units per case)
+  //   2 segments + CT/EA/PC + first>1   → use first number ("10/100 CT" = 10 boxes, "16/135 CT" = 16 rolls)
+  //   3+ segments + count unit          → multiply all but last
   const multiSlashMatch = stripped.match(/^((?:\d+\/)+)(\d+)\s*([A-Za-z]*)$/);
   if (multiSlashMatch) {
     const parts = stripped.split("/").map(p => parseFloat(p.replace(/[^\d.]/g, "")));
     const unit = multiSlashMatch[3].toUpperCase();
     const isSizeUnit = /^(OZ|ML|L|LT|LTR|GA|GAL|G|GR|LB|KG|CL|FL)$/i.test(unit);
-    const isCountUnit = /^(PK|CT|EA|PC|PCS|PACK|COUNT|EACH|CASE|CS)$/i.test(unit);
+    const isPkUnit = /^(PK|PACK)$/i.test(unit);
+    const isCountUnit = /^(CT|EA|PC|PCS|COUNT|EACH|CASE|CS)$/i.test(unit);
     if (parts.length >= 2 && parts.every(p => !isNaN(p) && p > 0)) {
       if (parts.length >= 3 && isSizeUnit) {
         // "4/6/12 OZ" → 4×6=24 (last segment is serving size in oz)
@@ -47,9 +51,19 @@ export function parsePackSizeQty(packSize: string | null | undefined): number | 
         // "12/750 ML" → 12 (first is case qty, second is bottle size)
         const qty = parts[0];
         if (!isNaN(qty) && qty > 0) return qty;
-      } else if (isCountUnit || !unit) {
-        // "2/12 PK" → 2×12=24, "24/1" → 24
+      } else if (isPkUnit) {
+        // "2/12 PK" → 2×12=24 individual cans/bottles (count by unit, not by pack)
         const qty = parts.reduce((a, b) => a * b, 1);
+        if (!isNaN(qty) && qty > 0) return qty;
+      } else if (parts.length >= 3 && (isCountUnit || !unit)) {
+        // "4/6/12 CT" → 4×6=24 (last is per-unit count)
+        const qty = parts.slice(0, -1).reduce((a, b) => a * b, 1);
+        if (!isNaN(qty) && qty > 0) return qty;
+      } else if (parts.length === 2 && (isCountUnit || !unit)) {
+        // "1/100 CT" → 100 (single-pack: first=1 means the second IS the case qty)
+        // "10/100 CT" → 10 (outer pack count: 10 boxes of 100)
+        // "16/135 CT" → 16 (outer pack count: 16 rolls of 135)
+        const qty = parts[0] === 1 ? parts[1] : parts[0];
         if (!isNaN(qty) && qty > 0) return qty;
       } else {
         // Unknown unit — use first number as case qty
