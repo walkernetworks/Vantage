@@ -45,6 +45,8 @@ export default function CountSheet() {
   const [showNewSession, setShowNewSession] = useState(false);
   const [sessionName, setSessionName] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  // Track which counted items are expanded for editing
+  const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
   // localCounts stores the CASE count for each item
   const [localCounts, setLocalCounts] = useState<Record<number, string>>({});
   // localEachCounts stores the EACH count for items that have caseQty > 1
@@ -84,6 +86,10 @@ export default function CountSheet() {
       setSaving((prev) => ({ ...prev, [vars.itemId]: false }));
       setSaveError((prev) => ({ ...prev, [vars.itemId]: false }));
       utils.counts.getSessionWithEntries.invalidate({ id: activeSessionId! });
+      // Auto-collapse the item after a successful save (with a brief delay so user sees the save)
+      setTimeout(() => {
+        setExpandedItems((prev) => { const n = new Set(prev); n.delete(vars.itemId); return n; });
+      }, 600);
     },
     onError: (e, vars) => {
       setSaving((prev) => ({ ...prev, [vars.itemId]: false }));
@@ -164,6 +170,11 @@ export default function CountSheet() {
       if (inProgress) setActiveSessionId(inProgress.id);
     }
   }, [sessions, activeSessionId]);
+
+  // Clear expanded items when switching sessions
+  useEffect(() => {
+    setExpandedItems(new Set());
+  }, [activeSessionId]);
 
   const saveTimer = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
 
@@ -355,6 +366,8 @@ export default function CountSheet() {
     return groups;
   }, [searchFilteredItems, viewMode]);
 
+  // Default all groups to collapsed when groupKeys change
+  const prevGroupKeysRef = useRef<string[]>([]);
   const groupKeys = useMemo(() => {
     if (viewMode === "storage") {
       const order = [...STORAGE_AREAS];
@@ -369,6 +382,20 @@ export default function CountSheet() {
     }
     return Object.keys(grouped).sort();
   }, [grouped, viewMode]);
+
+  // When groupKeys changes, ensure any new key starts collapsed
+  useEffect(() => {
+    const prev = new Set(prevGroupKeysRef.current);
+    const newKeys = groupKeys.filter((k) => !prev.has(k));
+    if (newKeys.length > 0) {
+      setCollapsed((c) => {
+        const next = { ...c };
+        newKeys.forEach((k) => { if (next[k] === undefined) next[k] = true; });
+        return next;
+      });
+    }
+    prevGroupKeysRef.current = groupKeys;
+  }, [groupKeys]);
 
   const isCompleted = sessionData?.session?.completedAt != null;
 
@@ -652,13 +679,15 @@ export default function CountSheet() {
               const unitPrice = parseFloat(rawPrice) || 0;
               return sum + qty * unitPrice;
             }, 0);
-            const countedItems = groupItems.filter((i) => parseFloat(effectiveCounts.get(i.id) ?? "0") > 0).length;
+                    const countedItems = groupItems.filter((i) => parseFloat(effectiveCounts.get(i.id) ?? "0") > 0).length;
+            // Default to collapsed if not explicitly set
+            const isCollapsedGroup = collapsed[groupKey] !== false;
 
             return (
               <div key={groupKey} className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
                 {/* Group Header */}
                 <button
-                  onClick={() => setCollapsed((prev) => ({ ...prev, [groupKey]: !prev[groupKey] }))}
+                  onClick={() => setCollapsed((prev) => ({ ...prev, [groupKey]: prev[groupKey] === false }))}
                   className="w-full flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex items-center gap-3">
@@ -678,12 +707,12 @@ export default function CountSheet() {
                     {countedItems === groupItems.length && groupItems.length > 0 && (
                       <CheckCircle size={16} className="text-accent" />
                     )}
-                    {isCollapsed ? <ChevronRight size={18} className="text-muted-foreground" /> : <ChevronDown size={18} className="text-muted-foreground" />}
+                    {isCollapsedGroup ? <ChevronRight size={18} className="text-muted-foreground" /> : <ChevronDown size={18} className="text-muted-foreground" />}
                   </div>
                 </button>
 
                 {/* Group Items */}
-                {!isCollapsed && (
+                {!isCollapsedGroup && (
                   <div className="border-t border-border divide-y divide-border">
                                         {groupItems.map((item) => {
                       const isEachMode = item.countMode === "each";
@@ -705,8 +734,55 @@ export default function CountSheet() {
                       const hasError = saveError[item.id];
                       const savedEntry = sessionData?.entries?.find((e) => e.itemId === item.id);
                       const editorName = (savedEntry as any)?.editorName;
+
+                      // Determine if item has been counted
+                      const isCounted = parseFloat(effectiveCounts.get(item.id) ?? "0") > 0;
+                      const isExpanded = expandedItems.has(item.id);
+
+                      // Build count summary string for compact row
+                      const countSummary = (() => {
+                        if (isEachMode) {
+                          return eachesVal ? `${eachesVal} each` : "";
+                        }
+                        const parts: string[] = [];
+                        if (casesVal) parts.push(`${casesVal} cs`);
+                        if (eachesVal && (item.caseQty ?? 0) > 1) parts.push(`${eachesVal} ea`);
+                        return parts.join(" + ");
+                      })();
+
+                      // Compact counted row — shown when counted and not expanded
+                      if (isCounted && !isExpanded && !bulkMode && !isCompleted) {
+                        return (
+                          <button
+                            key={item.id}
+                            onClick={() => setExpandedItems((prev) => { const n = new Set(prev); n.add(item.id); return n; })}
+                            className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-muted/30 transition-colors text-left"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <CheckCircle size={14} className="text-accent shrink-0" />
+                              <span className="text-sm text-muted-foreground truncate">{item.name}</span>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-sm font-semibold text-foreground">{countSummary}</span>
+                              {value > 0 && <span className="text-xs text-muted-foreground">${value.toFixed(2)}</span>}
+                              {isSaving && <RefreshCw size={11} className="text-muted-foreground animate-spin" />}
+                            </div>
+                          </button>
+                        );
+                      }
+
                       return (
                         <div key={item.id} className={cn("p-4", bulkMode && selectedIds.has(item.id) && "bg-primary/5")}>
+                          {/* Collapse-back button for expanded counted items */}
+                          {isCounted && isExpanded && !bulkMode && !isCompleted && (
+                            <button
+                              onClick={() => setExpandedItems((prev) => { const n = new Set(prev); n.delete(item.id); return n; })}
+                              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-2 transition-colors"
+                            >
+                              <ChevronDown size={13} />
+                              <span>Collapse</span>
+                            </button>
+                          )}
                           <div className="flex items-center justify-between gap-3 mb-3">
                             {bulkMode && (
                               <button

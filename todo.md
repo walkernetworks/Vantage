@@ -397,3 +397,10 @@
 - [x] 24 items recalculated in both dev and production databases
 - [x] Added 23 unit tests for parsePackSizeQty covering all patterns (76 tests total pass)
 - [x] TypeScript: 0 errors
+
+## Round 35 — Count Sheet UX: Collapse Counted Items & Default Collapsed Categories
+
+- [x] Categories default to collapsed on page load
+- [x] Counted items visually recede (dimmed/compact) but remain tappable to expand and edit
+- [x] Category header shows counted/total progress (e.g. "3/12 counted")
+- [x] Uncounted items remain fully visible within an open category
