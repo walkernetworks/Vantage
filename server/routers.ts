@@ -47,6 +47,7 @@ import {
   generateCleanItemName,
   importUniversalItems,
   bulkUpdateParLevels,
+  bulkUpdateOrderThresholds,
   listCateringRecipes,
   listCountSessions,
   removeRecipeItem,
@@ -193,6 +194,10 @@ const itemsRouter = router({
   bulkUpdateParLevels: adminProcedure
     .input(z.object({ updates: z.array(z.object({ id: z.number(), parLevel: z.string() })) }))
     .mutation(({ input }) => bulkUpdateParLevels(input.updates)),
+
+  bulkUpdateOrderThresholds: adminProcedure
+    .input(z.object({ updates: z.array(z.object({ id: z.number(), orderThreshold: z.string() })) }))
+    .mutation(({ input }) => bulkUpdateOrderThresholds(input.updates)),
 
   setCountMode: adminProcedure
     .input(z.object({ id: z.number(), countMode: z.enum(["case", "each"]) }))
@@ -818,12 +823,14 @@ const adminUsersRouter = router({
       // Send welcome email — fire-and-forget, never block user creation
       const origin = (ctx.req as any)?.headers?.origin as string | undefined;
       const loginUrl = origin ? `${origin}/login` : "https://getvantageapp.io/login";
+      console.log("[createUser] Sending welcome email to:", input.email, "loginUrl:", loginUrl);
       const emailResult = await sendWelcomeEmail({
         to: input.email,
         name: input.name,
         tempPassword,
         loginUrl,
       });
+      console.log("[createUser] Email result:", JSON.stringify(emailResult));
       if (!emailResult.success) {
         console.warn("[createUser] Welcome email failed:", emailResult.error);
       }
