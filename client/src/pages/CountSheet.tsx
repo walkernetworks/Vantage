@@ -238,6 +238,8 @@ export default function CountSheet() {
 
   function handleCaseCountChange(item: { id: number; caseQty: number | null; countMode?: string | null }, value: string) {
     setLocalCounts((prev) => ({ ...prev, [item.id]: value }));
+    // Keep item expanded while user is actively entering a count
+    setExpandedItems((prev) => { const n = new Set(prev); n.add(item.id); return n; });
     if (!activeSessionId) return;
     const eachesVal = localEachCounts[item.id] ?? "";
     const total = computeStoredQuantity(item, value, eachesVal);
@@ -259,6 +261,8 @@ export default function CountSheet() {
 
   function handleEachCountChange(item: { id: number; caseQty: number | null; countMode?: string | null }, value: string) {
     setLocalEachCounts((prev) => ({ ...prev, [item.id]: value }));
+    // Keep item expanded while user is actively entering a count
+    setExpandedItems((prev) => { const n = new Set(prev); n.add(item.id); return n; });
     if (!activeSessionId) return;
     const casesVal = localCounts[item.id] ?? "";
     const total = computeStoredQuantity(item, casesVal, value);
