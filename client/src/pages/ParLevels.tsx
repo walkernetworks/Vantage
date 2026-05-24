@@ -196,23 +196,27 @@ function ParInput({
               />
             </div>
             <div className="flex flex-col items-center gap-0.5">
-              <span className="text-xs text-muted-foreground font-medium">Order ≤</span>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={thresholdValue}
-                onChange={(e) => handleThresholdChange(e.target.value)}
-                onBlur={handleThresholdBlur}
-                onKeyDown={handleKeyDown}
-                placeholder="—"
-                className={cn(
-                  "w-16 h-10 text-center rounded-xl border text-sm font-semibold focus:outline-none focus:ring-2 transition-colors",
-                  thresholdDirty
-                    ? "border-primary bg-primary/5 text-foreground focus:ring-primary/30"
-                    : "border-border bg-background text-foreground focus:ring-primary/30"
-                )}
-              />
+              <span className="text-xs text-muted-foreground font-medium" title="Order trigger: % of par level. Default 50% — enter 70 to order when stock drops below 70% of par, 20 for less aggressive.">Order ≤ %</span>
+              <div className="relative">
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  step="1"
+                  value={thresholdValue}
+                  onChange={(e) => handleThresholdChange(e.target.value)}
+                  onBlur={handleThresholdBlur}
+                  onKeyDown={handleKeyDown}
+                  placeholder="50"
+                  title="Percentage of par level that triggers an order. Default: 50%. Enter 70 for aggressive (order sooner), 20 for conservative."
+                  className={cn(
+                    "w-16 h-10 text-center rounded-xl border text-sm font-semibold focus:outline-none focus:ring-2 transition-colors",
+                    thresholdDirty
+                      ? "border-primary bg-primary/5 text-foreground focus:ring-primary/30"
+                      : "border-border bg-background text-foreground focus:ring-primary/30"
+                  )}
+                />
+              </div>
             </div>
             {anyDirty && (
               <button
