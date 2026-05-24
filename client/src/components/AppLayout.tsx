@@ -25,6 +25,7 @@ interface NavItem {
   label: string;
   icon: React.ReactNode;
   adminOnly?: boolean;
+  permission?: string; // show if user has this permission key (non-admin users)
   description: string;
   hidden?: boolean;
 }
@@ -61,6 +62,7 @@ const navItems: NavItem[] = [
     label: "Order Dashboard",
     icon: <ShoppingCart size={22} />,
     adminOnly: true,
+    permission: "place_orders",
     description: "Below-par vendor orders",
   },
   {
@@ -139,7 +141,14 @@ export default function AppLayout({ children }: AppLayoutProps) {
   }
 
   const isAdmin = user?.role === "admin";
-  const visibleNav = navItems.filter((item) => !item.hidden && (!item.adminOnly || isAdmin));
+  const userPermissions: string[] = (user as any)?.permissions ?? [];
+  const visibleNav = navItems.filter((item) => {
+    if (item.hidden) return false;
+    if (isAdmin) return true; // admins see everything
+    if (item.adminOnly && item.permission) return userPermissions.includes(item.permission);
+    if (item.adminOnly) return false;
+    return true;
+  });
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
