@@ -47,6 +47,7 @@ import {
   generateCleanItemName,
   importUniversalItems,
   bulkUpdateParLevels,
+  bulkUpdateOrderThresholds,
   listCateringRecipes,
   listCountSessions,
   removeRecipeItem,
@@ -193,6 +194,10 @@ const itemsRouter = router({
   bulkUpdateParLevels: adminProcedure
     .input(z.object({ updates: z.array(z.object({ id: z.number(), parLevel: z.string() })) }))
     .mutation(({ input }) => bulkUpdateParLevels(input.updates)),
+
+  bulkUpdateOrderThresholds: adminProcedure
+    .input(z.object({ updates: z.array(z.object({ id: z.number(), orderThreshold: z.string() })) }))
+    .mutation(({ input }) => bulkUpdateOrderThresholds(input.updates)),
 
   setCountMode: adminProcedure
     .input(z.object({ id: z.number(), countMode: z.enum(["case", "each"]) }))

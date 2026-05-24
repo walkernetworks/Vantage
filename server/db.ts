@@ -1040,6 +1040,19 @@ export async function bulkUpdateParLevels(
   }
 }
 
+export async function bulkUpdateOrderThresholds(
+  updates: Array<{ id: number; orderThreshold: string }>
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  for (const u of updates) {
+    await db
+      .update(items)
+      .set({ orderThreshold: u.orderThreshold, updatedAt: new Date() })
+      .where(eq(items.id, u.id));
+  }
+}
+
 // ─── Universal (AI-mapped) Import ─────────────────────────────────────────────
 
 export type UniversalImportRow = {
