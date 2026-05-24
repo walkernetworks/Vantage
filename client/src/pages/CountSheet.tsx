@@ -36,6 +36,68 @@ import { toast } from "sonner";
 
 type ViewMode = "storage" | "category";
 
+// ─── Helper: compact single-line row for a counted item ───────────────────────
+function CompactCountedRow({
+  itemId, name, countSummary, value, isSaving, onExpand,
+}: {
+  itemId: number;
+  name: string;
+  countSummary: string;
+  value: number;
+  isSaving: boolean;
+  onExpand: () => void;
+  onScrollOut: () => void;
+}) {
+  return (
+    <button
+      onClick={onExpand}
+      className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-muted/30 transition-colors text-left"
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        <CheckCircle size={14} className="text-accent shrink-0" />
+        <span className="text-sm text-muted-foreground truncate">{name}</span>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <span className="text-sm font-semibold text-foreground">{countSummary}</span>
+        {value > 0 && <span className="text-xs text-muted-foreground">${value.toFixed(2)}</span>}
+        {isSaving && <RefreshCw size={11} className="text-muted-foreground animate-spin" />}
+      </div>
+    </button>
+  );
+}
+
+// ─── Helper: wraps a full-edit item row and collapses it when scrolled out ────
+function ScrollCollapseWrapper({
+  itemId, isCounted, onScrollOut, children,
+}: {
+  itemId: number;
+  isCounted: boolean;
+  onScrollOut: () => void;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  // Only attach observer when the item is counted (so uncounted items are never collapsed)
+  useEffect(() => {
+    if (!isCounted) return;
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        // When the element is no longer visible (scrolled away), collapse it
+        if (!entry.isIntersecting) {
+          onScrollOut();
+        }
+      },
+      { threshold: 0 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCounted, itemId]);
+
+  return <div ref={ref}>{children}</div>;
+}
+
 export default function CountSheet() {
   const { user } = useAuth();
   const utils = trpc.useUtils();
@@ -86,10 +148,7 @@ export default function CountSheet() {
       setSaving((prev) => ({ ...prev, [vars.itemId]: false }));
       setSaveError((prev) => ({ ...prev, [vars.itemId]: false }));
       utils.counts.getSessionWithEntries.invalidate({ id: activeSessionId! });
-      // Auto-collapse the item after a successful save (with a brief delay so user sees the save)
-      setTimeout(() => {
-        setExpandedItems((prev) => { const n = new Set(prev); n.delete(vars.itemId); return n; });
-      }, 600);
+      // Collapse happens on scroll-out (IntersectionObserver), not here
     },
     onError: (e, vars) => {
       setSaving((prev) => ({ ...prev, [vars.itemId]: false }));
@@ -699,7 +758,7 @@ export default function CountSheet() {
                     <div className="text-left">
                       <p className="font-semibold text-foreground">{groupKey}</p>
                       <p className="text-xs text-muted-foreground">
-                        {countedItems}/{groupItems.length} counted · ${groupValue.toFixed(2)}
+                        {countedItems}/{groupItems.length} counted · ${groupValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
                     </div>
                   </div>
@@ -735,8 +794,14 @@ export default function CountSheet() {
                       const savedEntry = sessionData?.entries?.find((e) => e.itemId === item.id);
                       const editorName = (savedEntry as any)?.editorName;
 
-                      // Determine if item has been counted
-                      const isCounted = parseFloat(effectiveCounts.get(item.id) ?? "0") > 0;
+                      // Determine if item has been counted — check both cases and eaches
+                      const isCounted = (() => {
+                        const stored = parseFloat(effectiveCounts.get(item.id) ?? "0");
+                        if (stored > 0) return true;
+                        // Also check local each count for each-mode items
+                        const localEach = parseFloat(localEachCounts[item.id] ?? "0");
+                        return localEach > 0;
+                      })();
                       const isExpanded = expandedItems.has(item.id);
 
                       // Build count summary string for compact row
@@ -753,26 +818,27 @@ export default function CountSheet() {
                       // Compact counted row — shown when counted and not expanded
                       if (isCounted && !isExpanded && !bulkMode && !isCompleted) {
                         return (
-                          <button
+                          <CompactCountedRow
                             key={item.id}
-                            onClick={() => setExpandedItems((prev) => { const n = new Set(prev); n.add(item.id); return n; })}
-                            className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-muted/30 transition-colors text-left"
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <CheckCircle size={14} className="text-accent shrink-0" />
-                              <span className="text-sm text-muted-foreground truncate">{item.name}</span>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <span className="text-sm font-semibold text-foreground">{countSummary}</span>
-                              {value > 0 && <span className="text-xs text-muted-foreground">${value.toFixed(2)}</span>}
-                              {isSaving && <RefreshCw size={11} className="text-muted-foreground animate-spin" />}
-                            </div>
-                          </button>
+                            itemId={item.id}
+                            name={item.name}
+                            countSummary={countSummary}
+                            value={value}
+                            isSaving={!!isSaving}
+                            onExpand={() => setExpandedItems((prev) => { const n = new Set(prev); n.add(item.id); return n; })}
+                            onScrollOut={() => {/* already collapsed */}}
+                          />
                         );
                       }
 
                       return (
-                        <div key={item.id} className={cn("p-4", bulkMode && selectedIds.has(item.id) && "bg-primary/5")}>
+                        <ScrollCollapseWrapper
+                          key={item.id}
+                          itemId={item.id}
+                          isCounted={isCounted}
+                          onScrollOut={() => setExpandedItems((prev) => { const n = new Set(prev); n.delete(item.id); return n; })}
+                        >
+                        <div className={cn("p-4", bulkMode && selectedIds.has(item.id) && "bg-primary/5")}>
                           {/* Collapse-back button for expanded counted items */}
                           {isCounted && isExpanded && !bulkMode && !isCompleted && (
                             <button
@@ -903,6 +969,7 @@ export default function CountSheet() {
                             )}
                           </div>
                         </div>
+                        </ScrollCollapseWrapper>
                       );
                     })}
                   </div>

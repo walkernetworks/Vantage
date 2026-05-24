@@ -404,3 +404,10 @@
 - [x] Counted items visually recede (dimmed/compact) but remain tappable to expand and edit
 - [x] Category header shows counted/total progress (e.g. "3/12 counted")
 - [x] Uncounted items remain fully visible within an open category
+
+## Round 36 — Count Sheet UX Refinements
+
+- [x] isCounted now checks localEachCounts so each-mode items also collapse correctly
+- [x] Collapse triggered by scroll-out (IntersectionObserver) instead of a fixed 600ms timer
+- [x] +/- buttons no longer trigger collapse — only scrolling away does
+- [x] Category totals formatted with comma separators (toLocaleString)
