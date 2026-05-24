@@ -89,6 +89,7 @@ export default function CountSheet() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   // Track which counted items are expanded for editing
   const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
+  const [markedDone, setMarkedDone] = useState<Set<number>>(new Set());
   // localCounts stores the CASE count for each item
   const [localCounts, setLocalCounts] = useState<Record<number, string>>({});
   // localEachCounts stores the EACH count for items that have caseQty > 1
@@ -213,6 +214,7 @@ export default function CountSheet() {
   // Clear expanded items when switching sessions
   useEffect(() => {
     setExpandedItems(new Set());
+    setMarkedDone(new Set());
   }, [activeSessionId]);
 
   const saveTimer = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
@@ -723,6 +725,7 @@ export default function CountSheet() {
               return sum + qty * unitPrice;
             }, 0);
                     const countedItems = groupItems.filter((i) => {
+                      if (markedDone.has(i.id)) return true;
                       const stored = parseFloat(effectiveCounts.get(i.id) ?? "0");
                       if (stored > 0) return true;
                       const localEach = parseFloat(localEachCounts[i.id] ?? "0");
@@ -791,21 +794,22 @@ export default function CountSheet() {
                         const localEach = parseFloat(localEachCounts[item.id] ?? "0");
                         return localEach > 0;
                       })();
+                      const isDone = markedDone.has(item.id);
                       const isExpanded = expandedItems.has(item.id);
 
                       // Build count summary string for compact row
                       const countSummary = (() => {
                         if (isEachMode) {
-                          return eachesVal ? `${eachesVal} each` : "";
+                          return eachesVal ? `${eachesVal} each` : "0 each";
                         }
                         const parts: string[] = [];
-                        if (casesVal) parts.push(`${casesVal} cs`);
-                        if (eachesVal && (item.caseQty ?? 0) > 1) parts.push(`${eachesVal} ea`);
+                        parts.push(`${casesVal || "0"} cs`);
+                        if ((item.caseQty ?? 0) > 1) parts.push(`${eachesVal || "0"} ea`);
                         return parts.join(" + ");
                       })();
 
-                      // Compact counted row — shown when counted and not expanded
-                      if (isCounted && !isExpanded && !bulkMode && !isCompleted) {
+                      // Compact counted row — shown when counted (or explicitly marked done) and not expanded
+                      if ((isCounted || isDone) && !isExpanded && !bulkMode && !isCompleted) {
                         return (
                           <CompactCountedRow
                             key={item.id}
@@ -824,7 +828,7 @@ export default function CountSheet() {
                         <div key={item.id}>
                         <div className={cn("p-4", bulkMode && selectedIds.has(item.id) && "bg-primary/5")}>
                           {/* Collapse link at top — small and subtle */}
-                          {isCounted && isExpanded && !bulkMode && !isCompleted && (
+                          {(isCounted || isDone) && isExpanded && !bulkMode && !isCompleted && (
                             <button
                               onClick={() => setExpandedItems((prev) => { const n = new Set(prev); n.delete(item.id); return n; })}
                               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-2 transition-colors"
@@ -952,10 +956,13 @@ export default function CountSheet() {
                               </div>
                             )}
                           </div>
-                          {/* Done button at bottom — explicit collapse after counting */}
-                          {isCounted && isExpanded && !bulkMode && !isCompleted && (
+                          {/* Done button at bottom — shown on all full-row views (uncounted items + expanded counted items) */}
+                          {(!(isCounted || isDone) || isExpanded) && !bulkMode && !isCompleted && (
                             <button
-                              onClick={() => setExpandedItems((prev) => { const n = new Set(prev); n.delete(item.id); return n; })}
+                              onClick={() => {
+                                setMarkedDone((prev) => { const n = new Set(prev); n.add(item.id); return n; });
+                                setExpandedItems((prev) => { const n = new Set(prev); n.delete(item.id); return n; });
+                              }}
                               className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-semibold transition-colors active:scale-[0.98]"
                             >
                               <CheckCircle size={16} />
