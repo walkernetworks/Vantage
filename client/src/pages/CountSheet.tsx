@@ -834,7 +834,10 @@ export default function CountSheet() {
                       })();
 
                       // Compact counted row — shown when counted (or explicitly marked done) and not expanded
-                      if ((isCounted || isDone) && !isExpanded && !bulkMode && !isCompleted) {
+                      // Also shown for completed sessions (all items collapsed by default for review)
+                      const showCompact = (isCounted || isDone) && !isExpanded && !bulkMode;
+                      const showCompactCompleted = isCompleted && !isExpanded;
+                      if (showCompact || showCompactCompleted) {
                         return (
                           <CompactCountedRow
                             key={item.id}
@@ -853,7 +856,7 @@ export default function CountSheet() {
                         <div key={item.id}>
                         <div className={cn("p-4", bulkMode && selectedIds.has(item.id) && "bg-primary/5")}>
                           {/* Collapse link at top — small and subtle */}
-                          {(isCounted || isDone) && isExpanded && !bulkMode && !isCompleted && (
+                          {((isCounted || isDone || isCompleted) && isExpanded && !bulkMode) && (
                             <button
                               onClick={() => setExpandedItems((prev) => { const n = new Set(prev); n.delete(item.id); return n; })}
                               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-2 transition-colors"
