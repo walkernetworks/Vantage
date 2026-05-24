@@ -38,6 +38,7 @@ function ParInput({
   selected,
   onToggleSelect,
   overrideValue,
+  overrideThresholdValue,
   savedVersion,
 }: {
   item: Item;
@@ -47,6 +48,7 @@ function ParInput({
   selected: boolean;
   onToggleSelect: (id: number) => void;
   overrideValue?: string;
+  overrideThresholdValue?: string;
   savedVersion: number; // increments each time a bulk save completes
 }) {
   const [parValue, setParValue] = useState(item.parLevel ?? "0");
@@ -54,10 +56,10 @@ function ParInput({
   const [parDirty, setParDirty] = useState(false);
   const [thresholdDirty, setThresholdDirty] = useState(false);
   const prevOverride = useRef<string | undefined>(undefined);
+  const prevThresholdOverride = useRef<string | undefined>(undefined);
   const prevSavedVersion = useRef(savedVersion);
 
   // When a bulk save completes (savedVersion increments), clear dirty flags unconditionally.
-  // We check savedVersion via a ref to avoid stale closure issues.
   useEffect(() => {
     if (savedVersion !== prevSavedVersion.current) {
       prevSavedVersion.current = savedVersion;
@@ -66,11 +68,18 @@ function ParInput({
     }
   }, [savedVersion]);
 
-  // Apply external override (bulk fill) — sets dirty so user knows to save
+  // Apply external par override (bulk fill)
   if (overrideValue !== undefined && overrideValue !== prevOverride.current) {
     prevOverride.current = overrideValue;
     setParValue(overrideValue);
     setParDirty(true);
+  }
+
+  // Apply external threshold override (bulk fill)
+  if (overrideThresholdValue !== undefined && overrideThresholdValue !== prevThresholdOverride.current) {
+    prevThresholdOverride.current = overrideThresholdValue;
+    setThresholdValue(overrideThresholdValue);
+    setThresholdDirty(true);
   }
 
   // When item data refreshes from server after save, sync local value
@@ -247,11 +256,13 @@ export default function ParLevels() {
 
   // Bulk edit state
   const [bulkMode, setBulkMode] = useState(false);
+  const [bulkField, setBulkField] = useState<"par" | "threshold">("par");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [setAllInput, setSetAllInput] = useState("");
   const [showSetAll, setShowSetAll] = useState(false);
   // Map of itemId → override value applied by bulk fill (copy-down or set-all)
   const [overrides, setOverrides] = useState<Record<number, string>>({});
+  const [thresholdOverrides, setThresholdOverrides] = useState<Record<number, string>>({});
   // Increments on each successful bulk save so child rows can clear their dirty state
   const [savedVersion, setSavedVersion] = useState(0);
 
@@ -279,9 +290,22 @@ export default function ParLevels() {
     onSuccess: (_data, vars) => {
       utils.items.list.invalidate();
       toast.success(`${vars.updates.length} par level${vars.updates.length !== 1 ? "s" : ""} saved`);
-      // Increment savedVersion so child rows clear their dirty flags
       setSavedVersion((v) => v + 1);
       setOverrides({});
+      setSelectedIds(new Set());
+      setBulkMode(false);
+      setShowSetAll(false);
+      setSetAllInput("");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const bulkUpdateOrderThresholds = trpc.items.bulkUpdateOrderThresholds.useMutation({
+    onSuccess: (_data, vars) => {
+      utils.items.list.invalidate();
+      toast.success(`${vars.updates.length} order threshold${vars.updates.length !== 1 ? "s" : ""} saved`);
+      setSavedVersion((v) => v + 1);
+      setThresholdOverrides({});
       setSelectedIds(new Set());
       setBulkMode(false);
       setShowSetAll(false);
@@ -353,18 +377,26 @@ export default function ParLevels() {
     });
   }
 
-  /** Copy-down: fill all selected rows with the par value of the first selected item */
+  /** Copy-down: fill all selected rows with the value of the first selected item */
   function handleCopyDown() {
     const selected = filteredItems.filter((i) => selectedIds.has(i.id));
     if (selected.length < 2) {
       toast.error("Select at least 2 items to copy down");
       return;
     }
-    const sourceValue = overrides[selected[0].id] ?? selected[0].parLevel ?? "0";
-    const newOverrides: Record<number, string> = { ...overrides };
-    selected.slice(1).forEach((i) => { newOverrides[i.id] = sourceValue; });
-    setOverrides(newOverrides);
-    toast.info(`Copied ${sourceValue} to ${selected.length - 1} item${selected.length > 2 ? "s" : ""}. Click Save All to confirm.`);
+    if (bulkField === "par") {
+      const sourceValue = overrides[selected[0].id] ?? selected[0].parLevel ?? "0";
+      const newOverrides: Record<number, string> = { ...overrides };
+      selected.slice(1).forEach((i) => { newOverrides[i.id] = sourceValue; });
+      setOverrides(newOverrides);
+      toast.info(`Copied par ${sourceValue} to ${selected.length - 1} item${selected.length > 2 ? "s" : ""}. Click Save All to confirm.`);
+    } else {
+      const sourceValue = thresholdOverrides[selected[0].id] ?? selected[0].orderThreshold ?? "50";
+      const newOverrides: Record<number, string> = { ...thresholdOverrides };
+      selected.slice(1).forEach((i) => { newOverrides[i.id] = sourceValue; });
+      setThresholdOverrides(newOverrides);
+      toast.info(`Copied Order % ${sourceValue} to ${selected.length - 1} item${selected.length > 2 ? "s" : ""}. Click Save All to confirm.`);
+    }
   }
 
   /** Set all: apply typed value to all selected rows */
@@ -379,36 +411,45 @@ export default function ParLevels() {
       toast.error("Select at least one item");
       return;
     }
-    const newOverrides: Record<number, string> = { ...overrides };
-    selected.forEach((i) => { newOverrides[i.id] = val; });
-    setOverrides(newOverrides);
-    toast.info(`Set ${val} on ${selected.length} item${selected.length !== 1 ? "s" : ""}. Click Save All to confirm.`);
+    if (bulkField === "par") {
+      const newOverrides: Record<number, string> = { ...overrides };
+      selected.forEach((i) => { newOverrides[i.id] = val; });
+      setOverrides(newOverrides);
+      toast.info(`Set par ${val} on ${selected.length} item${selected.length !== 1 ? "s" : ""}. Click Save All to confirm.`);
+    } else {
+      const newOverrides: Record<number, string> = { ...thresholdOverrides };
+      selected.forEach((i) => { newOverrides[i.id] = val; });
+      setThresholdOverrides(newOverrides);
+      toast.info(`Set Order % ${val} on ${selected.length} item${selected.length !== 1 ? "s" : ""}. Click Save All to confirm.`);
+    }
     setShowSetAll(false);
     setSetAllInput("");
   }
 
   /** Commit all pending overrides to the backend */
   function handleSaveAll() {
-    const updates = Object.entries(overrides).map(([id, parLevel]) => ({
-      id: parseInt(id),
-      parLevel,
-    }));
-    if (updates.length === 0) {
-      toast.error("No pending changes to save");
-      return;
+    if (bulkField === "par") {
+      const updates = Object.entries(overrides).map(([id, parLevel]) => ({ id: parseInt(id), parLevel }));
+      if (updates.length === 0) { toast.error("No pending changes to save"); return; }
+      bulkUpdateParLevels.mutate({ updates });
+    } else {
+      const updates = Object.entries(thresholdOverrides).map(([id, orderThreshold]) => ({ id: parseInt(id), orderThreshold }));
+      if (updates.length === 0) { toast.error("No pending changes to save"); return; }
+      bulkUpdateOrderThresholds.mutate({ updates });
     }
-    bulkUpdateParLevels.mutate({ updates });
   }
 
   function exitBulkMode() {
     setBulkMode(false);
     setSelectedIds(new Set());
     setOverrides({});
+    setThresholdOverrides({});
     setShowSetAll(false);
     setSetAllInput("");
+    setBulkField("par");
   }
 
-  const pendingCount = Object.keys(overrides).length;
+  const pendingCount = bulkField === "par" ? Object.keys(overrides).length : Object.keys(thresholdOverrides).length;
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
@@ -463,6 +504,24 @@ export default function ParLevels() {
               {selectedIds.size} selected
             </span>
 
+            {/* Field toggle: Par vs Order % */}
+            <div className="flex rounded-xl border border-border overflow-hidden text-xs font-semibold">
+              <button
+                onClick={() => { setBulkField("par"); setShowSetAll(false); setSetAllInput(""); }}
+                className={cn(
+                  "px-3 py-2 transition-colors",
+                  bulkField === "par" ? "bg-primary text-primary-foreground" : "bg-background text-foreground hover:bg-muted"
+                )}
+              >Par</button>
+              <button
+                onClick={() => { setBulkField("threshold"); setShowSetAll(false); setSetAllInput(""); }}
+                className={cn(
+                  "px-3 py-2 transition-colors border-l border-border",
+                  bulkField === "threshold" ? "bg-primary text-primary-foreground" : "bg-background text-foreground hover:bg-muted"
+                )}
+              >Order %</button>
+            </div>
+
             {/* Copy Down */}
             <button
               onClick={handleCopyDown}
@@ -506,7 +565,7 @@ export default function ParLevels() {
                 value={setAllInput}
                 onChange={(e) => setSetAllInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSetAll()}
-                placeholder="Enter par value…"
+                placeholder={bulkField === "par" ? "Enter par value…" : "Enter % (1–100)…"}
                 className="h-9 w-36 px-3 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                 autoFocus
               />
@@ -622,6 +681,7 @@ export default function ParLevels() {
                 selected={selectedIds.has(item.id)}
                 onToggleSelect={toggleSelect}
                 overrideValue={overrides[item.id]}
+                overrideThresholdValue={thresholdOverrides[item.id]}
                 savedVersion={savedVersion}
               />
             ))}
