@@ -501,8 +501,9 @@ export async function getBelowParItems(vendor?: string) {
           ? rawQty / item.caseQty
           : rawQty;
       const parLevel = parseFloat(item.parLevel ?? "0");
-      const thresholdRaw = item.orderThreshold ? parseFloat(item.orderThreshold) : null;
-      const triggerLevel = thresholdRaw !== null ? thresholdRaw : parLevel * 0.5;
+      // orderThreshold is stored as a percentage (0–100); default is 50%
+      const thresholdPct = item.orderThreshold ? parseFloat(item.orderThreshold) : 50;
+      const triggerLevel = parLevel * (thresholdPct / 100);
       const casesNeededRaw = Math.max(0, parLevel - currentStock);
       const casesNeeded = Math.ceil(casesNeededRaw);
       const needsOrder = parLevel > 0 && currentStock <= triggerLevel;
