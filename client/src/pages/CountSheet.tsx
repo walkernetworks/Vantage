@@ -89,7 +89,15 @@ export default function CountSheet() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   // Track which counted items are expanded for editing
   const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
-  const [markedDone, setMarkedDone] = useState<Set<number>>(new Set());
+  const [markedDone, setMarkedDone] = useState<Set<number>>(() => {
+    // Restore markedDone from localStorage for the current session
+    if (!activeSessionId) return new Set<number>();
+    try {
+      const raw = localStorage.getItem(`countDone_${activeSessionId}`);
+      if (raw) return new Set<number>(JSON.parse(raw));
+    } catch {}
+    return new Set<number>();
+  });
   // localCounts stores the CASE count for each item
   const [localCounts, setLocalCounts] = useState<Record<number, string>>({});
   // localEachCounts stores the EACH count for items that have caseQty > 1
@@ -211,11 +219,28 @@ export default function CountSheet() {
     }
   }, [sessions, activeSessionId]);
 
-  // Clear expanded items when switching sessions
+  // Clear expanded items when switching sessions; restore markedDone from localStorage
   useEffect(() => {
     setExpandedItems(new Set());
-    setMarkedDone(new Set());
+    if (!activeSessionId) {
+      setMarkedDone(new Set());
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(`countDone_${activeSessionId}`);
+      setMarkedDone(raw ? new Set<number>(JSON.parse(raw)) : new Set<number>());
+    } catch {
+      setMarkedDone(new Set());
+    }
   }, [activeSessionId]);
+
+  // Persist markedDone to localStorage whenever it changes
+  useEffect(() => {
+    if (!activeSessionId) return;
+    try {
+      localStorage.setItem(`countDone_${activeSessionId}`, JSON.stringify(Array.from(markedDone)));
+    } catch {}
+  }, [markedDone, activeSessionId]);
 
   const saveTimer = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
 
