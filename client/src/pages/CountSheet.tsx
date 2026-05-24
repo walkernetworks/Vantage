@@ -66,36 +66,16 @@ function CompactCountedRow({
   );
 }
 
-// ─── Helper: wraps a full-edit item row and collapses it when scrolled out ────
+// ─── Helper: plain wrapper — no auto-collapse, collapse is explicit via Done button ───
 function ScrollCollapseWrapper({
-  itemId, isCounted, onScrollOut, children,
+  children,
 }: {
-  itemId: number;
-  isCounted: boolean;
-  onScrollOut: () => void;
+  itemId?: number;
+  isCounted?: boolean;
+  onScrollOut?: () => void;
   children: React.ReactNode;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  // Only attach observer when the item is counted (so uncounted items are never collapsed)
-  useEffect(() => {
-    if (!isCounted) return;
-    const el = ref.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        // When the element is no longer visible (scrolled away), collapse it
-        if (!entry.isIntersecting) {
-          onScrollOut();
-        }
-      },
-      { threshold: 0 }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isCounted, itemId]);
-
-  return <div ref={ref}>{children}</div>;
+  return <div>{children}</div>;
 }
 
 export default function CountSheet() {
@@ -834,14 +814,14 @@ export default function CountSheet() {
                       return (
                         <div key={item.id}>
                         <div className={cn("p-4", bulkMode && selectedIds.has(item.id) && "bg-primary/5")}>
-                          {/* Done button — collapses item back to compact counted row */}
+                          {/* Collapse link at top — small and subtle */}
                           {isCounted && isExpanded && !bulkMode && !isCompleted && (
                             <button
                               onClick={() => setExpandedItems((prev) => { const n = new Set(prev); n.delete(item.id); return n; })}
-                              className="flex items-center gap-1.5 text-xs font-semibold text-green-600 hover:text-green-700 mb-2 transition-colors active:scale-95"
+                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-2 transition-colors"
                             >
-                              <CheckCircle size={14} />
-                              <span>Done</span>
+                              <ChevronDown size={12} />
+                              <span>Collapse</span>
                             </button>
                           )}
                           <div className="flex items-center justify-between gap-3 mb-3">
@@ -963,6 +943,16 @@ export default function CountSheet() {
                               </div>
                             )}
                           </div>
+                          {/* Done button at bottom — explicit collapse after counting */}
+                          {isCounted && isExpanded && !bulkMode && !isCompleted && (
+                            <button
+                              onClick={() => setExpandedItems((prev) => { const n = new Set(prev); n.delete(item.id); return n; })}
+                              className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-semibold transition-colors active:scale-[0.98]"
+                            >
+                              <CheckCircle size={16} />
+                              <span>Done</span>
+                            </button>
+                          )}
                         </div>
                         </div>
                       );
