@@ -411,3 +411,12 @@
 - [x] Collapse triggered by scroll-out (IntersectionObserver) instead of a fixed 600ms timer
 - [x] +/- buttons no longer trigger collapse — only scrolling away does
 - [x] Category totals formatted with comma separators (toLocaleString)
+
+## Round 37 — Order Threshold as Percentage of Par
+
+- [x] Change orderThreshold column semantics: store as percentage (0–100), default 50
+- [x] Update getOrderDashboard in db.ts: triggerLevel = parLevel * (threshold / 100)
+- [x] Update Par Levels UI: show "%" suffix, placeholder "50", validation 1–100
+- [x] Add tooltip/helper text explaining the percentage meaning
+- [x] Migrate existing NULL orderThreshold rows to NULL (keep as default 50%)
+- [x] Push to GitHub
