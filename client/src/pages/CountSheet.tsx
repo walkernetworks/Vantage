@@ -832,21 +832,16 @@ export default function CountSheet() {
                       }
 
                       return (
-                        <ScrollCollapseWrapper
-                          key={item.id}
-                          itemId={item.id}
-                          isCounted={isCounted}
-                          onScrollOut={() => setExpandedItems((prev) => { const n = new Set(prev); n.delete(item.id); return n; })}
-                        >
+                        <div key={item.id}>
                         <div className={cn("p-4", bulkMode && selectedIds.has(item.id) && "bg-primary/5")}>
-                          {/* Collapse-back button for expanded counted items */}
+                          {/* Done button — collapses item back to compact counted row */}
                           {isCounted && isExpanded && !bulkMode && !isCompleted && (
                             <button
                               onClick={() => setExpandedItems((prev) => { const n = new Set(prev); n.delete(item.id); return n; })}
-                              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-2 transition-colors"
+                              className="flex items-center gap-1.5 text-xs font-semibold text-green-600 hover:text-green-700 mb-2 transition-colors active:scale-95"
                             >
-                              <ChevronDown size={13} />
-                              <span>Collapse</span>
+                              <CheckCircle size={14} />
+                              <span>Done</span>
                             </button>
                           )}
                           <div className="flex items-center justify-between gap-3 mb-3">
@@ -969,7 +964,7 @@ export default function CountSheet() {
                             )}
                           </div>
                         </div>
-                        </ScrollCollapseWrapper>
+                        </div>
                       );
                     })}
                   </div>
