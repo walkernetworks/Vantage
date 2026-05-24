@@ -722,7 +722,12 @@ export default function CountSheet() {
               const unitPrice = parseFloat(rawPrice) || 0;
               return sum + qty * unitPrice;
             }, 0);
-                    const countedItems = groupItems.filter((i) => parseFloat(effectiveCounts.get(i.id) ?? "0") > 0).length;
+                    const countedItems = groupItems.filter((i) => {
+                      const stored = parseFloat(effectiveCounts.get(i.id) ?? "0");
+                      if (stored > 0) return true;
+                      const localEach = parseFloat(localEachCounts[i.id] ?? "0");
+                      return localEach > 0;
+                    }).length;
             // Default to collapsed if not explicitly set
             const isCollapsedGroup = collapsed[groupKey] !== false;
 
