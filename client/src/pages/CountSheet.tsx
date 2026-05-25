@@ -780,8 +780,29 @@ export default function CountSheet() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {countedItems === groupItems.length && groupItems.length > 0 && (
-                      <CheckCircle size={16} className="text-accent" />
+                    {countedItems === groupItems.length && groupItems.length > 0 ? (
+                      <CheckCircle size={16} className="text-green-500" />
+                    ) : !isCompleted && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMarkedDone((prev) => {
+                            const n = new Set(prev);
+                            groupItems.forEach((i) => n.add(i.id));
+                            return n;
+                          });
+                          setExpandedItems((prev) => {
+                            const n = new Set(prev);
+                            groupItems.forEach((i) => n.delete(i.id));
+                            return n;
+                          });
+                          setCollapsed((prev) => ({ ...prev, [groupKey]: true }));
+                        }}
+                        className="text-xs text-muted-foreground hover:text-green-600 border border-border rounded-lg px-2 py-1 bg-background hover:border-green-500 transition-colors"
+                        title="Mark all items in this category as Done"
+                      >
+                        All Done
+                      </button>
                     )}
                     {isCollapsedGroup ? <ChevronRight size={18} className="text-muted-foreground" /> : <ChevronDown size={18} className="text-muted-foreground" />}
                   </div>
