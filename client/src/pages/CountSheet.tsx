@@ -208,6 +208,18 @@ export default function CountSheet() {
       });
       setLocalCounts(caseMap);
       setLocalEachCounts(eachMap);
+
+      // Seed markedDone from DB confirmed entries (merge with localStorage)
+      const confirmedFromDb = new Set<number>(
+        sessionData.entries.filter((e) => (e as any).confirmed === true || (e as any).confirmed === 1).map((e) => e.itemId)
+      );
+      if (confirmedFromDb.size > 0) {
+        setMarkedDone((prev) => {
+          const merged = new Set(prev);
+          confirmedFromDb.forEach((id) => merged.add(id));
+          return merged;
+        });
+      }
     }
   }, [sessionData, allItems]);
 
@@ -797,6 +809,22 @@ export default function CountSheet() {
                             return n;
                           });
                           setCollapsed((prev) => ({ ...prev, [groupKey]: true }));
+                          // Persist confirmed=true for all items in this group
+                          if (activeSessionId) {
+                            groupItems.forEach((i) => {
+                              const currentQty = computeStoredQuantity(
+                                i,
+                                localCounts[i.id] ?? "",
+                                localEachCounts[i.id] ?? ""
+                              );
+                              upsertEntryMutation.mutate({
+                                sessionId: activeSessionId,
+                                itemId: i.id,
+                                quantity: currentQty,
+                                confirmed: true,
+                              });
+                            });
+                          }
                         }}
                         className="text-xs text-muted-foreground hover:text-green-600 border border-border rounded-lg px-2 py-1 bg-background hover:border-green-500 transition-colors"
                         title="Mark all items in this category as Done"
@@ -1011,6 +1039,20 @@ export default function CountSheet() {
                               onClick={() => {
                                 setMarkedDone((prev) => { const n = new Set(prev); n.add(item.id); return n; });
                                 setExpandedItems((prev) => { const n = new Set(prev); n.delete(item.id); return n; });
+                                // Persist confirmed=true to DB (upsert with current quantity or 0)
+                                if (activeSessionId) {
+                                  const currentQty = computeStoredQuantity(
+                                    item,
+                                    localCounts[item.id] ?? "",
+                                    localEachCounts[item.id] ?? ""
+                                  );
+                                  upsertEntryMutation.mutate({
+                                    sessionId: activeSessionId,
+                                    itemId: item.id,
+                                    quantity: currentQty,
+                                    confirmed: true,
+                                  });
+                                }
                               }}
                               className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-semibold transition-colors active:scale-[0.98]"
                             >
