@@ -624,8 +624,16 @@ const countsRouter = router({
 
 // ─── Orders Router ────────────────────────────────────────────────────────────
 
+const ordersProcedure = protectedProcedure.use(({ ctx, next }) => {
+  const perms: string[] = Array.isArray(ctx.user.permissions) ? ctx.user.permissions : [];
+  if (ctx.user.role !== "admin" && !perms.includes("place_orders")) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Order access required" });
+  }
+  return next({ ctx });
+});
+
 const ordersRouter = router({
-  getBelowPar: adminProcedure
+  getBelowPar: ordersProcedure
     .input(z.object({ vendor: z.string().optional() }).optional())
     .query(({ input }) => getBelowParItems(input?.vendor)),
 });
