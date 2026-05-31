@@ -597,10 +597,11 @@ const countsRouter = router({
         itemId: z.number(),
         quantity: z.string(),
         notes: z.string().optional(),
+        confirmed: z.boolean().optional(),
       })
     )
     .mutation(({ input, ctx }) =>
-      upsertCountEntry(input.sessionId, input.itemId, input.quantity, input.notes, ctx.user.id)
+      upsertCountEntry(input.sessionId, input.itemId, input.quantity, input.notes, ctx.user.id, input.confirmed)
     ),
 
   completeSession: protectedProcedure
