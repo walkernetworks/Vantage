@@ -1,0 +1,1 @@
+ALTER TABLE `count_entries` ADD `confirmed` boolean DEFAULT false NOT NULL;
