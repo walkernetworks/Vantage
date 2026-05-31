@@ -420,3 +420,14 @@
 - [x] Add tooltip/helper text explaining the percentage meaning
 - [x] Migrate existing NULL orderThreshold rows to NULL (keep as default 50%)
 - [x] Push to GitHub
+
+## Round 49 — Persist "Done" state to DB
+
+- [x] Add `confirmed` boolean column to `count_entries` table (default false)
+- [x] Migrate dev and production databases
+- [x] Update saveCount mutation to accept `confirmed` flag
+- [x] Update handleDone to call saveCount with confirmed=true (upsert entry)
+- [x] Update getSessionWithEntries to return `confirmed` field
+- [x] Update countedItems filter to check `confirmed` from DB instead of markedDone
+- [x] Keep markedDone as optimistic UI state (sync from DB on load)
+- [x] Push to GitHub
