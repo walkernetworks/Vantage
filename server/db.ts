@@ -391,7 +391,8 @@ export async function upsertCountEntry(
   itemId: number,
   quantity: string,
   notes?: string,
-  updatedBy?: number
+  updatedBy?: number,
+  confirmed?: boolean
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -402,9 +403,12 @@ export async function upsertCountEntry(
     .limit(1);
 
   if (existing.length > 0) {
+    // Only update confirmed if explicitly provided (don't reset it on normal saves)
+    const updateData: Record<string, unknown> = { quantity, notes: notes ?? null, updatedBy: updatedBy ?? null };
+    if (confirmed !== undefined) updateData.confirmed = confirmed;
     await db
       .update(countEntries)
-      .set({ quantity, notes: notes ?? null, updatedBy: updatedBy ?? null })
+      .set(updateData as any)
       .where(and(eq(countEntries.sessionId, sessionId), eq(countEntries.itemId, itemId)));
   } else {
     await db.insert(countEntries).values({
@@ -413,6 +417,7 @@ export async function upsertCountEntry(
       quantity,
       notes: notes ?? null,
       updatedBy: updatedBy ?? null,
+      confirmed: confirmed ?? false,
     });
   }
 }
@@ -429,6 +434,7 @@ export async function getSessionWithEntries(sessionId: number) {
     .select({
       entryId: countEntries.id,
       quantity: countEntries.quantity,
+      confirmed: countEntries.confirmed,
       notes: countEntries.notes,
       updatedBy: countEntries.updatedBy,
       editorName: editor.name,
