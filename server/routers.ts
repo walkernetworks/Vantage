@@ -100,6 +100,16 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   return next({ ctx });
 });
 
+// ─── Par levels guard — admins + users with par_levels permission ─────────────
+
+const parLevelsProcedure = protectedProcedure.use(({ ctx, next }) => {
+  const perms: string[] = Array.isArray(ctx.user.permissions) ? ctx.user.permissions : [];
+  if (ctx.user.role !== "admin" && !perms.includes("par_levels")) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Par levels access required" });
+  }
+  return next({ ctx });
+});
+
 // ─── Items Router ─────────────────────────────────────────────────────────────
 
 const itemsRouter = router({
@@ -183,19 +193,19 @@ const itemsRouter = router({
     .input(z.object({ itemId: z.number() }))
     .query(({ input }) => getPriceHistory(input.itemId)),
 
-  updateParLevel: adminProcedure
+  updateParLevel: parLevelsProcedure
     .input(z.object({ id: z.number(), parLevel: z.string() }))
     .mutation(({ input }) => updateItem(input.id, { parLevel: input.parLevel })),
 
-  updateOrderThreshold: adminProcedure
+  updateOrderThreshold: parLevelsProcedure
     .input(z.object({ id: z.number(), orderThreshold: z.string() }))
     .mutation(({ input }) => updateItem(input.id, { orderThreshold: input.orderThreshold })),
 
-  bulkUpdateParLevels: adminProcedure
+  bulkUpdateParLevels: parLevelsProcedure
     .input(z.object({ updates: z.array(z.object({ id: z.number(), parLevel: z.string() })) }))
     .mutation(({ input }) => bulkUpdateParLevels(input.updates)),
 
-  bulkUpdateOrderThresholds: adminProcedure
+  bulkUpdateOrderThresholds: parLevelsProcedure
     .input(z.object({ updates: z.array(z.object({ id: z.number(), orderThreshold: z.string() })) }))
     .mutation(({ input }) => bulkUpdateOrderThresholds(input.updates)),
 

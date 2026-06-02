@@ -40,6 +40,7 @@ const ALL_PERMISSIONS = [
   { key: "edit_inventory",  label: "Edit Inventory",  description: "Can add, edit, and delete items" },
   { key: "count_sheet",     label: "Count Sheet",     description: "Can perform inventory counts" },
   { key: "place_orders",    label: "Place Orders",    description: "Can view and export order dashboards" },
+  { key: "par_levels",      label: "Par Levels",      description: "Can view and edit par levels and order thresholds" },
   { key: "catering",        label: "Catering",        description: "Can access catering recipes and calculator" },
   { key: "reports",         label: "Reports",         description: "Can view analytics and reports" },
   { key: "settings",        label: "Settings",        description: "Can manage categories, vendors, storage areas" },
