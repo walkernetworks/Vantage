@@ -8,6 +8,7 @@ import {
   ArrowUp,
   CheckCircle2,
   CheckSquare,
+  Copy,
   Edit2,
   Filter,
   Minus,
@@ -296,6 +297,32 @@ export default function ItemCatalog() {
     },
     onError: (e) => toast.error(e.message),
   });
+
+  const duplicateMutation = trpc.items.create.useMutation({
+    onSuccess: () => {
+      utils.items.list.invalidate();
+      toast.success("Item duplicated");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  function handleDuplicate(item: (typeof items)[0]) {
+    duplicateMutation.mutate({
+      name: item.name + " (Copy)",
+      brand: (item as any).brand ?? undefined,
+      category: item.category,
+      vendor: item.vendor,
+      packSize: item.packSize ?? undefined,
+      unitOfMeasure: item.unitOfMeasure ?? "CS",
+      price: item.price ?? undefined,
+      parLevel: item.parLevel ?? "0",
+      storageArea: item.storageArea ?? undefined,
+      isAlcohol: item.isAlcohol,
+      alcoholCategory: item.alcoholCategory ?? undefined,
+      notes: item.notes ?? undefined,
+      itemNumber: (item as any).itemNumber ?? undefined,
+    });
+  }
 
   const deleteMutation = trpc.items.delete.useMutation({
     onSuccess: () => {
@@ -708,12 +735,22 @@ export default function ItemCatalog() {
                             <button
                               onClick={(e) => { e.stopPropagation(); openEdit(item); }}
                               className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center hover:bg-secondary transition-colors active:scale-95"
+                              title="Edit item"
                             >
                               <Edit2 size={16} className="text-foreground" />
                             </button>
                             <button
+                              onClick={(e) => { e.stopPropagation(); handleDuplicate(item); }}
+                              className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center hover:bg-secondary transition-colors active:scale-95"
+                              title="Duplicate item"
+                              disabled={duplicateMutation.isPending}
+                            >
+                              <Copy size={16} className="text-foreground" />
+                            </button>
+                            <button
                               onClick={(e) => { e.stopPropagation(); setDeleteConfirm(item.id); }}
                               className="w-9 h-9 rounded-xl bg-destructive/10 flex items-center justify-center hover:bg-destructive/20 transition-colors active:scale-95"
+                              title="Delete item"
                             >
                               <Trash2 size={16} className="text-destructive" />
                             </button>
