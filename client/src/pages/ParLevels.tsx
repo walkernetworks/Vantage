@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import {
@@ -249,6 +250,10 @@ function ParInput({
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function ParLevels() {
+  const { user } = useAuth();
+  const userPermissions: string[] = (user as any)?.permissions ?? [];
+  const canAccess = user?.role === "admin" || userPermissions.includes("par_levels");
+
   const [search, setSearch] = useState("");
   const [filterVendor, setFilterVendor] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
@@ -450,6 +455,15 @@ export default function ParLevels() {
   }
 
   const pendingCount = bulkField === "par" ? Object.keys(overrides).length : Object.keys(thresholdOverrides).length;
+
+  if (!canAccess) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-16 text-center space-y-3">
+        <p className="text-lg font-semibold text-foreground">Access Restricted</p>
+        <p className="text-sm text-muted-foreground">You don't have permission to view Par Levels. Contact your administrator.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
