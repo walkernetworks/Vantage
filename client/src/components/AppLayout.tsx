@@ -70,6 +70,7 @@ const navItems: NavItem[] = [
     label: "Par Levels",
     icon: <SlidersHorizontal size={22} />,
     adminOnly: true,
+    permission: "par_levels",
     description: "Set reorder thresholds",
   },
   {
