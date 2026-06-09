@@ -631,6 +631,48 @@ const countsRouter = router({
   getEntries: protectedProcedure
     .input(z.object({ sessionId: z.number() }))
     .query(({ input }) => getCountEntries(input.sessionId)),
+
+  exportSession: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const result = await getSessionWithEntries(input.id);
+      if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Session not found" });
+      const { session, entries } = result;
+
+      // Sort by category then item name
+      const sorted = [...entries].sort((a, b) =>
+        a.category.localeCompare(b.category) || a.itemName.localeCompare(b.itemName)
+      );
+
+      const escape = (v: string | null | undefined) => {
+        if (v == null) return "";
+        const s = String(v);
+        if (s.includes(",") || s.includes('"') || s.includes("\n")) return `"${s.replace(/"/g, '""')}"`;
+        return s;
+      };
+
+      const headers = ["Category", "Item Name", "Vendor", "Pack Size", "Unit", "Par Level", "Quantity Counted", "Confirmed", "Last Edited By", "Notes"];
+      const rows = sorted.map((e) => [
+        escape(e.category),
+        escape(e.itemName),
+        escape(e.vendor),
+        escape(e.packSize),
+        escape(e.unitOfMeasure),
+        escape(e.parLevel),
+        escape(e.quantity),
+        (e as any).confirmed ? "Yes" : "No",
+        escape((e as any).editorName),
+        escape((e as any).notes),
+      ].join(","));
+
+      const sessionLabel = session.name ?? "Inventory Count";
+      const dateStr = new Date(session.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+
+      return {
+        csv: [headers.join(","), ...rows].join("\n"),
+        filename: `count_${sessionLabel.replace(/[^a-z0-9]/gi, "_")}_${dateStr.replace(/[^a-z0-9]/gi, "_")}.csv`,
+      };
+    }),
 });
 
 // ─── Orders Router ────────────────────────────────────────────────────────────
