@@ -20,6 +20,7 @@ import {
   ChevronRight,
   ClipboardList,
   DollarSign,
+  Download,
   Layers,
   MapPin,
   Plus,
@@ -179,6 +180,29 @@ export default function CountSheet() {
     },
     onError: (e) => toast.error(e.message),
   });
+
+  const [exportSessionId, setExportSessionId] = useState<number | null>(null);
+  const { data: exportData, isFetching: isExporting } = trpc.counts.exportSession.useQuery(
+    { id: exportSessionId! },
+    { enabled: exportSessionId !== null }
+  );
+
+  useEffect(() => {
+    if (!exportData) return;
+    const blob = new Blob([exportData.csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = exportData.filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    setExportSessionId(null);
+    toast.success("Export downloaded");
+  }, [exportData]);
+
+  function triggerExport(sessionId: number) {
+    setExportSessionId(sessionId);
+  }
 
   // Load existing counts into local state when session data loads
   // The DB stores total cases (cases + eaches/caseQty). We display the integer part as cases
@@ -686,26 +710,37 @@ export default function CountSheet() {
               <Layers size={15} /> Category
             </button>
           </div>
-          {!isCompleted ? (
+          <div className="ml-auto flex items-center gap-2">
             <button
-              onClick={() => completeMutation.mutate({ id: activeSessionId })}
-              disabled={completeMutation.isPending || Object.values(saving).some(Boolean)}
-              title={Object.values(saving).some(Boolean) ? "Waiting for saves to finish…" : undefined}
-              className="ml-auto flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-accent-foreground text-sm font-semibold hover:opacity-90 transition-colors active:scale-95 disabled:opacity-60"
+              onClick={() => triggerExport(activeSessionId)}
+              disabled={isExporting}
+              title="Export count as CSV"
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-muted text-foreground text-sm font-semibold hover:bg-secondary transition-colors active:scale-95 disabled:opacity-60"
             >
-              <CheckCircle size={16} />
-              {completeMutation.isPending ? "Completing…" : Object.values(saving).some(Boolean) ? "Saving…" : "Complete"}
+              <Download size={15} />
+              {isExporting ? "Exporting…" : "Export CSV"}
             </button>
-          ) : (
-            <button
-              onClick={() => reopenMutation.mutate({ id: activeSessionId })}
-              disabled={reopenMutation.isPending}
-              className="ml-auto flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary text-secondary-foreground text-sm font-semibold hover:bg-secondary/80 transition-colors active:scale-95 disabled:opacity-60"
-            >
-              <RefreshCw size={16} />
-              {reopenMutation.isPending ? "Re-opening…" : "Re-open to Edit"}
-            </button>
-          )}
+            {!isCompleted ? (
+              <button
+                onClick={() => completeMutation.mutate({ id: activeSessionId })}
+                disabled={completeMutation.isPending || Object.values(saving).some(Boolean)}
+                title={Object.values(saving).some(Boolean) ? "Waiting for saves to finish…" : undefined}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-accent-foreground text-sm font-semibold hover:opacity-90 transition-colors active:scale-95 disabled:opacity-60"
+              >
+                <CheckCircle size={16} />
+                {completeMutation.isPending ? "Completing…" : Object.values(saving).some(Boolean) ? "Saving…" : "Complete"}
+              </button>
+            ) : (
+              <button
+                onClick={() => reopenMutation.mutate({ id: activeSessionId })}
+                disabled={reopenMutation.isPending}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary text-secondary-foreground text-sm font-semibold hover:bg-secondary/80 transition-colors active:scale-95 disabled:opacity-60"
+              >
+                <RefreshCw size={16} />
+                {reopenMutation.isPending ? "Re-opening…" : "Re-open to Edit"}
+              </button>
+            )}
+          </div>
         </div>
       )}
 
