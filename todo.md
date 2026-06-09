@@ -431,3 +431,11 @@
 - [x] Update countedItems filter to check `confirmed` from DB instead of markedDone
 - [x] Keep markedDone as optimistic UI state (sync from DB on load)
 - [x] Push to GitHub
+
+## Round 50 — Export Count Session as CSV
+
+- [x] Add counts.exportSession tRPC procedure that returns CSV string for a session
+- [x] Add Export CSV button to Count Sheet active session header
+- [x] Add Export CSV button to each session row in Count History
+- [x] CSV columns: Category, Item Name, Vendor, Pack Size, Unit, Par Level, Quantity Counted, Confirmed, Last Edited By, Notes
+- [x] Push to GitHub
