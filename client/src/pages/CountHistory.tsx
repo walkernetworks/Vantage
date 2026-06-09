@@ -1,10 +1,31 @@
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
-import { CheckCircle, Clock, ClipboardList, User } from "lucide-react";
+import { CheckCircle, Clock, ClipboardList, Download, User } from "lucide-react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Link } from "wouter";
 
 export default function CountHistory() {
   const { data: sessions = [], isLoading } = trpc.counts.listSessions.useQuery();
+
+  const [exportSessionId, setExportSessionId] = useState<number | null>(null);
+  const { data: exportData } = trpc.counts.exportSession.useQuery(
+    { id: exportSessionId! },
+    { enabled: exportSessionId !== null }
+  );
+
+  useEffect(() => {
+    if (!exportData) return;
+    const blob = new Blob([exportData.csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = exportData.filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    setExportSessionId(null);
+    toast.success("Export downloaded");
+  }, [exportData]);
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
@@ -72,6 +93,15 @@ export default function CountHistory() {
                     <p className="text-sm text-muted-foreground mt-1 italic">{session.notes}</p>
                   )}
                 </div>
+                <button
+                  onClick={() => setExportSessionId(session.id)}
+                  disabled={exportSessionId === session.id}
+                  title="Export count as CSV"
+                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-muted text-foreground text-xs font-semibold hover:bg-secondary transition-colors active:scale-95 disabled:opacity-60"
+                >
+                  <Download size={13} />
+                  {exportSessionId === session.id ? "Exporting…" : "Export CSV"}
+                </button>
               </div>
             </div>
           ))}
