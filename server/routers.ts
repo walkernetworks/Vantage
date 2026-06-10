@@ -651,25 +651,40 @@ const countsRouter = router({
         return s;
       };
 
-      const headers = ["Category", "Item Name", "Vendor", "Pack Size", "Unit", "Par Level", "Quantity Counted", "Confirmed", "Last Edited By", "Notes"];
-      const rows = sorted.map((e) => [
-        escape(e.category),
-        escape(e.itemName),
-        escape(e.vendor),
-        escape(e.packSize),
-        escape(e.unitOfMeasure),
-        escape(e.parLevel),
-        escape(e.quantity),
-        (e as any).confirmed ? "Yes" : "No",
-        escape((e as any).editorName),
-        escape((e as any).notes),
-      ].join(","));
+      const headers = ["Category", "Item Name", "Vendor", "Pack Size", "Unit", "Par Level", "Quantity Counted", "Unit Price", "Total Value", "Confirmed", "Last Edited By", "Notes"];
+      const rows = sorted.map((e) => {
+        const qty = parseFloat(e.quantity ?? "0") || 0;
+        const price = parseFloat(e.price ?? "0") || 0;
+        const total = qty * price;
+        return [
+          escape(e.category),
+          escape(e.itemName),
+          escape(e.vendor),
+          escape(e.packSize),
+          escape(e.unitOfMeasure),
+          escape(e.parLevel),
+          escape(e.quantity),
+          price > 0 ? price.toFixed(2) : "",
+          total > 0 ? total.toFixed(2) : "",
+          (e as any).confirmed ? "Yes" : "No",
+          escape((e as any).editorName),
+          escape((e as any).notes),
+        ].join(",");
+      });
+
+      // Grand total row
+      const grandTotal = sorted.reduce((sum, e) => {
+        const qty = parseFloat(e.quantity ?? "0") || 0;
+        const price = parseFloat(e.price ?? "0") || 0;
+        return sum + qty * price;
+      }, 0);
+      const totalRow = ["", "", "", "", "", "", "", "TOTAL", grandTotal.toFixed(2), "", "", ""].join(",");
 
       const sessionLabel = session.name ?? "Inventory Count";
       const dateStr = new Date(session.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
       return {
-        csv: [headers.join(","), ...rows].join("\n"),
+        csv: [headers.join(","), ...rows, totalRow].join("\n"),
         filename: `count_${sessionLabel.replace(/[^a-z0-9]/gi, "_")}_${dateStr.replace(/[^a-z0-9]/gi, "_")}.csv`,
       };
     }),
