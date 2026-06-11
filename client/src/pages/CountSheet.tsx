@@ -683,31 +683,31 @@ export default function CountSheet() {
         </div>
       )}
 
-      {/* View Mode Toggle */}
+      {/* View Mode Toggle + Actions */}
       {activeSessionId && (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="flex bg-muted rounded-xl p-1 gap-1">
             <button
               onClick={() => setViewMode("storage")}
               className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all",
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all",
                 viewMode === "storage"
                   ? "bg-card text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              <MapPin size={15} /> Storage Area
+              <MapPin size={14} /> <span className="hidden sm:inline">Storage Area</span><span className="sm:hidden">Storage</span>
             </button>
             <button
               onClick={() => setViewMode("category")}
               className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all",
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all",
                 viewMode === "category"
                   ? "bg-card text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              <Layers size={15} /> Category
+              <Layers size={14} /> Category
             </button>
           </div>
           <div className="ml-auto flex items-center gap-2">
@@ -715,29 +715,30 @@ export default function CountSheet() {
               onClick={() => triggerExport(activeSessionId)}
               disabled={isExporting}
               title="Export count as CSV"
-              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-muted text-foreground text-sm font-semibold hover:bg-secondary transition-colors active:scale-95 disabled:opacity-60"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-muted text-foreground text-sm font-semibold hover:bg-secondary transition-colors active:scale-95 disabled:opacity-60"
             >
-              <Download size={15} />
-              {isExporting ? "Exporting…" : "Export CSV"}
+              <Download size={14} />
+              <span className="hidden sm:inline">{isExporting ? "Exporting…" : "Export CSV"}</span>
             </button>
             {!isCompleted ? (
               <button
                 onClick={() => completeMutation.mutate({ id: activeSessionId })}
                 disabled={completeMutation.isPending || Object.values(saving).some(Boolean)}
                 title={Object.values(saving).some(Boolean) ? "Waiting for saves to finish…" : undefined}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-accent-foreground text-sm font-semibold hover:opacity-90 transition-colors active:scale-95 disabled:opacity-60"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-accent text-accent-foreground text-sm font-semibold hover:opacity-90 transition-colors active:scale-95 disabled:opacity-60"
               >
-                <CheckCircle size={16} />
+                <CheckCircle size={15} />
                 {completeMutation.isPending ? "Completing…" : Object.values(saving).some(Boolean) ? "Saving…" : "Complete"}
               </button>
             ) : (
               <button
                 onClick={() => reopenMutation.mutate({ id: activeSessionId })}
                 disabled={reopenMutation.isPending}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary text-secondary-foreground text-sm font-semibold hover:bg-secondary/80 transition-colors active:scale-95 disabled:opacity-60"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-secondary text-secondary-foreground text-sm font-semibold hover:bg-secondary/80 transition-colors active:scale-95 disabled:opacity-60"
               >
-                <RefreshCw size={16} />
-                {reopenMutation.isPending ? "Re-opening…" : "Re-open to Edit"}
+                <RefreshCw size={15} />
+                <span className="hidden sm:inline">{reopenMutation.isPending ? "Re-opening…" : "Re-open to Edit"}</span>
+                <span className="sm:hidden">{reopenMutation.isPending ? "Re-opening…" : "Re-open"}</span>
               </button>
             )}
           </div>
