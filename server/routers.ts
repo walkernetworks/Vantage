@@ -652,10 +652,18 @@ const countsRouter = router({
       };
 
       const headers = ["Category", "Item Name", "Vendor", "Pack Size", "Unit", "Par Level", "Quantity Counted", "Unit Price", "Total Value", "Confirmed", "Last Edited By", "Notes"];
+      // Resolve effective unit price — same logic as the app's totalValue useMemo:
+      // if countMode === 'each' and eachPrice is set, use eachPrice; otherwise use price.
+      const resolveUnitPrice = (e: typeof sorted[0]): number => {
+        const isEachMode = (e as any).countMode === "each";
+        const rawPrice = isEachMode && (e as any).eachPrice ? (e as any).eachPrice : (e.price ?? "0");
+        return parseFloat(rawPrice) || 0;
+      };
+
       const rows = sorted.map((e) => {
         const qty = parseFloat(e.quantity ?? "0") || 0;
-        const price = parseFloat(e.price ?? "0") || 0;
-        const total = qty * price;
+        const unitPrice = resolveUnitPrice(e);
+        const total = qty * unitPrice;
         return [
           escape(e.category),
           escape(e.itemName),
@@ -664,7 +672,7 @@ const countsRouter = router({
           escape(e.unitOfMeasure),
           escape(e.parLevel),
           escape(e.quantity),
-          price > 0 ? price.toFixed(2) : "",
+          unitPrice > 0 ? unitPrice.toFixed(2) : "",
           total > 0 ? total.toFixed(2) : "",
           (e as any).confirmed ? "Yes" : "No",
           escape((e as any).editorName),
@@ -675,8 +683,7 @@ const countsRouter = router({
       // Grand total row
       const grandTotal = sorted.reduce((sum, e) => {
         const qty = parseFloat(e.quantity ?? "0") || 0;
-        const price = parseFloat(e.price ?? "0") || 0;
-        return sum + qty * price;
+        return sum + qty * resolveUnitPrice(e);
       }, 0);
       const totalRow = ["", "", "", "", "", "", "", "TOTAL", grandTotal.toFixed(2), "", "", ""].join(",");
 
