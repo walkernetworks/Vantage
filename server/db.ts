@@ -450,6 +450,9 @@ export async function getSessionWithEntries(sessionId: number) {
       parLevel: items.parLevel,
       isAlcohol: items.isAlcohol,
       alcoholCategory: items.alcoholCategory,
+      eachPrice: items.eachPrice,
+      countMode: items.countMode,
+      caseQty: items.caseQty,
     })
     .from(countEntries)
     .innerJoin(items, eq(countEntries.itemId, items.id))
