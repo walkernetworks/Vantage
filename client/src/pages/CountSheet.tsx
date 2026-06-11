@@ -436,11 +436,13 @@ export default function CountSheet() {
   );
 
   // Calculate total inventory value (across all countable items)
+  // For each-mode items, stored qty = raw eaches → use eachPrice.
+  // For case-mode items, stored qty = cases + eaches/caseQty → use casePrice.
   const totalValue = useMemo(() => {
     return countableItems.reduce((sum, item) => {
       const qty = parseFloat(effectiveCounts.get(item.id) ?? "0") || 0;
-      const isEach = item.unitOfMeasure?.toLowerCase() === "each";
-      const rawPrice = isEach && item.eachPrice ? item.eachPrice : (item.price ?? "0");
+      const isEachMode = item.countMode === "each";
+      const rawPrice = isEachMode && item.eachPrice ? item.eachPrice : (item.price ?? "0");
       const unitPrice = parseFloat(rawPrice) || 0;
       return sum + qty * unitPrice;
     }, 0);
@@ -792,8 +794,8 @@ export default function CountSheet() {
             const isCollapsed = collapsed[groupKey];
             const groupValue = groupItems.reduce((sum, item) => {
               const qty = parseFloat(effectiveCounts.get(item.id) ?? "0") || 0;
-              const isEach = item.unitOfMeasure?.toLowerCase() === "each";
-              const rawPrice = isEach && item.eachPrice ? item.eachPrice : (item.price ?? "0");
+              const isEachMode = item.countMode === "each";
+              const rawPrice = isEachMode && item.eachPrice ? item.eachPrice : (item.price ?? "0");
               const unitPrice = parseFloat(rawPrice) || 0;
               return sum + qty * unitPrice;
             }, 0);
