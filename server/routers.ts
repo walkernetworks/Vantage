@@ -652,11 +652,12 @@ const countsRouter = router({
       };
 
       const headers = ["Category", "Item Name", "Vendor", "Pack Size", "Unit", "Par Level", "Quantity Counted", "Unit Price", "Total Value", "Confirmed", "Last Edited By", "Notes"];
-      // Resolve effective unit price — same logic as the app's totalValue useMemo:
-      // if countMode === 'each' and eachPrice is set, use eachPrice; otherwise use price.
+      // Resolve effective unit price:
+      // - each-mode items: stored qty = raw eaches → use eachPrice (price / caseQty)
+      // - case-mode items: stored qty = cases + eaches/caseQty → use case price
       const resolveUnitPrice = (e: typeof sorted[0]): number => {
-        const isEachMode = (e as any).countMode === "each";
-        const rawPrice = isEachMode && (e as any).eachPrice ? (e as any).eachPrice : (e.price ?? "0");
+        const isEachMode = e.countMode === "each";
+        const rawPrice = isEachMode && e.eachPrice ? e.eachPrice : (e.price ?? "0");
         return parseFloat(rawPrice) || 0;
       };
 
