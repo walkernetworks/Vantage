@@ -651,20 +651,40 @@ const countsRouter = router({
         return s;
       };
 
-      const headers = ["Category", "Item Name", "Vendor", "Pack Size", "Unit", "Par Level", "Quantity Counted", "Unit Price", "Total Value", "Confirmed", "Last Edited By", "Notes"];
-      // Resolve effective unit price:
-      // - each-mode items: stored qty = raw eaches → use eachPrice (price / caseQty)
-      // - case-mode items: stored qty = cases + eaches/caseQty → use case price
-      const resolveUnitPrice = (e: typeof sorted[0]): number => {
+      // Split fractional DB quantity back into cases + eaches, matching the app's display logic.
+      // DB stores: cases + eaches/caseQty for case-mode items; raw eaches for each-mode items.
+      const splitQty = (e: typeof sorted[0]): { cases: number; eaches: number } => {
+        const total = parseFloat(e.quantity ?? "0") || 0;
         const isEachMode = e.countMode === "each";
-        const rawPrice = isEachMode && e.eachPrice ? e.eachPrice : (e.price ?? "0");
-        return parseFloat(rawPrice) || 0;
+        const caseQty = e.caseQty ?? 0;
+        if (isEachMode) {
+          return { cases: 0, eaches: total };
+        } else if (caseQty > 1) {
+          const cases = Math.floor(total);
+          const eaches = Math.round((total - cases) * caseQty);
+          return { cases, eaches };
+        } else {
+          return { cases: total, eaches: 0 };
+        }
       };
 
+      // Compute value using same formula as the app: cases × casePrice + eaches × eachPrice
+      const computeValue = (e: typeof sorted[0], cases: number, eaches: number): number => {
+        const isEachMode = e.countMode === "each";
+        const casePrice = parseFloat(e.price ?? "0") || 0;
+        const eachPrice = e.eachPrice ? (parseFloat(e.eachPrice) || 0) : 0;
+        if (isEachMode) {
+          return eaches * (eachPrice || (e.caseQty ? casePrice / e.caseQty : 0));
+        }
+        return cases * casePrice + ((e.caseQty ?? 0) > 1 ? eaches * eachPrice : 0);
+      };
+
+      const headers = ["Category", "Item Name", "Vendor", "Pack Size", "Unit", "Par Level", "Cases", "Eaches", "Case Price", "Total Value", "Confirmed", "Last Edited By", "Notes"];
+
       const rows = sorted.map((e) => {
-        const qty = parseFloat(e.quantity ?? "0") || 0;
-        const unitPrice = resolveUnitPrice(e);
-        const total = qty * unitPrice;
+        const { cases, eaches } = splitQty(e);
+        const casePrice = parseFloat(e.price ?? "0") || 0;
+        const total = computeValue(e, cases, eaches);
         return [
           escape(e.category),
           escape(e.itemName),
@@ -672,8 +692,9 @@ const countsRouter = router({
           escape(e.packSize),
           escape(e.unitOfMeasure),
           escape(e.parLevel),
-          escape(e.quantity),
-          unitPrice > 0 ? unitPrice.toFixed(2) : "",
+          cases > 0 ? String(cases) : "0",
+          eaches > 0 ? String(eaches) : "0",
+          casePrice > 0 ? casePrice.toFixed(2) : "",
           total > 0 ? total.toFixed(2) : "",
           (e as any).confirmed ? "Yes" : "No",
           escape((e as any).editorName),
@@ -683,10 +704,10 @@ const countsRouter = router({
 
       // Grand total row
       const grandTotal = sorted.reduce((sum, e) => {
-        const qty = parseFloat(e.quantity ?? "0") || 0;
-        return sum + qty * resolveUnitPrice(e);
+        const { cases, eaches } = splitQty(e);
+        return sum + computeValue(e, cases, eaches);
       }, 0);
-      const totalRow = ["", "", "", "", "", "", "", "TOTAL", grandTotal.toFixed(2), "", "", ""].join(",");
+      const totalRow = ["", "", "", "", "", "", "", "", "TOTAL", grandTotal.toFixed(2), "", "", ""].join(",");
 
       const sessionLabel = session.name ?? "Inventory Count";
       const dateStr = new Date(session.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
