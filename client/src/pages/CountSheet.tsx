@@ -435,18 +435,24 @@ export default function CountSheet() {
     [allItems]
   );
 
-  // Calculate total inventory value (across all countable items)
-  // For each-mode items, stored qty = raw eaches → use eachPrice.
-  // For case-mode items, stored qty = cases + eaches/caseQty → use casePrice.
+  // Calculate total inventory value using the same two-part formula as the per-item display:
+  // cases × casePrice + eaches × eachPrice
+  // This matches the CSV export which reads the combined fractional quantity from the DB.
   const totalValue = useMemo(() => {
     return countableItems.reduce((sum, item) => {
-      const qty = parseFloat(effectiveCounts.get(item.id) ?? "0") || 0;
       const isEachMode = item.countMode === "each";
-      const rawPrice = isEachMode && item.eachPrice ? item.eachPrice : (item.price ?? "0");
-      const unitPrice = parseFloat(rawPrice) || 0;
-      return sum + qty * unitPrice;
+      const casePrice = parseFloat(item.price ?? "0") || 0;
+      const eachPrice = item.eachPrice ? (parseFloat(item.eachPrice) || 0) : 0;
+      if (isEachMode) {
+        const eaches = parseFloat(localEachCounts[item.id] || "0") || 0;
+        return sum + eaches * (eachPrice || (item.caseQty ? casePrice / item.caseQty : 0));
+      } else {
+        const cases = parseFloat(localCounts[item.id] || entryMap.get(item.id) || "0") || 0;
+        const eaches = parseFloat(localEachCounts[item.id] || "0") || 0;
+        return sum + cases * casePrice + ((item.caseQty ?? 0) > 1 ? eaches * eachPrice : 0);
+      }
     }, 0);
-  }, [countableItems, effectiveCounts]);
+  }, [countableItems, localCounts, localEachCounts, entryMap]);
 
   // Search-filtered items — matches name, brand, manufacturer, product numbers, vendor, category, storage area
   const searchFilteredItems = useMemo(() => {
@@ -793,11 +799,17 @@ export default function CountSheet() {
             const groupItems = grouped[groupKey] ?? [];
             const isCollapsed = collapsed[groupKey];
             const groupValue = groupItems.reduce((sum, item) => {
-              const qty = parseFloat(effectiveCounts.get(item.id) ?? "0") || 0;
               const isEachMode = item.countMode === "each";
-              const rawPrice = isEachMode && item.eachPrice ? item.eachPrice : (item.price ?? "0");
-              const unitPrice = parseFloat(rawPrice) || 0;
-              return sum + qty * unitPrice;
+              const casePrice = parseFloat(item.price ?? "0") || 0;
+              const eachPrice = item.eachPrice ? (parseFloat(item.eachPrice) || 0) : 0;
+              if (isEachMode) {
+                const eaches = parseFloat(localEachCounts[item.id] || "0") || 0;
+                return sum + eaches * (eachPrice || (item.caseQty ? casePrice / item.caseQty : 0));
+              } else {
+                const cases = parseFloat(localCounts[item.id] || entryMap.get(item.id) || "0") || 0;
+                const eaches = parseFloat(localEachCounts[item.id] || "0") || 0;
+                return sum + cases * casePrice + ((item.caseQty ?? 0) > 1 ? eaches * eachPrice : 0);
+              }
             }, 0);
                     const countedItems = groupItems.filter((i) => {
                       if (markedDone.has(i.id)) return true;
