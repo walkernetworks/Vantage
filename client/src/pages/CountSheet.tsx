@@ -437,23 +437,27 @@ export default function CountSheet() {
 
   // Calculate total inventory value using the same two-part formula as the per-item display:
   // cases × casePrice + eaches × eachPrice
-  // localCounts is always seeded from DB on load so no entryMap fallback needed
-  // (using || with entryMap caused double-counting when localCounts[id] === "")
+  // Iterates over ALL items that have a count entry (not just countableItems/par-level items)
+  // so the total matches the CSV export which includes all items with a count_entries row.
   const totalValue = useMemo(() => {
-    return countableItems.reduce((sum, item) => {
+    return allItems.reduce((sum, item) => {
       const isEachMode = item.countMode === "each";
       const casePrice = parseFloat(item.price ?? "0") || 0;
       const eachPrice = item.eachPrice ? (parseFloat(item.eachPrice) || 0) : 0;
       if (isEachMode) {
         const eaches = parseFloat(localEachCounts[item.id] ?? "0") || 0;
+        // Only include if actually counted
+        if (eaches === 0) return sum;
         return sum + eaches * (eachPrice || (item.caseQty ? casePrice / item.caseQty : 0));
       } else {
         const cases = parseFloat(localCounts[item.id] ?? "0") || 0;
         const eaches = parseFloat(localEachCounts[item.id] ?? "0") || 0;
+        // Only include if actually counted
+        if (cases === 0 && eaches === 0) return sum;
         return sum + cases * casePrice + ((item.caseQty ?? 0) > 1 ? eaches * eachPrice : 0);
       }
     }, 0);
-  }, [countableItems, localCounts, localEachCounts]);
+  }, [allItems, localCounts, localEachCounts]);
 
   // Search-filtered items — matches name, brand, manufacturer, product numbers, vendor, category, storage area
   const searchFilteredItems = useMemo(() => {
