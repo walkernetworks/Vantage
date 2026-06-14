@@ -437,27 +437,59 @@ export default function CountSheet() {
 
   // Calculate total inventory value using the same two-part formula as the per-item display:
   // cases × casePrice + eaches × eachPrice
-  // Iterates over ALL items that have a count entry (not just countableItems/par-level items)
-  // so the total matches the CSV export which includes all items with a count_entries row.
+  // Uses sessionData.entries as the source of truth (same as CSV) so inactive/deleted items
+  // that were counted are included. allItems is used to look up current item metadata.
   const totalValue = useMemo(() => {
-    return allItems.reduce((sum, item) => {
-      const isEachMode = item.countMode === "each";
-      const casePrice = parseFloat(item.price ?? "0") || 0;
-      const eachPrice = item.eachPrice ? (parseFloat(item.eachPrice) || 0) : 0;
+    if (!sessionData?.entries) {
+      // Fallback to allItems if session not loaded yet
+      return allItems.reduce((sum, item) => {
+        const isEachMode = item.countMode === "each";
+        const casePrice = parseFloat(item.price ?? "0") || 0;
+        const eachPrice = item.eachPrice ? (parseFloat(item.eachPrice) || 0) : 0;
+        if (isEachMode) {
+          const eaches = parseFloat(localEachCounts[item.id] ?? "0") || 0;
+          if (eaches === 0) return sum;
+          return sum + eaches * (eachPrice || (item.caseQty ? casePrice / item.caseQty : 0));
+        } else {
+          const cases = parseFloat(localCounts[item.id] ?? "0") || 0;
+          const eaches = parseFloat(localEachCounts[item.id] ?? "0") || 0;
+          if (cases === 0 && eaches === 0) return sum;
+          return sum + cases * casePrice + ((item.caseQty ?? 0) > 1 ? eaches * eachPrice : 0);
+        }
+      }, 0);
+    }
+    // Use session entries as source of truth — includes inactive/deleted items that were counted
+    return sessionData.entries.reduce((sum, entry) => {
+      const isEachMode = entry.countMode === "each";
+      const casePrice = parseFloat(entry.price ?? "0") || 0;
+      const eachPrice = entry.eachPrice ? (parseFloat(entry.eachPrice) || 0) : 0;
+      const caseQty = entry.caseQty ?? 0;
+      // Use live local counts if available, otherwise fall back to DB value
+      const hasLocalCase = localCounts[entry.itemId] !== undefined;
+      const hasLocalEach = localEachCounts[entry.itemId] !== undefined;
       if (isEachMode) {
-        const eaches = parseFloat(localEachCounts[item.id] ?? "0") || 0;
-        // Only include if actually counted
+        const eaches = hasLocalEach
+          ? (parseFloat(localEachCounts[entry.itemId] ?? "0") || 0)
+          : (parseFloat(entry.quantity ?? "0") || 0);
         if (eaches === 0) return sum;
-        return sum + eaches * (eachPrice || (item.caseQty ? casePrice / item.caseQty : 0));
+        return sum + eaches * (eachPrice || (caseQty ? casePrice / caseQty : 0));
       } else {
-        const cases = parseFloat(localCounts[item.id] ?? "0") || 0;
-        const eaches = parseFloat(localEachCounts[item.id] ?? "0") || 0;
-        // Only include if actually counted
+        let cases: number;
+        let eaches: number;
+        if (hasLocalCase || hasLocalEach) {
+          cases = parseFloat(localCounts[entry.itemId] ?? "0") || 0;
+          eaches = parseFloat(localEachCounts[entry.itemId] ?? "0") || 0;
+        } else {
+          // Not yet loaded into local state — use DB fractional value directly
+          const total = parseFloat(entry.quantity ?? "0") || 0;
+          cases = caseQty > 1 ? Math.floor(total) : total;
+          eaches = caseQty > 1 ? Math.round((total - Math.floor(total)) * caseQty) : 0;
+        }
         if (cases === 0 && eaches === 0) return sum;
-        return sum + cases * casePrice + ((item.caseQty ?? 0) > 1 ? eaches * eachPrice : 0);
+        return sum + cases * casePrice + (caseQty > 1 ? eaches * eachPrice : 0);
       }
     }, 0);
-  }, [allItems, localCounts, localEachCounts]);
+  }, [sessionData, allItems, localCounts, localEachCounts]);
 
   // Search-filtered items — matches name, brand, manufacturer, product numbers, vendor, category, storage area
   const searchFilteredItems = useMemo(() => {
