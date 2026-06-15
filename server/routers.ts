@@ -668,15 +668,20 @@ const countsRouter = router({
         }
       };
 
-      // Compute value using same formula as the app: cases × casePrice + eaches × eachPrice
-      const computeValue = (e: typeof sorted[0], cases: number, eaches: number): number => {
+      // Compute value directly from the raw DB fractional quantity to avoid rounding errors.
+      // For case-mode items: total (fractional cases) × casePrice
+      // For each-mode items: total (raw eaches) × eachPrice
+      // This avoids split-then-recombine rounding errors (e.g. 0.333... × 3 = 0.999...).
+      const computeValue = (e: typeof sorted[0]): number => {
+        const total = parseFloat(e.quantity ?? "0") || 0;
         const isEachMode = e.countMode === "each";
         const casePrice = parseFloat(e.price ?? "0") || 0;
         const eachPrice = e.eachPrice ? (parseFloat(e.eachPrice) || 0) : 0;
         if (isEachMode) {
-          return eaches * (eachPrice || (e.caseQty ? casePrice / e.caseQty : 0));
+          return total * (eachPrice || (e.caseQty ? casePrice / e.caseQty : 0));
         }
-        return cases * casePrice + ((e.caseQty ?? 0) > 1 ? eaches * eachPrice : 0);
+        // For case-mode: fractional quantity × casePrice is exact
+        return total * casePrice;
       };
 
       const headers = ["Category", "Item Name", "Vendor", "Pack Size", "Unit", "Par Level", "Cases", "Eaches", "Case Price", "Total Value", "Confirmed", "Last Edited By", "Notes"];
@@ -684,7 +689,7 @@ const countsRouter = router({
       const rows = sorted.map((e) => {
         const { cases, eaches } = splitQty(e);
         const casePrice = parseFloat(e.price ?? "0") || 0;
-        const total = computeValue(e, cases, eaches);
+        const total = computeValue(e);
         return [
           escape(e.category),
           escape(e.itemName),
@@ -703,10 +708,7 @@ const countsRouter = router({
       });
 
       // Grand total row
-      const grandTotal = sorted.reduce((sum, e) => {
-        const { cases, eaches } = splitQty(e);
-        return sum + computeValue(e, cases, eaches);
-      }, 0);
+      const grandTotal = sorted.reduce((sum, e) => sum + computeValue(e), 0);
       const totalRow = ["", "", "", "", "", "", "", "", "TOTAL", grandTotal.toFixed(2), "", "", ""].join(",");
 
       const sessionLabel = session.name ?? "Inventory Count";
