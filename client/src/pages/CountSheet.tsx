@@ -435,41 +435,26 @@ export default function CountSheet() {
     [allItems]
   );
 
-  // Calculate total inventory value matching the CSV formula exactly:
-  // - case-mode: fractional qty (cases + eaches/caseQty) × casePrice
+  // Calculate total inventory value — always uses entry.quantity from the DB (same raw value as CSV)
+  // to guarantee the app total matches the export exactly. localCounts/localEachCounts are only
+  // used for the input field display, not for value calculations.
+  // - case-mode: fractional qty (stored as cases + eaches/caseQty) × casePrice
   // - each-mode: raw eaches × eachPrice
-  // Uses sessionData.entries as source of truth so inactive/deleted counted items are included.
-  // When user has edited counts locally, recomputes fractional qty from localCounts/localEachCounts
-  // to avoid eachPrice rounding discrepancies.
   const totalValue = useMemo(() => {
     if (!sessionData?.entries) return 0;
     return sessionData.entries.reduce((sum, entry) => {
+      const qty = parseFloat(entry.quantity ?? "0") || 0;
+      if (qty === 0) return sum;
       const isEachMode = entry.countMode === "each";
       const casePrice = parseFloat(entry.price ?? "0") || 0;
       const caseQty = entry.caseQty ?? 0;
-      const hasLocal = localCounts[entry.itemId] !== undefined || localEachCounts[entry.itemId] !== undefined;
       if (isEachMode) {
         const eachPrice = entry.eachPrice ? (parseFloat(entry.eachPrice) || 0) : (caseQty > 0 ? casePrice / caseQty : 0);
-        const eaches = hasLocal
-          ? (parseFloat(localEachCounts[entry.itemId] ?? "0") || 0)
-          : (parseFloat(entry.quantity ?? "0") || 0);
-        if (eaches === 0) return sum;
-        return sum + eaches * eachPrice;
-      } else {
-        // Compute fractional case quantity, then multiply by casePrice (same as CSV)
-        let fractionalQty: number;
-        if (hasLocal) {
-          const cases = parseFloat(localCounts[entry.itemId] ?? "0") || 0;
-          const eaches = parseFloat(localEachCounts[entry.itemId] ?? "0") || 0;
-          fractionalQty = caseQty > 1 ? cases + eaches / caseQty : cases;
-        } else {
-          fractionalQty = parseFloat(entry.quantity ?? "0") || 0;
-        }
-        if (fractionalQty === 0) return sum;
-        return sum + fractionalQty * casePrice;
+        return sum + Math.round(qty * eachPrice * 100) / 100;
       }
+      return sum + Math.round(qty * casePrice * 100) / 100;
     }, 0);
-  }, [sessionData, localCounts, localEachCounts]);
+  }, [sessionData]);
 
   // Search-filtered items — matches name, brand, manufacturer, product numbers, vendor, category, storage area
   const searchFilteredItems = useMemo(() => {

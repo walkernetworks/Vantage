@@ -678,10 +678,10 @@ const countsRouter = router({
         const casePrice = parseFloat(e.price ?? "0") || 0;
         const eachPrice = e.eachPrice ? (parseFloat(e.eachPrice) || 0) : 0;
         if (isEachMode) {
-          return total * (eachPrice || (e.caseQty ? casePrice / e.caseQty : 0));
+          return Math.round(total * (eachPrice || (e.caseQty ? casePrice / e.caseQty : 0)) * 100) / 100;
         }
-        // For case-mode: fractional quantity × casePrice is exact
-        return total * casePrice;
+        // For case-mode: fractional quantity × casePrice, rounded to cents
+        return Math.round(total * casePrice * 100) / 100;
       };
 
       const headers = ["Category", "Item Name", "Vendor", "Pack Size", "Unit", "Par Level", "Cases", "Eaches", "Case Price", "Total Value", "Confirmed", "Last Edited By", "Notes"];
