@@ -77,15 +77,14 @@ export default function Home() {
 
   // ── Derived chart data ──────────────────────────────────────────────────────
 
-  // Total inventory value
-  // Filter out categories with $0 value (items with no price set) from the chart
-  const pricedCategories = (metrics?.inventoryValueByCategory ?? []).filter(
-    (c) => c.totalValue > 0
-  );
-  const unpricedCategories = (metrics?.inventoryValueByCategory ?? []).filter(
-    (c) => c.totalValue === 0
-  );
-  const totalInventoryValue = pricedCategories.reduce((sum, c) => sum + c.totalValue, 0);
+  // Total inventory value — three figures
+  const allCategories = metrics?.inventoryValueByCategory ?? [];
+  const pricedCategories = allCategories.filter((c) => (c.fullParValue ?? c.totalValue) > 0);
+  const unpricedCategories = allCategories.filter((c) => (c.fullParValue ?? c.totalValue) === 0);
+  const totalCurrentStockValue = pricedCategories.reduce((sum, c) => sum + (c.currentStockValue ?? 0), 0);
+  const totalFullParValue = pricedCategories.reduce((sum, c) => sum + (c.fullParValue ?? c.totalValue), 0);
+  const totalGapToFullPar = Math.max(0, totalFullParValue - totalCurrentStockValue);
+  const totalInventoryValue = totalCurrentStockValue; // keep for legacy compat
   const totalUnpricedItems = unpricedCategories.reduce((sum, c) => sum + c.itemCount, 0);
 
   // Price fluctuations: pivot by month, one series per vendor
@@ -162,8 +161,8 @@ export default function Home() {
             color={belowParCount > 0 ? "bg-destructive/10 text-destructive" : "bg-accent/20 text-accent"}
           />
           <StatCard
-            label="Inventory Value"
-            value={`$${totalInventoryValue.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
+            label="Current Stock"
+            value={`$${totalCurrentStockValue.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
             icon={<DollarSign size={18} />}
             color="bg-primary/10 text-primary"
             isText
@@ -193,8 +192,23 @@ export default function Home() {
                 <div className="mb-4">
                   <h3 className="font-semibold text-foreground">Inventory Value by Category</h3>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Current value = price × par level per category
+                    Based on latest count session
                   </p>
+                  {/* ── Three-figure summary ── */}
+                  <div className="grid grid-cols-3 gap-2 mt-3">
+                    <div className="bg-muted/40 rounded-xl p-3 text-center">
+                      <p className="text-xs text-muted-foreground mb-0.5">Current Stock</p>
+                      <p className="text-sm font-bold text-foreground">${totalCurrentStockValue.toLocaleString("en-US", { maximumFractionDigits: 0 })}</p>
+                    </div>
+                    <div className="bg-muted/40 rounded-xl p-3 text-center">
+                      <p className="text-xs text-muted-foreground mb-0.5">Full Par Value</p>
+                      <p className="text-sm font-bold text-foreground">${totalFullParValue.toLocaleString("en-US", { maximumFractionDigits: 0 })}</p>
+                    </div>
+                    <div className="bg-destructive/10 rounded-xl p-3 text-center">
+                      <p className="text-xs text-muted-foreground mb-0.5">Gap to Full Par</p>
+                      <p className="text-sm font-bold text-destructive">${totalGapToFullPar.toLocaleString("en-US", { maximumFractionDigits: 0 })}</p>
+                    </div>
+                  </div>
                 </div>
                 {pricedCategories.length === 0 ? (
                   <EmptyChart message="No inventory data yet. Import items with prices to see this chart." />
@@ -240,10 +254,10 @@ export default function Home() {
                           </div>
                           <div className="text-right shrink-0">
                             <span className="text-sm font-semibold text-foreground">
-                              ${entry.totalValue.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                              ${(entry.currentStockValue ?? entry.totalValue).toLocaleString("en-US", { maximumFractionDigits: 0 })}
                             </span>
                             <span className="text-xs text-muted-foreground ml-1">
-                              ({entry.itemCount} items)
+                              / ${(entry.fullParValue ?? entry.totalValue).toLocaleString("en-US", { maximumFractionDigits: 0 })} par
                             </span>
                           </div>
                         </div>
