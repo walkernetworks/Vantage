@@ -1225,20 +1225,47 @@ export async function getDashboardMetrics() {
   const db = await getDb();
   if (!db) return { inventoryValueByCategory: [], priceFluctuationsByVendor: [], orderCostTrend: [] };
 
-  // 1. Inventory value by category: sum(price * parLevel) per category
-  type CategoryRow = { category: string; totalValue: string; itemCount: number };
+  // 1. Inventory value by category:
+  //    - fullParValue: sum(price * parLevel) — what stock would be worth at full par
+  //    - currentStockValue: sum(price * latest_count_quantity) — actual counted value
+  //    - gapToFullPar: fullParValue - currentStockValue — cost to restock to full par
+  type CategoryRow = { category: string; fullParValue: string; currentStockValue: string; itemCount: number };
   let categoryRows: CategoryRow[] = [];
   try {
-    const result = await db.execute(
-      sql`SELECT category,
-             ROUND(SUM(COALESCE(price, 0) * COALESCE(parLevel, 0)), 2) AS totalValue,
-             COUNT(*) AS itemCount
-          FROM items
-          WHERE isActive = 1
-          GROUP BY category
-          ORDER BY totalValue DESC`
+    // Get the latest count session ID
+    const latestSessionResult = await db.execute(
+      sql`SELECT id FROM count_sessions ORDER BY createdAt DESC LIMIT 1`
     );
-    categoryRows = (result[0] as unknown as CategoryRow[]) ?? [];
+    const latestSessionRows = (latestSessionResult[0] as unknown as { id: number }[]) ?? [];
+    const latestSessionId = latestSessionRows[0]?.id ?? null;
+
+    if (latestSessionId) {
+      const result = await db.execute(
+        sql`SELECT i.category,
+               ROUND(SUM(COALESCE(i.price, 0) * COALESCE(i.parLevel, 0)), 2) AS fullParValue,
+               ROUND(SUM(COALESCE(i.price, 0) * COALESCE(ce.quantity, 0)), 2) AS currentStockValue,
+               COUNT(DISTINCT i.id) AS itemCount
+            FROM items i
+            LEFT JOIN count_entries ce ON ce.itemId = i.id AND ce.sessionId = ${latestSessionId}
+            WHERE i.isActive = 1
+            GROUP BY i.category
+            ORDER BY fullParValue DESC`
+      );
+      categoryRows = (result[0] as unknown as CategoryRow[]) ?? [];
+    } else {
+      // No sessions yet — just show par values, current = 0
+      const result = await db.execute(
+        sql`SELECT category,
+               ROUND(SUM(COALESCE(price, 0) * COALESCE(parLevel, 0)), 2) AS fullParValue,
+               0 AS currentStockValue,
+               COUNT(*) AS itemCount
+            FROM items
+            WHERE isActive = 1
+            GROUP BY category
+            ORDER BY fullParValue DESC`
+      );
+      categoryRows = (result[0] as unknown as CategoryRow[]) ?? [];
+    }
   } catch (e) {
     console.warn("[dashboard] inventoryValueByCategory query failed:", e);
   }
@@ -1323,7 +1350,10 @@ export async function getDashboardMetrics() {
   return {
     inventoryValueByCategory: categoryRows.map((r) => ({
       category: r.category,
-      totalValue: parseFloat(r.totalValue ?? "0"),
+      totalValue: parseFloat((r as any).fullParValue ?? "0"),
+      fullParValue: parseFloat((r as any).fullParValue ?? "0"),
+      currentStockValue: parseFloat((r as any).currentStockValue ?? "0"),
+      gapToFullPar: Math.max(0, parseFloat((r as any).fullParValue ?? "0") - parseFloat((r as any).currentStockValue ?? "0")),
       itemCount: r.itemCount,
     })),
     priceFluctuationsByVendor: priceRows.map((r) => ({
