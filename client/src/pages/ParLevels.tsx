@@ -98,8 +98,10 @@ function ParInput({
   }
 
   function handleThresholdChange(v: string) {
-    setThresholdValue(v);
-    setThresholdDirty(v !== (item.orderThreshold ?? ""));
+    // Strip any decimal portion — only whole numbers allowed
+    const whole = v.includes(".") ? String(Math.floor(parseFloat(v) || 0)) : v;
+    setThresholdValue(whole);
+    setThresholdDirty(whole !== (item.orderThreshold ?? ""));
   }
 
   function handleParBlur() {
@@ -216,7 +218,10 @@ function ParInput({
                   value={thresholdValue}
                   onChange={(e) => handleThresholdChange(e.target.value)}
                   onBlur={handleThresholdBlur}
-                  onKeyDown={handleKeyDown}
+                  onKeyDown={(e) => {
+                    if (e.key === "." || e.key === ",") e.preventDefault();
+                    handleKeyDown(e);
+                  }}
                   placeholder="50"
                   title="Percentage of par level that triggers an order. Default: 50%. Enter 70 for aggressive (order sooner), 20 for conservative."
                   className={cn(
@@ -577,8 +582,19 @@ export default function ParLevels() {
                 min="0"
                 step="1"
                 value={setAllInput}
-                onChange={(e) => setSetAllInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSetAll()}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  // For threshold field, strip decimals
+                  if (bulkField === "threshold") {
+                    setSetAllInput(v.includes(".") ? String(Math.floor(parseFloat(v) || 0)) : v);
+                  } else {
+                    setSetAllInput(v);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (bulkField === "threshold" && (e.key === "." || e.key === ",")) e.preventDefault();
+                  if (e.key === "Enter") handleSetAll();
+                }}
                 placeholder={bulkField === "par" ? "Enter par value…" : "Enter % (1–100)…"}
                 className="h-9 w-36 px-3 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                 autoFocus
