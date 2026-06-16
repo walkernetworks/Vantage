@@ -93,8 +93,10 @@ function ParInput({
   }
 
   function handleParChange(v: string) {
-    setParValue(v);
-    setParDirty(v !== (item.parLevel ?? "0"));
+    // Strip any decimal portion — only whole numbers allowed
+    const whole = v.includes(".") ? String(Math.floor(parseFloat(v) || 0)) : v;
+    setParValue(whole);
+    setParDirty(whole !== (item.parLevel ?? "0"));
   }
 
   function handleThresholdChange(v: string) {
@@ -198,7 +200,10 @@ function ParInput({
                 value={parValue}
                 onChange={(e) => handleParChange(e.target.value)}
                 onBlur={handleParBlur}
-                onKeyDown={handleKeyDown}
+                onKeyDown={(e) => {
+                  if (e.key === "." || e.key === ",") e.preventDefault();
+                  handleKeyDown(e);
+                }}
                 className={cn(
                   "w-16 h-10 text-center rounded-xl border text-sm font-semibold focus:outline-none focus:ring-2 transition-colors",
                   parDirty
@@ -584,15 +589,11 @@ export default function ParLevels() {
                 value={setAllInput}
                 onChange={(e) => {
                   const v = e.target.value;
-                  // For threshold field, strip decimals
-                  if (bulkField === "threshold") {
-                    setSetAllInput(v.includes(".") ? String(Math.floor(parseFloat(v) || 0)) : v);
-                  } else {
-                    setSetAllInput(v);
-                  }
+                  // Strip decimals for both par and threshold fields
+                  setSetAllInput(v.includes(".") ? String(Math.floor(parseFloat(v) || 0)) : v);
                 }}
                 onKeyDown={(e) => {
-                  if (bulkField === "threshold" && (e.key === "." || e.key === ",")) e.preventDefault();
+                  if (e.key === "." || e.key === ",") e.preventDefault();
                   if (e.key === "Enter") handleSetAll();
                 }}
                 placeholder={bulkField === "par" ? "Enter par value…" : "Enter % (1–100)…"}
