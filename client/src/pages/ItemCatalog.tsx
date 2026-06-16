@@ -315,7 +315,7 @@ export default function ItemCatalog() {
       packSize: item.packSize ?? undefined,
       unitOfMeasure: item.unitOfMeasure ?? "CS",
       price: item.price ?? undefined,
-      parLevel: item.parLevel ?? "0",
+      parLevel: String(Math.floor(parseFloat(item.parLevel ?? "0") || 0)),
       storageArea: item.storageArea ?? undefined,
       isAlcohol: item.isAlcohol,
       alcoholCategory: item.alcoholCategory ?? undefined,
@@ -393,7 +393,7 @@ export default function ItemCatalog() {
       packSize: item.packSize ?? "",
       unitOfMeasure: item.unitOfMeasure ?? "CS",
       price: item.price ?? "",
-      parLevel: item.parLevel ?? "0",
+      parLevel: String(Math.floor(parseFloat(item.parLevel ?? "0") || 0)),
       storageArea: item.storageArea ?? "",
       isAlcohol: item.isAlcohol,
       alcoholCategory: item.alcoholCategory ?? "",
@@ -722,7 +722,7 @@ export default function ItemCatalog() {
                             )}
                             {item.parLevel && parseFloat(item.parLevel) > 0 && (
                               <span className="text-xs text-muted-foreground">
-                                Par: {item.parLevel} {item.unitOfMeasure}
+                                Par: {Math.floor(parseFloat(item.parLevel))} {item.unitOfMeasure}
                               </span>
                             )}
                             {item.storageArea && (

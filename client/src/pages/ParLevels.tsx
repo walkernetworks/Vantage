@@ -52,7 +52,7 @@ function ParInput({
   overrideThresholdValue?: string;
   savedVersion: number; // increments each time a bulk save completes
 }) {
-  const [parValue, setParValue] = useState(item.parLevel ?? "0");
+  const [parValue, setParValue] = useState(() => String(Math.floor(parseFloat(item.parLevel ?? "0") || 0)));  
   const [thresholdValue, setThresholdValue] = useState(item.orderThreshold ?? "");
   const [parDirty, setParDirty] = useState(false);
   const [thresholdDirty, setThresholdDirty] = useState(false);
@@ -88,7 +88,7 @@ function ParInput({
   if (item.parLevel !== prevParLevel.current) {
     prevParLevel.current = item.parLevel;
     if (!parDirty) {
-      setParValue(item.parLevel ?? "0");
+      setParValue(String(Math.floor(parseFloat(item.parLevel ?? "0") || 0)));
     }
   }
 
