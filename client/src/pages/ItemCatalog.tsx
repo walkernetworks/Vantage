@@ -885,13 +885,13 @@ export default function ItemCatalog() {
               </FormField>
               <FormField label="Par Level">
                 <input
-                  type="number"
-                  step="1"
-                  min="0"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={form.parLevel}
                   onChange={(e) => {
-                    const v = e.target.value;
-                    setForm({ ...form, parLevel: v.includes(".") ? String(Math.floor(parseFloat(v) || 0)) : v });
+                    const v = e.target.value.replace(/[^0-9]/g, "");
+                    setForm({ ...form, parLevel: v });
                   }}
                   onKeyDown={(e) => { if (e.key === "." || e.key === ",") e.preventDefault(); }}
                   placeholder="0"
@@ -1029,14 +1029,14 @@ export default function ItemCatalog() {
             <div>
               <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Par Level</label>
               <input
-                type="number"
-                min="0"
-                step="1"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 placeholder="e.g. 2 (leave blank to keep)"
                 value={bulkEditForm.parLevel}
                 onChange={(e) => {
-                  const v = e.target.value;
-                  setBulkEditForm((f) => ({ ...f, parLevel: v.includes(".") ? String(Math.floor(parseFloat(v) || 0)) : v }));
+                  const v = e.target.value.replace(/[^0-9]/g, "");
+                  setBulkEditForm((f) => ({ ...f, parLevel: v }));
                 }}
                 onKeyDown={(e) => { if (e.key === "." || e.key === ",") e.preventDefault(); }}
                 className="w-full px-3 py-2 rounded-xl border border-input bg-background text-sm"
