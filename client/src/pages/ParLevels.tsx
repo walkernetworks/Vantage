@@ -194,9 +194,9 @@ function ParInput({
             <div className="flex flex-col items-center gap-0.5">
               <span className="text-xs text-muted-foreground">Par</span>
               <input
-                type="number"
-                min="0"
-                step="1"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 value={parValue}
                 onChange={(e) => handleParChange(e.target.value)}
                 onBlur={handleParBlur}
@@ -216,10 +216,9 @@ function ParInput({
               <span className="text-xs text-muted-foreground font-medium" title="Order trigger: % of par level. Default 50% — enter 70 to order when stock drops below 70% of par, 20 for less aggressive.">Order ≤ %</span>
               <div className="relative">
                 <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  step="1"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={thresholdValue}
                   onChange={(e) => handleThresholdChange(e.target.value)}
                   onBlur={handleThresholdBlur}
@@ -583,14 +582,13 @@ export default function ParLevels() {
           {showSetAll && (
             <div className="flex items-center gap-2">
               <input
-                type="number"
-                min="0"
-                step="1"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 value={setAllInput}
                 onChange={(e) => {
-                  const v = e.target.value;
-                  // Strip decimals for both par and threshold fields
-                  setSetAllInput(v.includes(".") ? String(Math.floor(parseFloat(v) || 0)) : v);
+                  const v = e.target.value.replace(/[^0-9]/g, "");
+                  setSetAllInput(v);
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "." || e.key === ",") e.preventDefault();
