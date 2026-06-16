@@ -886,9 +886,14 @@ export default function ItemCatalog() {
               <FormField label="Par Level">
                 <input
                   type="number"
-                  step="0.5"
+                  step="1"
+                  min="0"
                   value={form.parLevel}
-                  onChange={(e) => setForm({ ...form, parLevel: e.target.value })}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setForm({ ...form, parLevel: v.includes(".") ? String(Math.floor(parseFloat(v) || 0)) : v });
+                  }}
+                  onKeyDown={(e) => { if (e.key === "." || e.key === ",") e.preventDefault(); }}
                   placeholder="0"
                   className="form-input"
                 />
@@ -1026,10 +1031,14 @@ export default function ItemCatalog() {
               <input
                 type="number"
                 min="0"
-                step="0.5"
+                step="1"
                 placeholder="e.g. 2 (leave blank to keep)"
                 value={bulkEditForm.parLevel}
-                onChange={(e) => setBulkEditForm((f) => ({ ...f, parLevel: e.target.value }))}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setBulkEditForm((f) => ({ ...f, parLevel: v.includes(".") ? String(Math.floor(parseFloat(v) || 0)) : v }));
+                }}
+                onKeyDown={(e) => { if (e.key === "." || e.key === ",") e.preventDefault(); }}
                 className="w-full px-3 py-2 rounded-xl border border-input bg-background text-sm"
               />
             </div>
