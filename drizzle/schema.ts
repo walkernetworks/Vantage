@@ -9,6 +9,7 @@ import {
   decimal,
   boolean,
   index,
+  uniqueIndex,
 } from "drizzle-orm/mysql-core";
 
 // ─── Users ────────────────────────────────────────────────────────────────────
@@ -162,6 +163,7 @@ export const countEntries = mysqlTable(
   (t) => [
     index("idx_count_entries_session").on(t.sessionId),
     index("idx_count_entries_item").on(t.itemId),
+    uniqueIndex("uq_count_entries_session_item").on(t.sessionId, t.itemId),
   ]
 );
 

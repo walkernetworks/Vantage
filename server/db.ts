@@ -396,30 +396,24 @@ export async function upsertCountEntry(
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const existing = await db
-    .select()
-    .from(countEntries)
-    .where(and(eq(countEntries.sessionId, sessionId), eq(countEntries.itemId, itemId)))
-    .limit(1);
 
-  if (existing.length > 0) {
-    // Only update confirmed if explicitly provided (don't reset it on normal saves)
-    const updateData: Record<string, unknown> = { quantity, notes: notes ?? null, updatedBy: updatedBy ?? null };
-    if (confirmed !== undefined) updateData.confirmed = confirmed;
-    await db
-      .update(countEntries)
-      .set(updateData as any)
-      .where(and(eq(countEntries.sessionId, sessionId), eq(countEntries.itemId, itemId)));
-  } else {
-    await db.insert(countEntries).values({
-      sessionId,
-      itemId,
-      quantity,
-      notes: notes ?? null,
-      updatedBy: updatedBy ?? null,
-      confirmed: confirmed ?? false,
-    });
-  }
+  // Atomic INSERT ... ON DUPLICATE KEY UPDATE prevents race-condition duplicates.
+  // The unique constraint uq_count_entries_session_item(sessionId, itemId) ensures
+  // only one row per item per session. confirmed is only updated when explicitly provided.
+  const confirmedSql = confirmed !== undefined
+    ? sql`, confirmed = ${confirmed}`
+    : sql``;
+
+  await db.execute(
+    sql`INSERT INTO count_entries (sessionId, itemId, quantity, notes, updatedBy, confirmed)
+        VALUES (${sessionId}, ${itemId}, ${quantity}, ${notes ?? null}, ${updatedBy ?? null}, ${confirmed ?? false})
+        ON DUPLICATE KEY UPDATE
+          quantity = VALUES(quantity),
+          notes = VALUES(notes),
+          updatedBy = VALUES(updatedBy),
+          updatedAt = NOW()
+          ${confirmedSql}`
+  );
 }
 
 export async function getSessionWithEntries(sessionId: number) {
