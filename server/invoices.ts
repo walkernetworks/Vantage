@@ -112,6 +112,31 @@ export async function createInvoice(input: {
   return { id: result.id };
 }
 
+/**
+ * Normalize a string for fuzzy description matching:
+ * lowercase, strip punctuation, collapse whitespace.
+ */
+function normalizeDesc(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Score how well two normalized description strings match.
+ * Returns a value 0–1 based on word overlap (Jaccard similarity).
+ */
+function descSimilarity(a: string, b: string): number {
+  const setA = new Set(a.split(" ").filter((w) => w.length > 2));
+  const setB = new Set(b.split(" ").filter((w) => w.length > 2));
+  if (setA.size === 0 || setB.size === 0) return 0;
+  let intersection = 0;
+  Array.from(setA).forEach((w) => { if (setB.has(w)) intersection++; });
+  return intersection / (setA.size + setB.size - intersection);
+}
+
 export async function saveInvoiceLines(
   invoiceId: number,
   lines: ParsedLine[],
@@ -133,20 +158,57 @@ export async function saveInvoiceLines(
 
   if (lines.length === 0) return;
 
+  // ── Pass 1: exact item-number match ──────────────────────────────────────
   const itemNumbers = lines.map((l) => l.itemNumber).filter((n): n is string => !!n);
-  const matchedItems =
+  const exactMatches =
     itemNumbers.length > 0
       ? await db
-          .select({ id: items.id, itemNumber: items.itemNumber })
+          .select({ id: items.id, itemNumber: items.itemNumber, name: items.name })
           .from(items)
           .where(inArray(items.itemNumber, itemNumbers))
       : [];
+  const itemNumberMap = new Map(exactMatches.map((i) => [i.itemNumber, i.id]));
 
-  const itemMap = new Map(matchedItems.map((i) => [i.itemNumber, i.id]));
+  // ── Pass 2: description fuzzy match for lines that didn't match by number ─
+  // Load all catalog items (name + id) for fuzzy comparison
+  const linesNeedingFuzzy = lines.filter((l) => !l.itemNumber || !itemNumberMap.has(l.itemNumber));
+  let fuzzyMap = new Map<string, number>(); // normalized invoice description → catalog item id
+
+  if (linesNeedingFuzzy.length > 0) {
+    const allCatalogItems = await db
+      .select({ id: items.id, name: items.name })
+      .from(items);
+
+    const catalogNormalized = allCatalogItems.map((ci) => ({
+      id: ci.id,
+      norm: normalizeDesc(ci.name ?? ""),
+    }));
+
+    for (const line of linesNeedingFuzzy) {
+      if (!line.description) continue;
+      const invoiceNorm = normalizeDesc(line.description);
+      let bestScore = 0;
+      let bestId: number | null = null;
+      for (const ci of catalogNormalized) {
+        const score = descSimilarity(invoiceNorm, ci.norm);
+        if (score > bestScore) {
+          bestScore = score;
+          bestId = ci.id;
+        }
+      }
+      // Only accept fuzzy match if similarity is high enough (>= 0.35)
+      if (bestScore >= 0.35 && bestId !== null) {
+        fuzzyMap.set(line.description, bestId);
+      }
+    }
+  }
 
   await db.insert(invoiceLines).values(
     lines.map((line) => {
-      const matchedItemId = line.itemNumber ? (itemMap.get(line.itemNumber) ?? null) : null;
+      // Prefer exact item-number match, fall back to fuzzy description match
+      const exactId = line.itemNumber ? (itemNumberMap.get(line.itemNumber) ?? null) : null;
+      const fuzzyId = (!exactId && line.description) ? (fuzzyMap.get(line.description) ?? null) : null;
+      const matchedItemId = exactId ?? fuzzyId;
       return {
         invoiceId,
         itemId: matchedItemId,

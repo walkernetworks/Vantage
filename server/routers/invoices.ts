@@ -42,23 +42,26 @@ async function parseInvoiceImages(imageDataUrls: string[]): Promise<{
     image_url: { url, detail: "high" as const },
   }));
 
-  const systemPrompt = `You are an expert at reading Performance Foodservice (PFG) invoices.
-Extract all line items from the invoice image(s) provided.
+  const systemPrompt = `You are a precise data-extraction assistant for Performance Foodservice (PFG) delivery invoices.
+Your ONLY job is to read what is literally printed on the invoice image — never invent, guess, or paraphrase.
 
-CRITICAL RULES — follow these exactly:
-1. ONLY extract rows that have a numeric item number in the leftmost column (e.g. 593174, 921836, 163953). These are actual product lines.
-2. SKIP all category header rows — these are rows with only a category name like "COFFEE-BEVERAGES", "NA BEVERAGES", "BEIGNETS & FOOD-DRY", etc. with no item number.
-3. SKIP any totals rows, subtotal rows, tax rows, or deposit rows.
-4. The "Shipped" column (second numeric column after Item Number) is the quantity actually delivered — use this for shippedQty.
-5. The "Ordered" column (first numeric column after Item Number) is what was ordered — use this for orderedQty.
-6. Pack and Size are separate columns — e.g. Pack="12", Size="32 OZ".
-7. If multiple invoice pages are provided, combine ALL line items from ALL pages into a single lines array.
-8. For the invoice header: extract Invoice Number (top right area), Date, and Invoice Total.
-9. Category should be the most recent category header row above each item (e.g. "COFFEE-BEVERAGES").
-10. DO NOT invent or guess items. Only return items you can actually read from the images.
-11. Item numbers on PFG invoices are 5-7 digit numbers. If you cannot read a clear numeric item number, set itemNumber to null.
+PFG INVOICE LAYOUT:
+- Each product row has columns (left to right): Item Number | Description | Pack | Size | Ordered Qty | Shipped Qty | Unit Price | Extension
+- Category header rows appear between product rows (e.g. "COFFEE-BEVERAGES", "NA BEVERAGES"). They have NO item number.
+- The invoice header (top of page) has: Invoice Number, Date, Customer info, Invoice Total.
 
-Return ONLY valid JSON — no markdown fences, no explanation text, just the raw JSON object.`;
+EXTRACTION RULES — follow exactly:
+1. ONLY extract rows where the FIRST column contains a purely numeric item number (5–7 digits, e.g. 593174, 921836). These are product lines.
+2. SKIP category header rows (text-only rows with no item number).
+3. SKIP subtotal, tax, deposit, and total rows.
+4. For shippedQty: read the "Shipped" column (the second quantity column after item number). This is the actual delivered quantity. It is a whole number like 2, 5, 12.
+5. For orderedQty: read the "Ordered" column (the first quantity column after item number).
+6. Copy the description EXACTLY as printed — do not paraphrase or expand abbreviations.
+7. If you cannot clearly read a value, set it to null. NEVER guess or make up values.
+8. Item numbers are 5–7 digit integers. If you cannot read a clear numeric item number, set itemNumber to null.
+9. If multiple pages are provided, combine all product lines from all pages into one lines array.
+
+Return ONLY the raw JSON object matching the schema — no markdown, no explanation.`;
 
   const response = await invokeLLM({
     messages: [
