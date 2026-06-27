@@ -243,3 +243,69 @@ export const passwordResetTokens = mysqlTable(
   (t) => [index("idx_prt_token").on(t.token), index("idx_prt_user").on(t.userId)]
 );
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
+
+// ─── Invoices ─────────────────────────────────────────────────────────────────
+
+export const invoices = mysqlTable(
+  "invoices",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    vendor: varchar("vendor", { length: 64 }).notNull().default("PFG"),
+    invoiceNumber: varchar("invoiceNumber", { length: 64 }),
+    invoiceDate: varchar("invoiceDate", { length: 32 }),
+    totalAmount: decimal("totalAmount", { precision: 10, scale: 2 }),
+    // JSON array of S3 storage keys, one per page image
+    imageKeys: json("imageKeys").$type<string[]>().notNull(),
+    // status: pending = uploaded not yet parsed, parsed = AI extracted lines,
+    //         reviewed = user confirmed matches, applied = inventory updated
+    status: mysqlEnum("status", ["pending", "parsed", "reviewed", "applied"]).default("pending").notNull(),
+    notes: text("notes"),
+    createdBy: int("createdBy").references(() => users.id),
+    appliedAt: timestamp("appliedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (t) => [
+    index("idx_invoices_vendor").on(t.vendor),
+    index("idx_invoices_status").on(t.status),
+    index("idx_invoices_created").on(t.createdAt),
+  ]
+);
+
+export type Invoice = typeof invoices.$inferSelect;
+export type InsertInvoice = typeof invoices.$inferInsert;
+
+// ─── Invoice Lines ────────────────────────────────────────────────────────────
+
+export const invoiceLines = mysqlTable(
+  "invoice_lines",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    invoiceId: int("invoiceId")
+      .notNull()
+      .references(() => invoices.id),
+    // Matched item from catalog (null = unmatched)
+    itemId: int("itemId").references(() => items.id),
+    // Raw data extracted from invoice
+    itemNumber: varchar("itemNumber", { length: 64 }),
+    description: varchar("description", { length: 255 }),
+    pack: varchar("pack", { length: 32 }),
+    size: varchar("size", { length: 32 }),
+    orderedQty: decimal("orderedQty", { precision: 10, scale: 4 }),
+    shippedQty: decimal("shippedQty", { precision: 10, scale: 4 }).notNull().default("0"),
+    unitPrice: decimal("unitPrice", { precision: 10, scale: 4 }),
+    extension: decimal("extension", { precision: 10, scale: 2 }),
+    category: varchar("category", { length: 64 }),
+    // matchStatus: matched = itemId resolved, unmatched = no item found, skipped = user skipped
+    matchStatus: mysqlEnum("matchStatus", ["matched", "unmatched", "skipped"]).default("unmatched").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (t) => [
+    index("idx_invoice_lines_invoice").on(t.invoiceId),
+    index("idx_invoice_lines_item").on(t.itemId),
+  ]
+);
+
+export type InvoiceLine = typeof invoiceLines.$inferSelect;
+export type InsertInvoiceLine = typeof invoiceLines.$inferInsert;

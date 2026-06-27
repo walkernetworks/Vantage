@@ -191,8 +191,13 @@ export default function Home() {
               <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">
                 <div className="mb-4">
                   <h3 className="font-semibold text-foreground">Inventory Value by Category</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">
+                  <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5">
                     Based on latest count session
+                    {(metrics?.deliveriesAppliedSinceLastCount ?? 0) > 0 && (
+                      <span className="inline-flex items-center gap-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-[10px] font-medium px-1.5 py-0.5 rounded-full">
+                        +{metrics!.deliveriesAppliedSinceLastCount} {metrics!.deliveriesAppliedSinceLastCount === 1 ? 'delivery' : 'deliveries'} applied
+                      </span>
+                    )}
                   </p>
                   {/* ── Three-figure summary ── */}
                   <div className="grid grid-cols-3 gap-2 mt-3">

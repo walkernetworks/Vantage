@@ -5,6 +5,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { signLocalSession } from "./_core/localAuth";
 import { systemRouter } from "./_core/systemRouter";
+import { invoicesRouter } from "./routers/invoices";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import {
   getUserByEmail,
@@ -1168,6 +1169,7 @@ export const appRouter = router({
   settings: settingsRouter,
   adminUsers: adminUsersRouter,
   dashboard: dashboardRouter,
+  invoices: invoicesRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -5,6 +5,7 @@ import {
   BookOpen,
   ChevronRight,
   ClipboardList,
+  FileText,
   LogOut,
   Menu,
   Package,
@@ -64,6 +65,14 @@ const navItems: NavItem[] = [
     adminOnly: true,
     permission: "place_orders",
     description: "Below-par vendor orders",
+  },
+  {
+    href: "/invoices",
+    label: "Invoices",
+    icon: <FileText size={22} />,
+    adminOnly: true,
+    permission: "place_orders",
+    description: "Upload & process deliveries",
   },
   {
     href: "/par-levels",
