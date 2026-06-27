@@ -106,20 +106,53 @@ export function computeEachPrice(price: string | null | undefined, caseQty: numb
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let _pool: ReturnType<typeof mysql.createPool> | null = null;
+let _lastPingAt = 0;
+
+function createPool() {
+  const pool = mysql.createPool({
+    uri: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: true },
+    waitForConnections: true,
+    connectionLimit: 10,
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 30000,
+  });
+  // Log pool-level errors without crashing the process
+  pool.on("error", (err: Error) => {
+    console.error("[Database] Pool error — will reconnect on next request:", err.message);
+    _db = null;
+    _pool = null;
+  });
+  return pool;
+}
+
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
+  if (!process.env.DATABASE_URL) return null;
+  if (!_db || !_pool) {
     try {
-      _pool = mysql.createPool({
-        uri: process.env.DATABASE_URL,
-        ssl: { rejectUnauthorized: true },
-        waitForConnections: true,
-        connectionLimit: 10,
-      });
+      _pool = createPool();
       _db = drizzle(_pool);
+      console.log("[Database] Connection pool created");
     } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
+      console.error("[Database] Failed to create pool:", error);
       _db = null;
       _pool = null;
+      return null;
+    }
+  }
+  // Ping every 5 minutes to keep the connection alive and detect stale pools
+  const now = Date.now();
+  if (now - _lastPingAt > 5 * 60 * 1000) {
+    try {
+      await _pool.promise().query("SELECT 1");
+      _lastPingAt = now;
+    } catch (pingErr) {
+      console.warn("[Database] Ping failed, recreating pool:", (pingErr as Error).message);
+      try { _pool.end(); } catch {}
+      _db = null;
+      _pool = null;
+      // Recurse once to create a fresh pool
+      return getDb();
     }
   }
   return _db;

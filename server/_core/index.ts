@@ -61,4 +61,16 @@ async function startServer() {
   });
 }
 
+// Prevent unhandled promise rejections and uncaught exceptions from crashing the process
+// silently. Log them clearly so they appear in Render logs for debugging.
+process.on("unhandledRejection", (reason) => {
+  console.error("[Server] Unhandled promise rejection:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[Server] Uncaught exception — restarting:", err);
+  // Give the process a moment to flush logs before exiting
+  // (Render will auto-restart the service on non-zero exit)
+  setTimeout(() => process.exit(1), 500);
+});
+
 startServer().catch(console.error);
