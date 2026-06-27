@@ -71,6 +71,13 @@
       "when": 1779136833636,
       "tag": "0009_left_angel",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1782590966796,
+      "tag": "0010_fine_living_tribunal",
+      "breakpoints": true
     }
   ]
 }

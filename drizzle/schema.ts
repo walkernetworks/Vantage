@@ -241,3 +241,52 @@ export const passwordResetTokens = mysqlTable(
   (t) => [index("idx_prt_token").on(t.token), index("idx_prt_user").on(t.userId)]
 );
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
+
+// ─── Invoices ─────────────────────────────────────────────────────────────────
+export const invoices = mysqlTable(
+  "invoices",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    vendor: varchar("vendor", { length: 64 }).notNull().default("PFG"),
+    invoiceNumber: varchar("invoiceNumber", { length: 64 }),
+    invoiceDate: varchar("invoiceDate", { length: 32 }),
+    totalAmount: decimal("totalAmount", { precision: 10, scale: 2 }),
+    imageKeys: json("imageKeys").$type<string[]>().notNull().default([]),
+    notes: text("notes"),
+    status: mysqlEnum("status", ["pending", "reviewed", "applied"]).notNull().default("pending"),
+    createdBy: int("createdBy").references(() => users.id),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (t) => [index("idx_invoices_status").on(t.status), index("idx_invoices_created").on(t.createdAt)]
+);
+export type Invoice = typeof invoices.$inferSelect;
+export type InsertInvoice = typeof invoices.$inferInsert;
+
+// ─── Invoice Lines ────────────────────────────────────────────────────────────
+export const invoiceLines = mysqlTable(
+  "invoice_lines",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    invoiceId: int("invoiceId")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    itemId: int("itemId").references(() => items.id),
+    itemNumber: varchar("itemNumber", { length: 64 }),
+    description: varchar("description", { length: 255 }),
+    pack: varchar("pack", { length: 64 }),
+    size: varchar("size", { length: 64 }),
+    shippedQty: decimal("shippedQty", { precision: 10, scale: 4 }).notNull().default("0"),
+    unitPrice: decimal("unitPrice", { precision: 10, scale: 4 }),
+    extension: decimal("extension", { precision: 10, scale: 2 }),
+    matchStatus: mysqlEnum("matchStatus", ["matched", "unmatched", "skipped"])
+      .notNull()
+      .default("unmatched"),
+  },
+  (t) => [
+    index("idx_invoice_lines_invoice").on(t.invoiceId),
+    index("idx_invoice_lines_item").on(t.itemId),
+  ]
+);
+export type InvoiceLine = typeof invoiceLines.$inferSelect;
+export type InsertInvoiceLine = typeof invoiceLines.$inferInsert;
