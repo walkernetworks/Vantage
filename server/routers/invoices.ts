@@ -1,10 +1,12 @@
 /**
- * Invoice tRPC router — upload, parse, review, and apply invoices to inventory.
+ * Invoice tRPC router — upload+parse (combined), review, and apply invoices to inventory.
+ *
+ * Option B: Images are sent as base64 directly to the LLM — no S3 storage required.
+ * The invoice header and line items are saved to the DB after AI extraction.
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure } from "../_core/trpc";
-import { storagePut } from "../storage";
 import {
   createInvoice,
   saveInvoiceLines,
@@ -18,8 +20,12 @@ import {
 } from "../invoices";
 
 export const invoicesRouter = router({
-  // Upload invoice images and create invoice record
-  upload: protectedProcedure
+  /**
+   * Upload + Parse in one step.
+   * Client sends images as base64 strings. We build data URLs and pass them
+   * directly to the LLM vision model — no S3 storage needed.
+   */
+  uploadAndParse: protectedProcedure
     .input(
       z.object({
         vendor: z.string().default("PFG"),
@@ -37,51 +43,31 @@ export const invoicesRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const imageKeys: string[] = [];
-      for (let i = 0; i < input.images.length; i++) {
-        const img = input.images[i];
-        const buffer = Buffer.from(img.base64, "base64");
-        const filename = img.filename ?? `invoice-page-${i + 1}.jpg`;
-        const key = `invoices/${ctx.user.id}/${Date.now()}-${filename}`;
-        const { key: storedKey } = await storagePut(key, buffer, img.mimeType);
-        imageKeys.push(storedKey);
-      }
+      // Build data URLs from base64 — no storage call needed
+      const dataUrls = input.images.map(
+        (img) => `data:${img.mimeType};base64,${img.base64}`
+      );
+
+      // Create the invoice record first (no imageKeys needed)
       const invoice = await createInvoice({
         vendor: input.vendor,
-        imageKeys,
+        imageKeys: [], // no stored images
         createdBy: ctx.user.id,
         notes: input.notes,
       });
-      return { invoiceId: invoice.id };
-    }),
 
-  // Parse invoice images with AI
-  parse: protectedProcedure
-    .input(z.object({ invoiceId: z.number() }))
-    .mutation(async ({ input }) => {
-      const result = await getInvoiceWithLines(input.invoiceId);
-      if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Invoice not found" });
+      // Parse with AI using data URLs directly
+      const parsed = await parseInvoiceImages(dataUrls);
 
-      const { storageGet } = await import("../storage");
-      const imageUrls: string[] = [];
-      for (const key of result.invoice.imageKeys) {
-        const { url } = await storageGet(key);
-        imageUrls.push(url);
-      }
-
-      if (imageUrls.length === 0) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "No images found for this invoice" });
-      }
-
-      const parsed = await parseInvoiceImages(imageUrls);
-
-      await saveInvoiceLines(input.invoiceId, parsed.lines, {
+      // Save extracted lines to DB
+      await saveInvoiceLines(invoice.id, parsed.lines, {
         invoiceNumber: parsed.invoiceNumber ?? undefined,
         invoiceDate: parsed.invoiceDate ?? undefined,
         totalAmount: parsed.totalAmount ?? undefined,
       });
 
       return {
+        invoiceId: invoice.id,
         invoiceNumber: parsed.invoiceNumber,
         invoiceDate: parsed.invoiceDate,
         totalAmount: parsed.totalAmount,

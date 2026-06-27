@@ -23,6 +23,11 @@ export interface ParsedInvoice {
   lines: ParsedLine[];
 }
 
+/**
+ * Parse invoice images. Accepts either:
+ * - base64 data URLs (data:image/jpeg;base64,...) for direct client uploads
+ * - storage URLs (/manus-storage/...) for previously stored images
+ */
 export async function parseInvoiceImages(imageUrls: string[]): Promise<ParsedInvoice> {
   const response = await invokeLLM({
     messages: [

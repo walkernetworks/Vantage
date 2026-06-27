@@ -47,9 +47,9 @@ function UploadDialog({ open, onClose, onUploaded }: { open: boolean; onClose: (
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const uploadMutation = trpc.invoices.upload.useMutation({
+  const uploadMutation = trpc.invoices.uploadAndParse.useMutation({
     onSuccess: (data) => {
-      toast.success("Invoice uploaded — running AI parse…");
+      toast.success(`Invoice parsed — ${data.lineCount} line items extracted`);
       onUploaded(data.invoiceId);
       setImages([]);
     },
@@ -147,7 +147,7 @@ function UploadDialog({ open, onClose, onUploaded }: { open: boolean; onClose: (
         <DialogFooter>
           <Button variant="outline" onClick={() => { setImages([]); onClose(); }} disabled={uploading}>Cancel</Button>
           <Button onClick={handleSubmit} disabled={uploading || images.length === 0}>
-            {uploading ? <><Spinner className="mr-2 h-4 w-4" />Uploading…</> : <><Upload size={16} className="mr-2" />Upload & Parse</>}
+            {uploading ? <><Spinner className="mr-2 h-4 w-4" />Parsing…</> : <><Upload size={16} className="mr-2" />Upload & Parse</>}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -164,11 +164,6 @@ function ReviewDialog({ invoiceId, open, onClose, onApplied }: { invoiceId: numb
     { invoiceId: invoiceId! },
     { enabled: !!invoiceId }
   );
-
-  const parseMutation = trpc.invoices.parse.useMutation({
-    onSuccess: () => { toast.success("Invoice re-parsed successfully"); refetch(); },
-    onError: (e) => toast.error("Parse failed: " + e.message),
-  });
 
   const updateLineMutation = trpc.invoices.updateLine.useMutation({
     onSuccess: () => { refetch(); setEditingLineId(null); },
@@ -234,12 +229,7 @@ function ReviewDialog({ invoiceId, open, onClose, onApplied }: { invoiceId: numb
                 {skipped > 0 && <span className="flex items-center gap-1 text-muted-foreground"><XCircle size={14} />{skipped} skipped</span>}
               </div>
             )}
-            {invoice && invoice.status !== "applied" && (
-              <Button variant="outline" size="sm" onClick={() => parseMutation.mutate({ invoiceId: invoice.id })} disabled={parseMutation.isPending}>
-                {parseMutation.isPending ? <Spinner className="mr-2 h-3 w-3" /> : <RefreshCw size={14} className="mr-2" />}
-                Re-parse with AI
-              </Button>
-            )}
+
             {lines.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <FileText size={32} className="mx-auto mb-2 opacity-40" />
@@ -332,15 +322,6 @@ export default function Invoices() {
 
   const { data: invoiceList, isLoading } = trpc.invoices.list.useQuery();
 
-  const parseMutation = trpc.invoices.parse.useMutation({
-    onSuccess: (result, vars) => {
-      toast.success(`Parsed ${result.lineCount} line items`);
-      utils.invoices.list.invalidate();
-      setReviewInvoiceId(vars.invoiceId);
-    },
-    onError: (e) => toast.error("Parse failed: " + e.message),
-  });
-
   const deleteMutation = trpc.invoices.deleteInvoice.useMutation({
     onSuccess: () => { toast.success("Invoice deleted"); utils.invoices.list.invalidate(); },
     onError: (e) => toast.error("Delete failed: " + e.message),
@@ -349,7 +330,7 @@ export default function Invoices() {
   function handleUploaded(invoiceId: number) {
     setUploadOpen(false);
     utils.invoices.list.invalidate();
-    parseMutation.mutate({ invoiceId });
+    setReviewInvoiceId(invoiceId);
   }
 
   return (
@@ -396,12 +377,7 @@ export default function Invoices() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    {inv.status === "pending" && (
-                      <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); parseMutation.mutate({ invoiceId: inv.id }); }} disabled={parseMutation.isPending && parseMutation.variables?.invoiceId === inv.id}>
-                        {parseMutation.isPending && parseMutation.variables?.invoiceId === inv.id ? <Spinner className="h-3 w-3" /> : <RefreshCw size={14} className="mr-1" />}
-                        Parse
-                      </Button>
-                    )}
+
                     <button onClick={(e) => { e.stopPropagation(); if (confirm("Delete this invoice?")) deleteMutation.mutate({ invoiceId: inv.id }); }} className="p-2 text-muted-foreground hover:text-destructive transition-colors rounded-lg hover:bg-muted">
                       <Trash2 size={16} />
                     </button>
