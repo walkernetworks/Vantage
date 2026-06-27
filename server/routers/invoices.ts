@@ -42,26 +42,40 @@ async function parseInvoiceImages(imageDataUrls: string[]): Promise<{
     image_url: { url, detail: "high" as const },
   }));
 
-  const systemPrompt = `You are a precise data-extraction assistant for Performance Foodservice (PFG) delivery invoices.
-Your ONLY job is to read what is literally printed on the invoice image — never invent, guess, or paraphrase.
+  const systemPrompt = `You are a precise OCR assistant for Performance Foodservice (PFG) paper delivery invoices.
+Your ONLY job is to read what is literally printed on the invoice. Never invent, guess, or paraphrase anything.
 
-PFG INVOICE LAYOUT:
-- Each product row has columns (left to right): Item Number | Description | Pack | Size | Ordered Qty | Shipped Qty | Unit Price | Extension
-- Category header rows appear between product rows (e.g. "COFFEE-BEVERAGES", "NA BEVERAGES"). They have NO item number.
-- The invoice header (top of page) has: Invoice Number, Date, Customer info, Invoice Total.
+EXACT COLUMN ORDER on a PFG invoice (left to right):
+  Item Number | Ordered | Shipped | Pack | Size | Unit | Description | Price | Extension | ST
 
-EXTRACTION RULES — follow exactly:
-1. ONLY extract rows where the FIRST column contains a purely numeric item number (5–7 digits, e.g. 593174, 921836). These are product lines.
-2. SKIP category header rows (text-only rows with no item number).
-3. SKIP subtotal, tax, deposit, and total rows.
-4. For shippedQty: read the "Shipped" column (the second quantity column after item number). This is the actual delivered quantity. It is a whole number like 2, 5, 12.
-5. For orderedQty: read the "Ordered" column (the first quantity column after item number).
-6. Copy the description EXACTLY as printed — do not paraphrase or expand abbreviations.
-7. If you cannot clearly read a value, set it to null. NEVER guess or make up values.
-8. Item numbers are 5–7 digit integers. If you cannot read a clear numeric item number, set itemNumber to null.
-9. If multiple pages are provided, combine all product lines from all pages into one lines array.
+IMPORTANT: The columns are in this order — Item Number comes FIRST, then Ordered qty, then Shipped qty, THEN Pack and Size, THEN Description.
 
-Return ONLY the raw JSON object matching the schema — no markdown, no explanation.`;
+EXAMPLE ROWS from a real PFG invoice:
+  867175  | 1 | 1 | 1  | 5 LB   |   | PEAK FRS LEMON PRSH                  | 16.4100 | 16.41
+  158889  | 1 | 1 | 1  | 5 LB   |   | WEST CRK CHEESE AMER YLW SLCD 160    | 16.4100 | 16.41
+  534152  | 6 | 6 | 4  | 50 CT  |   | ROYAL BOX TAKE OUT FOLDED #3 KR      | 40.7500 | 244.50
+  972236  | 2 | 0 | 1  | 200 CT |   | BEI BREW@BOX BEIGNET 1/2 DOZ 12X8   | 114.280 | 0.00
+  1013308 | 2 | 2 | 20 | 50 CT  |   | BEI BREW@CUP 20 OZ PET CLR           | 120.110 | 240.22
+
+CATEGORY HEADER ROWS look like: "NA BEVERAGES-PRODUCE", "BEIGNETS & FOOD-DAIRY", "CHEMICALS-PAPER"
+  These rows have NO item number — SKIP them entirely.
+
+EXTRACTION RULES:
+1. Extract EVERY row that has a numeric item number in the first column (6-7 digits). Include ALL of them, even duplicates.
+2. SKIP category header rows (bold text rows with no item number).
+3. SKIP the bottom totals section (SUB TOTAL, TAX, DEPOSITS, INVOICE TOTAL rows).
+4. shippedQty = the THIRD column ("Shipped") — the actual quantity delivered. Can be 0 if not shipped.
+5. orderedQty = the SECOND column ("Ordered").
+6. pack = the FOURTH column (a number like 1, 4, 10, 20, 80, 100).
+7. size = the FIFTH column (e.g. "5 LB", "50 CT", "32 OZ", "100 CT").
+8. description = the SEVENTH column — copy EXACTLY as printed, do not expand abbreviations.
+9. unitPrice = the EIGHTH column (Price per case).
+10. extension = the NINTH column (line total = shipped * price).
+11. If you cannot clearly read a value, set it to null. NEVER invent values.
+12. Item numbers are 6-7 digit integers. If unclear, set itemNumber to null.
+13. If multiple pages: combine ALL product rows from ALL pages into one lines array.
+
+Return ONLY the raw JSON object — no markdown fences, no explanation text.`;
 
   const response = await invokeLLM({
     messages: [
