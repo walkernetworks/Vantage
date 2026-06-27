@@ -52,7 +52,7 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type InvoiceStatus = "pending" | "parsing" | "parsed" | "reviewed" | "applied";
+type InvoiceStatus = "pending" | "reviewed" | "applied";
 
 interface InvoiceSummary {
   id: number;
@@ -88,9 +88,7 @@ interface InvoiceLine {
 
 function statusBadge(status: InvoiceStatus) {
   const map: Record<InvoiceStatus, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-    pending: { label: "Pending", variant: "secondary" },
-    parsing: { label: "Parsing…", variant: "secondary" },
-    parsed: { label: "Needs Review", variant: "outline" },
+    pending: { label: "Needs Review", variant: "outline" },
     reviewed: { label: "Reviewed", variant: "default" },
     applied: { label: "Applied", variant: "default" },
   };
@@ -348,7 +346,7 @@ function ReviewDialog({
     updateLineMutation.mutate({ lineId, matchStatus: "unmatched" });
   };
 
-  const canApply = invoice?.status === "reviewed" || invoice?.status === "parsed";
+  const canApply = invoice?.status === "reviewed" || invoice?.status === "pending";
 
   return (
     <>
@@ -485,7 +483,7 @@ function ReviewDialog({
             <Button variant="outline" onClick={onClose}>Close</Button>
             {invoice?.status !== "applied" && (
               <>
-                {invoice?.status === "parsed" && (
+                {invoice?.status === "pending" && (
                   <Button
                     variant="outline"
                     onClick={() => markReviewedMutation.mutate({ invoiceId })}

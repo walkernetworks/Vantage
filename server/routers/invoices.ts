@@ -21,19 +21,19 @@ import {
 // ─── AI Invoice Parser ────────────────────────────────────────────────────────
 
 async function parseInvoiceImages(imageDataUrls: string[]): Promise<{
-  invoiceNumber?: string;
-  invoiceDate?: string;
-  totalAmount?: number;
+  invoiceNumber: string | null;
+  invoiceDate: string | null;
+  totalAmount: number | null;
   lines: Array<{
-    itemNumber?: string;
-    description?: string;
-    pack?: string;
-    size?: string;
-    orderedQty?: number;
-    shippedQty: number;
-    unitPrice?: number;
-    extension?: number;
-    category?: string;
+    itemNumber: string | null;
+    description: string | null;
+    pack: string | null;
+    size: string | null;
+    orderedQty: number | null;
+    shippedQty: number | null;
+    unitPrice: number | null;
+    extension: number | null;
+    category: string | null;
   }>;
 }> {
   // Build image content array — pass base64 data URLs directly to the AI
@@ -91,21 +91,22 @@ Return ONLY valid JSON — no markdown fences, no explanation text, just the raw
                 type: "object",
                 properties: {
                   itemNumber: { type: ["string", "null"] },
-                  description: { type: "string" },
+                  description: { type: ["string", "null"] },
                   pack: { type: ["string", "null"] },
                   size: { type: ["string", "null"] },
                   orderedQty: { type: ["number", "null"] },
-                  shippedQty: { type: "number" },
+                  shippedQty: { type: ["number", "null"] },
                   unitPrice: { type: ["number", "null"] },
                   extension: { type: ["number", "null"] },
                   category: { type: ["string", "null"] },
                 },
-                required: ["description", "shippedQty"],
+                required: ["itemNumber", "description", "pack", "size", "orderedQty", "shippedQty", "unitPrice", "extension", "category"],
                 additionalProperties: false,
               },
             },
           },
           required: ["invoiceNumber", "invoiceDate", "totalAmount", "lines"],
+          // OpenAI strict mode: all properties must be in required; nullable fields use ["type","null"]
           additionalProperties: false,
         },
       },
@@ -161,8 +162,12 @@ export const invoicesRouter = router({
       // Call AI to extract invoice data from the images
       const parsed = await parseInvoiceImages(imageDataUrls);
 
-      // Save parsed lines to DB with item matching
-      await saveInvoiceLines(invoice.id, parsed.lines, {
+      // Save parsed lines to DB with item matching (normalize nulls)
+      const normalizedLines = parsed.lines.map((l) => ({
+        ...l,
+        shippedQty: l.shippedQty ?? 0,
+      }));
+      await saveInvoiceLines(invoice.id, normalizedLines, {
         invoiceNumber: parsed.invoiceNumber ?? undefined,
         invoiceDate: parsed.invoiceDate ?? undefined,
         totalAmount: parsed.totalAmount ?? undefined,
@@ -173,7 +178,7 @@ export const invoicesRouter = router({
         invoiceNumber: parsed.invoiceNumber,
         invoiceDate: parsed.invoiceDate,
         totalAmount: parsed.totalAmount,
-        lineCount: parsed.lines.length,
+        lineCount: normalizedLines.length,
       };
     }),
 
