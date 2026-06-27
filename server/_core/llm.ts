@@ -279,8 +279,12 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     response_format,
   } = params;
 
+  // Use gpt-4o when falling back to OpenAI; Manus forge uses gemini-2.5-flash
+  const isOpenAI = ENV.forgeApiUrl.includes("api.openai.com");
+  const defaultModel = isOpenAI ? "gpt-4o" : "gemini-2.5-flash";
+
   const payload: Record<string, unknown> = {
-    model: "gemini-2.5-flash",
+    model: defaultModel,
     messages: messages.map(normalizeMessage),
   };
 
@@ -296,9 +300,10 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.tool_choice = normalizedToolChoice;
   }
 
-  payload.max_tokens = 32768
-  payload.thinking = {
-    "budget_tokens": 128
+  payload.max_tokens = 4096;
+  // thinking/budget_tokens is Gemini-only — skip for OpenAI
+  if (!isOpenAI) {
+    payload.thinking = { budget_tokens: 128 };
   }
 
   const normalizedResponseFormat = normalizeResponseFormat({
