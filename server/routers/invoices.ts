@@ -130,12 +130,21 @@ Return ONLY the raw JSON object — no markdown fences, no explanation text.`;
     },
   });
 
+  console.log("[Invoice AI] model used:", (response as any).model ?? "unknown");
+  console.log("[Invoice AI] usage:", JSON.stringify(response.usage ?? {}));
   const rawContent = response.choices?.[0]?.message?.content;
-  if (!rawContent) throw new Error("No response from AI");
+  if (!rawContent) {
+    console.error("[Invoice AI] No content in response. Full response:", JSON.stringify(response).substring(0, 500));
+    throw new Error("No response from AI");
+  }
   const content = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
+  console.log("[Invoice AI] raw content (first 500 chars):", content.substring(0, 500));
   try {
-    return JSON.parse(content);
-  } catch {
+    const parsed = JSON.parse(content);
+    console.log("[Invoice AI] parsed lines count:", parsed.lines?.length ?? 0);
+    return parsed;
+  } catch (e) {
+    console.error("[Invoice AI] JSON parse failed. Content:", content.substring(0, 1000));
     throw new Error("Failed to parse AI response as JSON");
   }
 }
@@ -177,7 +186,10 @@ export const invoicesRouter = router({
       );
 
       // Call AI to extract invoice data from the images
+      console.log(`[Invoice] Starting AI parse for invoice ${invoice.id}, ${imageDataUrls.length} image(s)`);
+      console.log(`[Invoice] API URL: ${process.env.BUILT_IN_FORGE_API_URL || 'not set (using OpenAI)'}, Key set: ${!!(process.env.BUILT_IN_FORGE_API_KEY || process.env.OPENAI_API_KEY)}`);
       const parsed = await parseInvoiceImages(imageDataUrls);
+      console.log(`[Invoice] AI returned ${parsed.lines?.length ?? 0} lines`);
 
       // Save parsed lines to DB with item matching (normalize nulls)
       const normalizedLines = parsed.lines.map((l) => ({
