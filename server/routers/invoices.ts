@@ -20,6 +20,105 @@ import {
 
 // ─── AI Invoice Parser ────────────────────────────────────────────────────────
 
+const PAGE_SYSTEM_PROMPT = `You are a precise OCR assistant for Performance Foodservice (PFG) paper delivery invoices.
+Your ONLY job is to read what is literally printed on the invoice page image. Never invent, guess, or paraphrase.
+
+EXACT COLUMN ORDER on a PFG invoice (left to right):
+  Item Number | Ordered | Shipped | Pack | Size | Unit | Description | Price | Extension | ST
+
+Item Number is FIRST. Then Ordered qty, then Shipped qty, then Pack, then Size, then Description.
+
+EXAMPLE ROWS (from a real PFG invoice):
+  867175  | 1 | 1 | 1  | 5 LB   | | PEAK FRS LEMON FRSH                 | 16.4100 | 16.41
+  158889  | 1 | 1 | 1  | 5 LB   | | WEST CRK CHEESE AMER YLW SLCD 160   | 16.4100 | 16.41
+  534152  | 6 | 6 | 4  | 50 CT  | | ROYAL BOX TAKE OUT FOLDED #3 KR     | 40.7500 | 244.50
+  972236  | 2 | 0 | 1  | 200 CT | | BEI BREW@BOX BEIGNET 1/2 DOZ 12X8  | 114.280 | 0.00
+  1013308 | 2 | 2 | 20 | 50 CT  | | BEI BREW@CUP 20 OZ PET CLR          | 120.110 | 240.22
+
+CATEGORY HEADER ROWS look like: "NA BEVERAGES-PRODUCE", "BEIGNETS & FOOD-DAIRY", "CHEMICALS-PAPER"
+  These rows span the full width with NO item number — SKIP them.
+
+RULES:
+1. Extract EVERY row that has a 6-7 digit numeric item number in the first column.
+2. SKIP category header rows and totals/subtotal rows.
+3. shippedQty = 3rd column ("Shipped") — whole number, can be 0.
+4. orderedQty = 2nd column ("Ordered").
+5. pack = 4th column (e.g. 1, 4, 10, 20, 80, 100).
+6. size = 5th column (e.g. "5 LB", "50 CT", "32 OZ").
+7. description = 7th column — copy EXACTLY as printed.
+8. unitPrice = 8th column. extension = 9th column.
+9. If you cannot clearly read a value, use null. NEVER invent or guess.
+10. invoiceNumber, invoiceDate, totalAmount: read from the invoice header if visible, else null.
+
+Respond with ONLY a raw JSON object in this exact shape (no markdown, no explanation):
+{
+  "invoiceNumber": "...",
+  "invoiceDate": "...",
+  "totalAmount": null,
+  "lines": [
+    {"itemNumber":"867175","description":"PEAK FRS LEMON FRSH","pack":"1","size":"5 LB","orderedQty":1,"shippedQty":1,"unitPrice":16.41,"extension":16.41,"category":null}
+  ]
+}`;
+
+/** Parse a single invoice page image and return extracted lines. */
+async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<{
+  invoiceNumber: string | null;
+  invoiceDate: string | null;
+  totalAmount: number | null;
+  lines: Array<{
+    itemNumber: string | null;
+    description: string | null;
+    pack: string | null;
+    size: string | null;
+    orderedQty: number | null;
+    shippedQty: number | null;
+    unitPrice: number | null;
+    extension: number | null;
+    category: string | null;
+  }>;
+}> {
+  const response = await invokeLLM({
+    messages: [
+      { role: "system", content: PAGE_SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: [
+          { type: "text" as const, text: `Extract all product line items from this PFG invoice page (page ${pageIndex + 1}). Only rows with a 6-7 digit item number. Skip category headers and totals.` },
+          { type: "image_url" as const, image_url: { url: dataUrl, detail: "high" as const } },
+        ] as MessageContent[],
+      },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  console.log(`[Invoice AI] page ${pageIndex + 1} model: ${(response as any).model ?? "unknown"}, tokens: ${response.usage?.total_tokens ?? 0}`);
+  const rawContent = response.choices?.[0]?.message?.content;
+  if (!rawContent) {
+    console.error(`[Invoice AI] page ${pageIndex + 1}: no content in response`);
+    return { invoiceNumber: null, invoiceDate: null, totalAmount: null, lines: [] };
+  }
+  const content = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
+  console.log(`[Invoice AI] page ${pageIndex + 1} raw (first 400): ${content.substring(0, 400)}`);
+
+  try {
+    // Strip markdown fences if model adds them despite instructions
+    const cleaned = content.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
+    const parsed = JSON.parse(cleaned);
+    const lines = Array.isArray(parsed.lines) ? parsed.lines : [];
+    console.log(`[Invoice AI] page ${pageIndex + 1}: ${lines.length} lines extracted`);
+    return {
+      invoiceNumber: parsed.invoiceNumber ?? null,
+      invoiceDate: parsed.invoiceDate ?? null,
+      totalAmount: typeof parsed.totalAmount === "number" ? parsed.totalAmount : null,
+      lines,
+    };
+  } catch (e) {
+    console.error(`[Invoice AI] page ${pageIndex + 1} JSON parse failed:`, content.substring(0, 500));
+    return { invoiceNumber: null, invoiceDate: null, totalAmount: null, lines: [] };
+  }
+}
+
+/** Parse all invoice pages sequentially and merge results. */
 async function parseInvoiceImages(imageDataUrls: string[]): Promise<{
   invoiceNumber: string | null;
   invoiceDate: string | null;
@@ -36,117 +135,17 @@ async function parseInvoiceImages(imageDataUrls: string[]): Promise<{
     category: string | null;
   }>;
 }> {
-  // Build image content array — pass base64 data URLs directly to the AI
-  const imageContent: MessageContent[] = imageDataUrls.map((url) => ({
-    type: "image_url" as const,
-    image_url: { url, detail: "high" as const },
-  }));
+  const results = await Promise.all(imageDataUrls.map((url, i) => parseSinglePage(url, i)));
 
-  const systemPrompt = `You are a precise OCR assistant for Performance Foodservice (PFG) paper delivery invoices.
-Your ONLY job is to read what is literally printed on the invoice. Never invent, guess, or paraphrase anything.
-
-EXACT COLUMN ORDER on a PFG invoice (left to right):
-  Item Number | Ordered | Shipped | Pack | Size | Unit | Description | Price | Extension | ST
-
-IMPORTANT: The columns are in this order — Item Number comes FIRST, then Ordered qty, then Shipped qty, THEN Pack and Size, THEN Description.
-
-EXAMPLE ROWS from a real PFG invoice:
-  867175  | 1 | 1 | 1  | 5 LB   |   | PEAK FRS LEMON PRSH                  | 16.4100 | 16.41
-  158889  | 1 | 1 | 1  | 5 LB   |   | WEST CRK CHEESE AMER YLW SLCD 160    | 16.4100 | 16.41
-  534152  | 6 | 6 | 4  | 50 CT  |   | ROYAL BOX TAKE OUT FOLDED #3 KR      | 40.7500 | 244.50
-  972236  | 2 | 0 | 1  | 200 CT |   | BEI BREW@BOX BEIGNET 1/2 DOZ 12X8   | 114.280 | 0.00
-  1013308 | 2 | 2 | 20 | 50 CT  |   | BEI BREW@CUP 20 OZ PET CLR           | 120.110 | 240.22
-
-CATEGORY HEADER ROWS look like: "NA BEVERAGES-PRODUCE", "BEIGNETS & FOOD-DAIRY", "CHEMICALS-PAPER"
-  These rows have NO item number — SKIP them entirely.
-
-EXTRACTION RULES:
-1. Extract EVERY row that has a numeric item number in the first column (6-7 digits). Include ALL of them, even duplicates.
-2. SKIP category header rows (bold text rows with no item number).
-3. SKIP the bottom totals section (SUB TOTAL, TAX, DEPOSITS, INVOICE TOTAL rows).
-4. shippedQty = the THIRD column ("Shipped") — the actual quantity delivered. Can be 0 if not shipped.
-5. orderedQty = the SECOND column ("Ordered").
-6. pack = the FOURTH column (a number like 1, 4, 10, 20, 80, 100).
-7. size = the FIFTH column (e.g. "5 LB", "50 CT", "32 OZ", "100 CT").
-8. description = the SEVENTH column — copy EXACTLY as printed, do not expand abbreviations.
-9. unitPrice = the EIGHTH column (Price per case).
-10. extension = the NINTH column (line total = shipped * price).
-11. If you cannot clearly read a value, set it to null. NEVER invent values.
-12. Item numbers are 6-7 digit integers. If unclear, set itemNumber to null.
-13. If multiple pages: combine ALL product rows from ALL pages into one lines array.
-
-Return ONLY the raw JSON object — no markdown fences, no explanation text.`;
-
-  const response = await invokeLLM({
-    messages: [
-      { role: "system", content: systemPrompt },
-      {
-        role: "user",
-        content: [
-          {
-            type: "text" as const,
-            text: `Extract all product line items from ${imageDataUrls.length > 1 ? `these ${imageDataUrls.length} PFG invoice pages` : "this PFG invoice page"}. Remember: only rows with a numeric item number in the first column. Skip category headers and totals.`,
-          },
-          ...imageContent,
-        ] as MessageContent[],
-      },
-    ],
-    response_format: {
-      type: "json_schema",
-      json_schema: {
-        name: "invoice_extraction",
-        strict: true,
-        schema: {
-          type: "object",
-          properties: {
-            invoiceNumber: { type: ["string", "null"] },
-            invoiceDate: { type: ["string", "null"] },
-            totalAmount: { type: ["number", "null"] },
-            lines: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  itemNumber: { type: ["string", "null"] },
-                  description: { type: ["string", "null"] },
-                  pack: { type: ["string", "null"] },
-                  size: { type: ["string", "null"] },
-                  orderedQty: { type: ["number", "null"] },
-                  shippedQty: { type: ["number", "null"] },
-                  unitPrice: { type: ["number", "null"] },
-                  extension: { type: ["number", "null"] },
-                  category: { type: ["string", "null"] },
-                },
-                required: ["itemNumber", "description", "pack", "size", "orderedQty", "shippedQty", "unitPrice", "extension", "category"],
-                additionalProperties: false,
-              },
-            },
-          },
-          required: ["invoiceNumber", "invoiceDate", "totalAmount", "lines"],
-          // OpenAI strict mode: all properties must be in required; nullable fields use ["type","null"]
-          additionalProperties: false,
-        },
-      },
-    },
-  });
-
-  console.log("[Invoice AI] model used:", (response as any).model ?? "unknown");
-  console.log("[Invoice AI] usage:", JSON.stringify(response.usage ?? {}));
-  const rawContent = response.choices?.[0]?.message?.content;
-  if (!rawContent) {
-    console.error("[Invoice AI] No content in response. Full response:", JSON.stringify(response).substring(0, 500));
-    throw new Error("No response from AI");
-  }
-  const content = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
-  console.log("[Invoice AI] raw content (first 500 chars):", content.substring(0, 500));
-  try {
-    const parsed = JSON.parse(content);
-    console.log("[Invoice AI] parsed lines count:", parsed.lines?.length ?? 0);
-    return parsed;
-  } catch (e) {
-    console.error("[Invoice AI] JSON parse failed. Content:", content.substring(0, 1000));
-    throw new Error("Failed to parse AI response as JSON");
-  }
+  // Merge: use header fields from first page that has them; combine all lines
+  const merged = {
+    invoiceNumber: results.find((r) => r.invoiceNumber)?.invoiceNumber ?? null,
+    invoiceDate: results.find((r) => r.invoiceDate)?.invoiceDate ?? null,
+    totalAmount: results.find((r) => r.totalAmount !== null)?.totalAmount ?? null,
+    lines: results.flatMap((r) => r.lines),
+  };
+  console.log(`[Invoice AI] merged total lines: ${merged.lines.length} from ${imageDataUrls.length} pages`);
+  return merged;
 }
 
 // ─── Router ───────────────────────────────────────────────────────────────────
