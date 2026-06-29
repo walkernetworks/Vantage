@@ -1,8 +1,8 @@
 /**
  * Invoice DB helpers — create, parse, apply, and query invoices.
  */
-import { eq, and, desc, inArray } from "drizzle-orm";
-import { getDb } from "./db";
+import { eq, and, desc } from "drizzle-orm";
+import { getDb, getRawPool } from "./db";
 import { invoices, invoiceLines, items } from "../drizzle/schema";
 import { invokeLLM } from "./_core/llm";
 
@@ -158,16 +158,22 @@ export async function saveInvoiceLines(
 
   if (lines.length === 0) return;
 
-  // ── Pass 1: exact item-number match ──────────────────────────────────────
+  // ── Pass 1: exact item-number match via raw mysql2 pool (bypasses Drizzle ORM column casing issues) ─
   const itemNumbers = lines.map((l) => l.itemNumber).filter((n): n is string => !!n);
-  const exactMatches =
-    itemNumbers.length > 0
-      ? await db
-          .select({ id: items.id, itemNumber: items.itemNumber, name: items.name })
-          .from(items)
-          .where(inArray(items.itemNumber, itemNumbers))
-      : [];
-  const itemNumberMap = new Map(exactMatches.map((i) => [i.itemNumber, i.id]));
+  let itemNumberMap = new Map<string, number>();
+  if (itemNumbers.length > 0) {
+    const pool = getRawPool();
+    if (pool) {
+      const placeholders = itemNumbers.map(() => '?').join(',');
+      const [exactRows] = await pool.promise().execute(
+        `SELECT id, itemNumber, name FROM items WHERE itemNumber IN (${placeholders})`,
+        itemNumbers
+      );
+      const rows = Array.isArray(exactRows) ? exactRows as Array<{ id: number; itemNumber: string; name: string }> : [];
+      itemNumberMap = new Map(rows.map((r) => [String(r.itemNumber), r.id]));
+      console.log(`[Invoice Match] item-number lookup: ${itemNumbers.length} numbers → ${rows.length} matches found`);
+    }
+  }
 
   // ── Pass 2: description fuzzy match for lines that didn't match by number ─
   // Load all catalog items (name + id) for fuzzy comparison

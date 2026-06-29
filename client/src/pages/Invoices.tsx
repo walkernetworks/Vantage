@@ -113,7 +113,7 @@ function formatCurrency(n: number | string | null | undefined) {
 
 // ─── Upload Dialog ────────────────────────────────────────────────────────────
 
-function UploadDialog({ open, onClose, onSuccess }: { open: boolean; onClose: () => void; onSuccess: () => void }) {
+function UploadDialog({ open, onClose, onSuccess }: { open: boolean; onClose: () => void; onSuccess: (invoiceId: number) => void }) {
   const [pages, setPages] = useState<{ file: File; preview: string }[]>([]);
   const [vendor, setVendor] = useState("PFG");
   const [uploading, setUploading] = useState(false);
@@ -169,10 +169,10 @@ function UploadDialog({ open, onClose, onSuccess }: { open: boolean; onClose: ()
       setUploading(false);
 
       // Upload images and parse with AI in a single step (no S3)
-      await uploadAndParseMutation.mutateAsync({ vendor, images });
+      const result = await uploadAndParseMutation.mutateAsync({ vendor, images });
       await utils.invoices.list.invalidate();
       toast.success("Invoice uploaded and parsed successfully");
-      onSuccess();
+      onSuccess(result.invoiceId);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Upload failed";
       toast.error(msg);
@@ -267,7 +267,7 @@ function UploadDialog({ open, onClose, onSuccess }: { open: boolean; onClose: ()
             <div className="flex items-center gap-3 p-3 bg-muted rounded-xl">
               <Spinner className="h-5 w-5 text-primary" />
               <p className="text-sm text-foreground">
-                {uploading ? "Uploading images…" : "AI is reading the invoice…"}
+                {uploading ? "Uploading images…" : "Loading invoice…"}
               </p>
             </div>
           )}
@@ -479,8 +479,8 @@ function ReviewDialog({
             </div>
           )}
 
-          <DialogFooter className="border-t border-border pt-4 mt-2 gap-2">
-            <Button variant="outline" onClick={onClose}>Close</Button>
+          <DialogFooter className="border-t border-border pt-4 mt-2 flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={onClose} className="sm:mr-auto w-full sm:w-auto">Close</Button>
             {invoice?.status !== "applied" && (
               <>
                 {invoice?.status === "pending" && (
@@ -488,6 +488,7 @@ function ReviewDialog({
                     variant="outline"
                     onClick={() => markReviewedMutation.mutate({ invoiceId })}
                     disabled={markReviewedMutation.isPending}
+                    className="w-full sm:w-auto"
                   >
                     Mark Reviewed
                   </Button>
@@ -495,7 +496,7 @@ function ReviewDialog({
                 <Button
                   onClick={() => setConfirmApply(true)}
                   disabled={!canApply || applyMutation.isPending}
-                  className="bg-green-600 hover:bg-green-700 text-white"
+                  className="bg-green-600 hover:bg-green-700 text-white w-full sm:w-auto"
                 >
                   <PackageCheck size={16} className="mr-2" />
                   Apply to Inventory
@@ -655,9 +656,10 @@ export default function Invoices() {
       <UploadDialog
         open={uploadOpen}
         onClose={() => setUploadOpen(false)}
-        onSuccess={() => {
+        onSuccess={(invoiceId) => {
           setUploadOpen(false);
           utils.invoices.list.invalidate();
+          setReviewInvoiceId(invoiceId);
         }}
       />
 
