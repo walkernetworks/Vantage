@@ -99,7 +99,7 @@ export const items = mysqlTable(
     isAlcohol: boolean("isAlcohol").default(false).notNull(),
     alcoholCategory: varchar("alcoholCategory", { length: 16 }),
     isActive: boolean("isActive").default(true).notNull(),
-    itemNumber: varchar("itemNumber", { length: 64 }),
+    itemNumber: varchar("pfgProductNumber", { length: 64 }),
     brand: varchar("brand", { length: 128 }),
     // Pack size parsing: caseQty is extracted from packSize (e.g. "6/24oz" -> 6)
     // eachPrice = price / caseQty when UOM is Each
