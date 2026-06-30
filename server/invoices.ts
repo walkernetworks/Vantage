@@ -232,9 +232,41 @@ export async function saveInvoiceLines(
     };
   });
 
+  // Use raw SQL insert to bypass Drizzle ORM column mapping issues
+  const pool = getRawPool();
+  if (!pool) throw new Error('DB pool not available for insert');
+
   try {
-    await db.insert(invoiceLines).values(insertRows);
-    console.log(`[Invoice Insert] Successfully inserted ${insertRows.length} lines for invoice ${invoiceId}`);
+    // Insert in batches of 50 to avoid huge queries
+    const batchSize = 50;
+    let totalInserted = 0;
+    for (let i = 0; i < insertRows.length; i += batchSize) {
+      const batch = insertRows.slice(i, i + batchSize);
+      const placeholders = batch.map(() => '(NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+      const values: (string | number | null)[] = [];
+      for (const row of batch) {
+        values.push(
+          row.invoiceId,
+          row.itemId ?? null,
+          row.itemNumber ?? null,
+          row.description ?? null,
+          row.pack ?? null,
+          row.size ?? null,
+          row.orderedQty ?? null,
+          row.shippedQty ?? null,
+          row.unitPrice ?? null,
+          row.extension ?? null,
+          row.category ?? null,
+          row.matchStatus
+        );
+      }
+      await pool.promise().execute(
+        `INSERT INTO invoice_lines (id, invoiceId, itemId, itemNumber, description, pack, size, orderedQty, shippedQty, unitPrice, extension, category, matchStatus) VALUES ${placeholders}`,
+        values
+      );
+      totalInserted += batch.length;
+    }
+    console.log(`[Invoice Insert] Successfully inserted ${totalInserted} lines for invoice ${invoiceId}`);
   } catch (err: any) {
     console.error(`[Invoice Insert] FAILED for invoice ${invoiceId}:`, err?.message ?? err);
     console.error(`[Invoice Insert] MySQL code: ${err?.code}, errno: ${err?.errno}`);
