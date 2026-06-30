@@ -211,28 +211,36 @@ export async function saveInvoiceLines(
     }
   }
 
-  await db.insert(invoiceLines).values(
-    lines.map((line) => {
-      // Prefer exact item-number match, fall back to fuzzy description match
-      const exactId = line.itemNumber ? (itemNumberMap.get(line.itemNumber) ?? null) : null;
-      const fuzzyId = (!exactId && line.description) ? (fuzzyMap.get(line.description) ?? null) : null;
-      const matchedItemId = exactId ?? fuzzyId;
-      return {
-        invoiceId,
-        itemId: matchedItemId,
-        itemNumber: line.itemNumber,
-        description: line.description,
-        pack: line.pack,
-        size: line.size,
-        orderedQty: line.orderedQty !== null ? String(line.orderedQty) : null,
-        shippedQty: String(line.shippedQty),
-        unitPrice: line.unitPrice !== null ? String(line.unitPrice) : null,
-        extension: line.extension !== null ? String(line.extension) : null,
-        category: line.category ?? null,
-        matchStatus: matchedItemId ? ("matched" as const) : ("unmatched" as const),
-      };
-    })
-  );
+  const insertRows = lines.map((line) => {
+    // Prefer exact item-number match, fall back to fuzzy description match
+    const exactId = line.itemNumber ? (itemNumberMap.get(line.itemNumber) ?? null) : null;
+    const fuzzyId = (!exactId && line.description) ? (fuzzyMap.get(line.description) ?? null) : null;
+    const matchedItemId = exactId ?? fuzzyId;
+    return {
+      invoiceId,
+      itemId: matchedItemId,
+      itemNumber: line.itemNumber,
+      description: line.description,
+      pack: line.pack,
+      size: line.size,
+      orderedQty: line.orderedQty !== null ? String(line.orderedQty) : null,
+      shippedQty: String(line.shippedQty),
+      unitPrice: line.unitPrice !== null ? String(line.unitPrice) : null,
+      extension: line.extension !== null ? String(line.extension) : null,
+      category: line.category ?? null,
+      matchStatus: matchedItemId ? ("matched" as const) : ("unmatched" as const),
+    };
+  });
+
+  try {
+    await db.insert(invoiceLines).values(insertRows);
+    console.log(`[Invoice Insert] Successfully inserted ${insertRows.length} lines for invoice ${invoiceId}`);
+  } catch (err: any) {
+    console.error(`[Invoice Insert] FAILED for invoice ${invoiceId}:`, err?.message ?? err);
+    console.error(`[Invoice Insert] MySQL code: ${err?.code}, errno: ${err?.errno}`);
+    console.error(`[Invoice Insert] First row sample:`, JSON.stringify(insertRows[0]));
+    throw err;
+  }
 }
 
 export async function listInvoices() {
