@@ -11,9 +11,11 @@ export interface ParsedLine {
   description: string | null;
   pack: string | null;
   size: string | null;
+  orderedQty: number | null;
   shippedQty: number;
   unitPrice: number | null;
   extension: number | null;
+  category: string | null;
 }
 
 export interface ParsedInvoice {
@@ -222,9 +224,11 @@ export async function saveInvoiceLines(
         description: line.description,
         pack: line.pack,
         size: line.size,
+        orderedQty: line.orderedQty !== null ? String(line.orderedQty) : null,
         shippedQty: String(line.shippedQty),
         unitPrice: line.unitPrice !== null ? String(line.unitPrice) : null,
         extension: line.extension !== null ? String(line.extension) : null,
+        category: line.category ?? null,
         matchStatus: matchedItemId ? ("matched" as const) : ("unmatched" as const),
       };
     })

@@ -1,6 +1,13 @@
 /**
  * Invoice tRPC router — upload, parse, review, and apply invoices to inventory.
- * Images are passed directly to the AI as base64 data URLs — no S3 storage required.
+ *
+ * Parsing pipeline:
+ *   1. Each page image is sent individually to GPT-4o vision as a pure OCR task.
+ *   2. The model acts as a data-entry camera: it copies text from the image verbatim.
+ *   3. Every extracted row is validated server-side: item_number must match /^\d{6,7}$/.
+ *      Rows that fail validation are routed to the unmatched queue — never hallucinated.
+ *   4. Validated rows are matched against the catalog strictly by item_number via raw SQL.
+ *   5. Unmatched rows are saved with matchStatus="unmatched" for manual review.
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -18,50 +25,59 @@ import {
   deleteInvoice,
 } from "../invoices";
 
-// ─── AI Invoice Parser ────────────────────────────────────────────────────────
+// ─── Regex validator ──────────────────────────────────────────────────────────
+// PFG item numbers are strictly 6–7 consecutive digits. Nothing else is valid.
+const ITEM_NUMBER_RE = /^\d{6,7}$/;
 
-const PAGE_SYSTEM_PROMPT = `You are a precise OCR assistant for Performance Foodservice (PFG) paper delivery invoices.
-Your ONLY job is to read what is literally printed on the invoice page image. Never invent, guess, or paraphrase.
+// ─── OCR System Prompt ────────────────────────────────────────────────────────
+// This prompt instructs GPT-4o to act as a pure data-entry camera.
+// It must copy text exactly as printed — no interpretation, no paraphrasing.
+const PAGE_SYSTEM_PROMPT = `You are a data-entry camera. Your ONLY job is to copy text from a Performance Foodservice (PFG) paper invoice image exactly as it is printed. You do NOT interpret, summarize, or infer anything.
 
-EXACT COLUMN ORDER on a PFG invoice (left to right):
-  Item Number | Ordered | Shipped | Pack | Size | Unit | Description | Price | Extension | ST
+COLUMN LAYOUT (left to right on every product row):
+  Col 1: Item Number   — a 6 or 7 digit integer (e.g. 867175, 1013308)
+  Col 2: Ordered       — integer quantity ordered
+  Col 3: Shipped       — integer quantity actually delivered (can be 0)
+  Col 4: Pack          — pack count (e.g. 1, 4, 10, 20, 80, 100)
+  Col 5: Size          — unit size string (e.g. "5 LB", "50 CT", "32 OZ", "100 CT")
+  Col 6: Unit          — usually blank or a unit code, often empty
+  Col 7: Description   — product name text, ALL CAPS, copy verbatim
+  Col 8: Price         — unit price decimal (e.g. 16.4100)
+  Col 9: Extension     — line total decimal (e.g. 16.41)
+  Col 10: ST           — tax flag, ignore
 
-Item Number is FIRST. Then Ordered qty, then Shipped qty, then Pack, then Size, then Description.
+ROWS TO EXTRACT: Only rows where Col 1 contains a 6 or 7 digit number.
+ROWS TO SKIP: Category header rows (e.g. "BEIGNETS & FOOD-DAIRY", "CHEMICALS-PAPER"), subtotal rows, blank rows, the column header row, and any row where Col 1 is not a 6-7 digit number.
 
-EXAMPLE ROWS (from a real PFG invoice):
-  867175  | 1 | 1 | 1  | 5 LB   | | PEAK FRS LEMON FRSH                 | 16.4100 | 16.41
-  158889  | 1 | 1 | 1  | 5 LB   | | WEST CRK CHEESE AMER YLW SLCD 160   | 16.4100 | 16.41
-  534152  | 6 | 6 | 4  | 50 CT  | | ROYAL BOX TAKE OUT FOLDED #3 KR     | 40.7500 | 244.50
-  972236  | 2 | 0 | 1  | 200 CT | | BEI BREW@BOX BEIGNET 1/2 DOZ 12X8  | 114.280 | 0.00
-  1013308 | 2 | 2 | 20 | 50 CT  | | BEI BREW@CUP 20 OZ PET CLR          | 120.110 | 240.22
+CRITICAL RULES:
+- Copy Col 7 (Description) EXACTLY as printed — do not expand abbreviations, do not add words.
+- Col 3 (Shipped) is the quantity that was delivered. It is a whole number and can be 0.
+- If you cannot clearly read a value, output null for that field. NEVER guess or invent a value.
+- Item numbers are ALWAYS in Col 1. They are 6 or 7 digits. If a number has letters or is not 6-7 digits, it is NOT an item number — skip that row.
+- The invoice header (top section) contains: invoice number, invoice date, and total amount. Extract these if visible.
 
-CATEGORY HEADER ROWS look like: "NA BEVERAGES-PRODUCE", "BEIGNETS & FOOD-DAIRY", "CHEMICALS-PAPER"
-  These rows span the full width with NO item number — SKIP them.
-
-RULES:
-1. Extract EVERY row that has a 6-7 digit numeric item number in the first column.
-2. SKIP category header rows and totals/subtotal rows.
-3. shippedQty = 3rd column ("Shipped") — whole number, can be 0.
-4. orderedQty = 2nd column ("Ordered").
-5. pack = 4th column (e.g. 1, 4, 10, 20, 80, 100).
-6. size = 5th column (e.g. "5 LB", "50 CT", "32 OZ").
-7. description = 7th column — copy EXACTLY as printed.
-8. unitPrice = 8th column. extension = 9th column.
-9. If you cannot clearly read a value, use null. NEVER invent or guess.
-10. invoiceNumber, invoiceDate, totalAmount: read from the invoice header if visible, else null.
-
-Respond with ONLY a raw JSON object in this exact shape (no markdown, no explanation):
+OUTPUT FORMAT — respond with ONLY a raw JSON object, no markdown fences, no explanation:
 {
-  "invoiceNumber": "...",
-  "invoiceDate": "...",
+  "invoiceNumber": "8068106",
+  "invoiceDate": "6/23/26",
   "totalAmount": null,
   "lines": [
-    {"itemNumber":"867175","description":"PEAK FRS LEMON FRSH","pack":"1","size":"5 LB","orderedQty":1,"shippedQty":1,"unitPrice":16.41,"extension":16.41,"category":null}
+    {
+      "itemNumber": "867175",
+      "description": "PEAK FRS LEMON FRSH",
+      "pack": "1",
+      "size": "5 LB",
+      "orderedQty": 1,
+      "shippedQty": 1,
+      "unitPrice": 16.41,
+      "extension": 16.41,
+      "category": null
+    }
   ]
 }`;
 
-/** Parse a single invoice page image and return extracted lines. */
-async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<{
+// ─── Type for a single parsed page result ─────────────────────────────────────
+interface PageResult {
   invoiceNumber: string | null;
   invoiceDate: string | null;
   totalAmount: number | null;
@@ -76,87 +92,134 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<{
     extension: number | null;
     category: string | null;
   }>;
-}> {
-  const response = await invokeLLM({
-    messages: [
-      { role: "system", content: PAGE_SYSTEM_PROMPT },
-      {
-        role: "user",
-        content: [
-          { type: "text" as const, text: `Extract all product line items from this PFG invoice page (page ${pageIndex + 1}). Only rows with a 6-7 digit item number. Skip category headers and totals.` },
-          { type: "image_url" as const, image_url: { url: dataUrl, detail: "high" as const } },
-        ] as MessageContent[],
-      },
-    ],
-    response_format: { type: "json_object" },
-  });
-
-  console.log(`[Invoice AI] page ${pageIndex + 1} model: ${(response as any).model ?? "unknown"}, tokens: ${response.usage?.total_tokens ?? 0}`);
-  const rawContent = response.choices?.[0]?.message?.content;
-  if (!rawContent) {
-    console.error(`[Invoice AI] page ${pageIndex + 1}: no content in response`);
-    return { invoiceNumber: null, invoiceDate: null, totalAmount: null, lines: [] };
-  }
-  const content = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
-  console.log(`[Invoice AI] page ${pageIndex + 1} raw (first 400): ${content.substring(0, 400)}`);
-
-  try {
-    // Strip markdown fences if model adds them despite instructions
-    const cleaned = content.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
-    const parsed = JSON.parse(cleaned);
-    const lines = Array.isArray(parsed.lines) ? parsed.lines : [];
-    console.log(`[Invoice AI] page ${pageIndex + 1}: ${lines.length} lines extracted`);
-    return {
-      invoiceNumber: parsed.invoiceNumber ?? null,
-      invoiceDate: parsed.invoiceDate ?? null,
-      totalAmount: typeof parsed.totalAmount === "number" ? parsed.totalAmount : null,
-      lines,
-    };
-  } catch (e) {
-    console.error(`[Invoice AI] page ${pageIndex + 1} JSON parse failed:`, content.substring(0, 500));
-    return { invoiceNumber: null, invoiceDate: null, totalAmount: null, lines: [] };
-  }
 }
 
-/** Parse all invoice pages sequentially and merge results. */
-async function parseInvoiceImages(imageDataUrls: string[]): Promise<{
-  invoiceNumber: string | null;
-  invoiceDate: string | null;
-  totalAmount: number | null;
-  lines: Array<{
-    itemNumber: string | null;
-    description: string | null;
-    pack: string | null;
-    size: string | null;
-    orderedQty: number | null;
-    shippedQty: number | null;
-    unitPrice: number | null;
-    extension: number | null;
-    category: string | null;
-  }>;
-}> {
+/**
+ * Parse a single invoice page image.
+ * After parsing, each line's itemNumber is validated against /^\d{6,7}$/.
+ * Lines that fail validation have their itemNumber set to null so they land
+ * in the unmatched queue — they are never silently dropped.
+ */
+async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<PageResult> {
+  const empty: PageResult = { invoiceNumber: null, invoiceDate: null, totalAmount: null, lines: [] };
+
+  let response;
+  try {
+    response = await invokeLLM({
+      messages: [
+        { role: "system", content: PAGE_SYSTEM_PROMPT },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text" as const,
+              text: `Copy every product row from this invoice page (page ${pageIndex + 1}). Extract only rows with a 6 or 7 digit item number in the first column. Copy all values verbatim.`,
+            },
+            {
+              type: "image_url" as const,
+              image_url: { url: dataUrl, detail: "high" as const },
+            },
+          ] as MessageContent[],
+        },
+      ],
+      response_format: { type: "json_object" },
+    });
+  } catch (err) {
+    console.error(`[Invoice OCR] page ${pageIndex + 1} LLM call failed:`, err);
+    return empty;
+  }
+
+  const model = (response as any).model ?? "unknown";
+  const tokens = response.usage?.total_tokens ?? 0;
+  console.log(`[Invoice OCR] page ${pageIndex + 1} — model: ${model}, tokens: ${tokens}`);
+
+  const rawContent = response.choices?.[0]?.message?.content;
+  if (!rawContent) {
+    console.error(`[Invoice OCR] page ${pageIndex + 1}: empty response`);
+    return empty;
+  }
+
+  const content = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
+  // Log first 600 chars so Render logs show what the model actually returned
+  console.log(`[Invoice OCR] page ${pageIndex + 1} raw (600): ${content.substring(0, 600)}`);
+
+  let parsed: any;
+  try {
+    const cleaned = content
+      .replace(/^```json\s*/i, "")
+      .replace(/^```\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
+    parsed = JSON.parse(cleaned);
+  } catch {
+    console.error(`[Invoice OCR] page ${pageIndex + 1} JSON parse failed. Raw: ${content.substring(0, 300)}`);
+    return empty;
+  }
+
+  const rawLines: any[] = Array.isArray(parsed.lines) ? parsed.lines : [];
+
+  // ── Regex validation: filter out hallucinated item numbers ─────────────────
+  let validCount = 0;
+  let invalidCount = 0;
+  const validatedLines = rawLines.map((line) => {
+    const num = line.itemNumber != null ? String(line.itemNumber).trim() : null;
+    const isValid = num !== null && ITEM_NUMBER_RE.test(num);
+    if (num !== null) {
+      if (isValid) validCount++;
+      else {
+        invalidCount++;
+        console.warn(`[Invoice OCR] page ${pageIndex + 1} REJECTED item number "${num}" (failed /^\\d{6,7}$/) — routing to unmatched`);
+      }
+    }
+    return {
+      itemNumber: isValid ? num : null,
+      description: typeof line.description === "string" ? line.description.trim() : null,
+      pack: line.pack != null ? String(line.pack).trim() : null,
+      size: typeof line.size === "string" ? line.size.trim() : null,
+      orderedQty: typeof line.orderedQty === "number" ? line.orderedQty : null,
+      shippedQty: typeof line.shippedQty === "number" ? line.shippedQty : null,
+      unitPrice: typeof line.unitPrice === "number" ? line.unitPrice : null,
+      extension: typeof line.extension === "number" ? line.extension : null,
+      category: typeof line.category === "string" ? line.category : null,
+    };
+  });
+
+  console.log(`[Invoice OCR] page ${pageIndex + 1}: ${rawLines.length} rows extracted, ${validCount} valid item numbers, ${invalidCount} rejected`);
+
+  return {
+    invoiceNumber: typeof parsed.invoiceNumber === "string" ? parsed.invoiceNumber.trim() : null,
+    invoiceDate: typeof parsed.invoiceDate === "string" ? parsed.invoiceDate.trim() : null,
+    totalAmount: typeof parsed.totalAmount === "number" ? parsed.totalAmount : null,
+    lines: validatedLines,
+  };
+}
+
+/** Parse all invoice pages in parallel and merge results. */
+async function parseInvoiceImages(imageDataUrls: string[]): Promise<PageResult> {
   const results = await Promise.all(imageDataUrls.map((url, i) => parseSinglePage(url, i)));
 
-  // Merge: use header fields from first page that has them; combine all lines
-  const merged = {
+  const merged: PageResult = {
     invoiceNumber: results.find((r) => r.invoiceNumber)?.invoiceNumber ?? null,
     invoiceDate: results.find((r) => r.invoiceDate)?.invoiceDate ?? null,
     totalAmount: results.find((r) => r.totalAmount !== null)?.totalAmount ?? null,
     lines: results.flatMap((r) => r.lines),
   };
-  console.log(`[Invoice AI] merged total lines: ${merged.lines.length} from ${imageDataUrls.length} pages`);
+
+  const validLines = merged.lines.filter((l) => l.itemNumber !== null).length;
+  const unmatchedLines = merged.lines.filter((l) => l.itemNumber === null).length;
+  console.log(`[Invoice OCR] merged: ${merged.lines.length} total rows from ${imageDataUrls.length} pages (${validLines} with valid item#, ${unmatchedLines} without)`);
+
   return merged;
 }
 
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 export const invoicesRouter = router({
-  // Upload invoice images and parse with AI in one step (no S3 storage)
+  // Upload invoice images and parse with OCR pipeline in one step (no S3 storage)
   uploadAndParse: protectedProcedure
     .input(
       z.object({
         vendor: z.string().default("PFG"),
-        // Array of base64-encoded images (one per page)
         images: z
           .array(
             z.object({
@@ -171,30 +234,34 @@ export const invoicesRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      // Create invoice record first (no image storage — just metadata)
       const invoice = await createInvoice({
         vendor: input.vendor,
-        imageKeys: [], // No S3 keys — images are passed directly to AI
+        imageKeys: [],
         createdBy: ctx.user.id,
         notes: input.notes,
       });
 
-      // Build base64 data URLs to pass directly to the AI
       const imageDataUrls = input.images.map(
         (img) => `data:${img.mimeType};base64,${img.base64}`
       );
 
-      // Call AI to extract invoice data from the images
-      console.log(`[Invoice] Starting AI parse for invoice ${invoice.id}, ${imageDataUrls.length} image(s)`);
-      console.log(`[Invoice] API URL: ${process.env.BUILT_IN_FORGE_API_URL || 'not set (using OpenAI)'}, Key set: ${!!(process.env.BUILT_IN_FORGE_API_KEY || process.env.OPENAI_API_KEY)}`);
+      console.log(`[Invoice] Starting OCR parse for invoice ${invoice.id}, ${imageDataUrls.length} page(s), vendor: ${input.vendor}`);
       const parsed = await parseInvoiceImages(imageDataUrls);
-      console.log(`[Invoice] AI returned ${parsed.lines?.length ?? 0} lines`);
+      console.log(`[Invoice] OCR complete: ${parsed.lines.length} lines total`);
 
-      // Save parsed lines to DB with item matching (normalize nulls)
+      // Normalize: shippedQty null → 0, pass orderedQty and category through
       const normalizedLines = parsed.lines.map((l) => ({
-        ...l,
+        itemNumber: l.itemNumber,
+        description: l.description,
+        pack: l.pack,
+        size: l.size,
+        orderedQty: l.orderedQty,
         shippedQty: l.shippedQty ?? 0,
+        unitPrice: l.unitPrice,
+        extension: l.extension,
+        category: l.category,
       }));
+
       await saveInvoiceLines(invoice.id, normalizedLines, {
         invoiceNumber: parsed.invoiceNumber ?? undefined,
         invoiceDate: parsed.invoiceDate ?? undefined,
@@ -210,12 +277,8 @@ export const invoicesRouter = router({
       };
     }),
 
-  // List all invoices
-  list: protectedProcedure.query(async () => {
-    return listInvoices();
-  }),
+  list: protectedProcedure.query(async () => listInvoices()),
 
-  // Get invoice with all parsed lines
   getWithLines: protectedProcedure
     .input(z.object({ invoiceId: z.number() }))
     .query(async ({ input }) => {
@@ -224,7 +287,6 @@ export const invoicesRouter = router({
       return result;
     }),
 
-  // Update a line (manual match correction or quantity fix)
   updateLine: protectedProcedure
     .input(
       z.object({
@@ -243,7 +305,6 @@ export const invoicesRouter = router({
       return { success: true };
     }),
 
-  // Mark invoice as reviewed (user confirmed all matches)
   markReviewed: protectedProcedure
     .input(z.object({ invoiceId: z.number() }))
     .mutation(async ({ input }) => {
@@ -251,7 +312,6 @@ export const invoicesRouter = router({
       return { success: true };
     }),
 
-  // Apply invoice to inventory (add shipped quantities)
   applyDelivery: protectedProcedure
     .input(z.object({ invoiceId: z.number() }))
     .mutation(async ({ input }) => {
@@ -259,7 +319,6 @@ export const invoicesRouter = router({
       return { applied, count: applied.length };
     }),
 
-  // Delete invoice and all its lines
   delete: protectedProcedure
     .input(z.object({ invoiceId: z.number() }))
     .mutation(async ({ input }) => {

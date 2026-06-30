@@ -276,9 +276,11 @@ export const invoiceLines = mysqlTable(
     description: varchar("description", { length: 255 }),
     pack: varchar("pack", { length: 64 }),
     size: varchar("size", { length: 64 }),
+    orderedQty: decimal("orderedQty", { precision: 10, scale: 4 }),
     shippedQty: decimal("shippedQty", { precision: 10, scale: 4 }).notNull().default("0"),
     unitPrice: decimal("unitPrice", { precision: 10, scale: 4 }),
     extension: decimal("extension", { precision: 10, scale: 2 }),
+    category: varchar("category", { length: 64 }),
     matchStatus: mysqlEnum("matchStatus", ["matched", "unmatched", "skipped"])
       .notNull()
       .default("unmatched"),
