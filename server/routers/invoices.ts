@@ -127,6 +127,7 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
         },
       ],
       response_format: { type: "json_object" },
+      max_tokens: 4096,
     });
   } catch (err) {
     console.error(`[Invoice OCR] page ${pageIndex + 1} LLM call failed:`, err);
@@ -144,8 +145,8 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
   }
 
   const content = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
-  // Log first 600 chars so Render logs show what the model actually returned
-  console.log(`[Invoice OCR] page ${pageIndex + 1} raw (600): ${content.substring(0, 600)}`);
+  // Log length only — do not slice the content so the full payload reaches JSON.parse
+  console.log(`[Invoice OCR] page ${pageIndex + 1} raw length: ${content.length} chars`);
 
   let parsed: any;
   try {
