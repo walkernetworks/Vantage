@@ -50,6 +50,7 @@ ROWS TO EXTRACT: Only rows where Col 1 contains a 6 or 7 digit number.
 ROWS TO SKIP: Category header rows (e.g. "BEIGNETS & FOOD-DAIRY", "CHEMICALS-PAPER"), subtotal rows, blank rows, the column header row, and any row where Col 1 is not a 6-7 digit number.
 
 CRITICAL RULES:
+- You are a strict data transcriber. You must read every single line item visible on the page from top to bottom. Extract the exact item number and literal description string. Do not skip rows or truncate the output under any circumstances.
 - You are performing MECHANICAL, LITERAL data transcription. Do not summarize, paraphrase, or use industry abbreviations.
 - Copy Col 7 (Description) EXACTLY as printed — every character, every abbreviation, verbatim (e.g. 'ALMNDBRZ MILK ALMOND BARISTA UNSWT').
 - Look at the numbers in Col 1. If you see '593174', transcribe exactly '593174'. If you see '867175', transcribe exactly '867175'. Do not alter digits.
@@ -197,22 +198,44 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
   };
 }
 
-/** Parse all invoice pages in parallel and merge results. */
+/**
+ * Parse all invoice pages SEQUENTIALLY (one at a time) and aggregate results.
+ * Sequential processing prevents token-limit truncation that occurs when
+ * multiple large images are processed simultaneously.
+ */
 async function parseInvoiceImages(imageDataUrls: string[]): Promise<PageResult> {
-  const results = await Promise.all(imageDataUrls.map((url, i) => parseSinglePage(url, i)));
-
-  const merged: PageResult = {
-    invoiceNumber: results.find((r) => r.invoiceNumber)?.invoiceNumber ?? null,
-    invoiceDate: results.find((r) => r.invoiceDate)?.invoiceDate ?? null,
-    totalAmount: results.find((r) => r.totalAmount !== null)?.totalAmount ?? null,
-    lines: results.flatMap((r) => r.lines),
+  const master: PageResult = {
+    invoiceNumber: null,
+    invoiceDate: null,
+    totalAmount: null,
+    lines: [],
   };
 
-  const validLines = merged.lines.filter((l) => l.itemNumber !== null).length;
-  const unmatchedLines = merged.lines.filter((l) => l.itemNumber === null).length;
-  console.log(`[Invoice OCR] merged: ${merged.lines.length} total rows from ${imageDataUrls.length} pages (${validLines} with valid item#, ${unmatchedLines} without)`);
+  for (let i = 0; i < imageDataUrls.length; i++) {
+    console.log(`[Invoice OCR] processing page ${i + 1} of ${imageDataUrls.length} sequentially...`);
+    const pageResult = await parseSinglePage(imageDataUrls[i], i);
 
-  return merged;
+    // Use header info from the first page that has it
+    if (!master.invoiceNumber && pageResult.invoiceNumber) {
+      master.invoiceNumber = pageResult.invoiceNumber;
+    }
+    if (!master.invoiceDate && pageResult.invoiceDate) {
+      master.invoiceDate = pageResult.invoiceDate;
+    }
+    if (master.totalAmount === null && pageResult.totalAmount !== null) {
+      master.totalAmount = pageResult.totalAmount;
+    }
+
+    // Push every line from this page into the master array
+    master.lines.push(...pageResult.lines);
+    console.log(`[Invoice OCR] page ${i + 1} complete: ${pageResult.lines.length} lines extracted, master total: ${master.lines.length}`);
+  }
+
+  const validLines = master.lines.filter((l) => l.itemNumber !== null).length;
+  const unmatchedLines = master.lines.filter((l) => l.itemNumber === null).length;
+  console.log(`[Invoice OCR] all pages done: ${master.lines.length} total rows from ${imageDataUrls.length} pages (${validLines} with valid item#, ${unmatchedLines} without)`);
+
+  return master;
 }
 
 // ─── Router ───────────────────────────────────────────────────────────────────
