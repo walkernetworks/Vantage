@@ -177,36 +177,57 @@ export async function saveInvoiceLines(
     }
   }
 
-  // ── Pass 2: description fuzzy match for lines that didn't match by number ─
-  // Load all catalog items (name + id) for fuzzy comparison
+  // ── Pass 2: SQL LIKE keyword search for lines that didn't match by item number ─
+  // For each unmatched line, extract significant words from the description and
+  // run LIKE %word% queries against items.name — the item with the most keyword
+  // hits wins. This handles abbreviated invoice descriptions like "LEMON FRSH"
+  // matching catalog entries like "Peak FRS Lemon Fresh".
   const linesNeedingFuzzy = lines.filter((l) => !l.itemNumber || !itemNumberMap.has(l.itemNumber));
-  let fuzzyMap = new Map<string, number>(); // normalized invoice description → catalog item id
+  let fuzzyMap = new Map<string, number>(); // invoice description → catalog item id
 
   if (linesNeedingFuzzy.length > 0) {
-    const allCatalogItems = await db
-      .select({ id: items.id, name: items.name })
-      .from(items);
+    const pool2 = getRawPool();
+    if (pool2) {
+      // Load all catalog items once for scoring
+      const [catalogRows] = await pool2.promise().execute(
+        'SELECT id, name, itemNumber FROM items WHERE name IS NOT NULL'
+      ) as [Array<{ id: number; name: string; itemNumber: string | null }>, any];
 
-    const catalogNormalized = allCatalogItems.map((ci) => ({
-      id: ci.id,
-      norm: normalizeDesc(ci.name ?? ""),
-    }));
+      for (const line of linesNeedingFuzzy) {
+        if (!line.description) continue;
 
-    for (const line of linesNeedingFuzzy) {
-      if (!line.description) continue;
-      const invoiceNorm = normalizeDesc(line.description);
-      let bestScore = 0;
-      let bestId: number | null = null;
-      for (const ci of catalogNormalized) {
-        const score = descSimilarity(invoiceNorm, ci.norm);
-        if (score > bestScore) {
-          bestScore = score;
-          bestId = ci.id;
+        // Extract meaningful keywords (>= 3 chars, skip common noise words)
+        const STOP_WORDS = new Set(['the', 'and', 'for', 'with', 'from', 'per', 'pkg', 'pck', 'cnt', 'qty', 'lbs', 'doz', 'cts']);
+        const keywords = normalizeDesc(line.description)
+          .split(' ')
+          .filter((w) => w.length >= 3 && !STOP_WORDS.has(w));
+
+        if (keywords.length === 0) continue;
+
+        // Score each catalog item by how many keywords appear in its name
+        let bestScore = 0;
+        let bestId: number | null = null;
+
+        for (const cat of catalogRows) {
+          const catNorm = normalizeDesc(cat.name);
+          let hits = 0;
+          for (const kw of keywords) {
+            if (catNorm.includes(kw)) hits++;
+          }
+          // Require at least 2 keyword hits OR 1 hit when description is short
+          const minHits = keywords.length <= 2 ? 1 : 2;
+          if (hits >= minHits && hits > bestScore) {
+            bestScore = hits;
+            bestId = cat.id;
+          }
         }
-      }
-      // Only accept fuzzy match if similarity is high enough (>= 0.35)
-      if (bestScore >= 0.35 && bestId !== null) {
-        fuzzyMap.set(line.description, bestId);
+
+        if (bestId !== null) {
+          fuzzyMap.set(line.description, bestId);
+          console.log(`[Invoice Fuzzy] "${line.description}" → item ${bestId} (${bestScore}/${keywords.length} keyword hits)`);
+        } else {
+          console.log(`[Invoice Fuzzy] "${line.description}" → no match (keywords: ${keywords.join(', ')})`);
+        }
       }
     }
   }
