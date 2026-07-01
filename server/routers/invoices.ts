@@ -30,9 +30,9 @@ import {
 const ITEM_NUMBER_RE = /^\d{6,7}$/;
 
 // ─── OCR System Prompt ────────────────────────────────────────────────────────
-// This prompt instructs GPT-4o to act as a pure data-entry camera.
-// It must copy text exactly as printed — no interpretation, no paraphrasing.
-const PAGE_SYSTEM_PROMPT = `You are a data-entry camera. Your ONLY job is to copy text from a Performance Foodservice (PFG) paper invoice image exactly as it is printed. You do NOT interpret, summarize, or infer anything.
+const PAGE_SYSTEM_PROMPT = `You are a precise data entry automation engine. Your job is to extract EVERY SINGLE row on the invoice page that contains a valid product entry.
+
+A row is a valid product entry if it begins with a 6-digit or 7-digit numeric code on the far left column (the item number). You must iterate through the page line-by-line from the absolute top to the absolute bottom. Never skip a row that has a product number, even if it falls under a bolded category header. Extract the itemNumber, description, pack, size, shippedQty, unitPrice, and extension for every single individual row. Do not summarize or aggregate multiple rows into one.
 
 COLUMN LAYOUT (left to right on every product row):
   Col 1: Item Number   — a 6 or 7 digit integer (e.g. 867175, 1013308)
@@ -46,19 +46,14 @@ COLUMN LAYOUT (left to right on every product row):
   Col 9: Extension     — line total decimal (e.g. 16.41)
   Col 10: ST           — tax flag, ignore
 
-ROWS TO EXTRACT: Only rows where Col 1 contains a 6 or 7 digit number.
-ROWS TO SKIP: Category header rows (e.g. "BEIGNETS & FOOD-DAIRY", "CHEMICALS-PAPER"), subtotal rows, blank rows, the column header row, and any row where Col 1 is not a 6-7 digit number.
-
 CRITICAL RULES:
-- You are a strict data transcriber. You must read every single line item visible on the page from top to bottom. Extract the exact item number and literal description string. Do not skip rows or truncate the output under any circumstances.
-- You are performing MECHANICAL, LITERAL data transcription. Do not summarize, paraphrase, or use industry abbreviations.
-- Copy Col 7 (Description) EXACTLY as printed — every character, every abbreviation, verbatim (e.g. 'ALMNDBRZ MILK ALMOND BARISTA UNSWT').
-- Look at the numbers in Col 1. If you see '593174', transcribe exactly '593174'. If you see '867175', transcribe exactly '867175'. Do not alter digits.
-- Col 3 (Shipped) is the quantity that was delivered. It is a whole number and can be 0.
-- If a column is unreadable or unclear, set it to null. NEVER make up filler names or digits under any circumstance.
-- Item numbers are ALWAYS in Col 1. They are 6 or 7 digits. If a number has letters or is not 6-7 digits, it is NOT an item number — skip that row.
-- The invoice header (top section) contains: invoice number, invoice date, and total amount. Extract these if visible.
-- itemNumber and pack are OPTIONAL — return null if you cannot read them clearly. description and shippedQty are REQUIRED.
+- Iterate line-by-line from top to bottom. Do not skip any row that has a 6 or 7 digit number in Col 1.
+- Copy Col 7 (Description) EXACTLY as printed — verbatim, every character (e.g. 'ALMNDBRZ MILK ALMOND BARISTA UNSWT').
+- Copy Col 1 (Item Number) EXACTLY as printed — do not alter, guess, or invent digits.
+- Col 3 (Shipped) is the quantity delivered. It is a whole number.
+- If a value is unreadable, set it to null. NEVER invent or hallucinate values.
+- itemNumber and pack are OPTIONAL — return null if unreadable. description and shippedQty are REQUIRED.
+- The invoice header contains invoiceNumber, invoiceDate, and totalAmount — extract if visible.
 
 OUTPUT FORMAT — respond with ONLY a raw JSON object, no markdown fences, no explanation:
 {
