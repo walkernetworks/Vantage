@@ -50,11 +50,14 @@ ROWS TO EXTRACT: Only rows where Col 1 contains a 6 or 7 digit number.
 ROWS TO SKIP: Category header rows (e.g. "BEIGNETS & FOOD-DAIRY", "CHEMICALS-PAPER"), subtotal rows, blank rows, the column header row, and any row where Col 1 is not a 6-7 digit number.
 
 CRITICAL RULES:
-- Copy Col 7 (Description) EXACTLY as printed — do not expand abbreviations, do not add words.
+- You are performing MECHANICAL, LITERAL data transcription. Do not summarize, paraphrase, or use industry abbreviations.
+- Copy Col 7 (Description) EXACTLY as printed — every character, every abbreviation, verbatim (e.g. 'ALMNDBRZ MILK ALMOND BARISTA UNSWT').
+- Look at the numbers in Col 1. If you see '593174', transcribe exactly '593174'. If you see '867175', transcribe exactly '867175'. Do not alter digits.
 - Col 3 (Shipped) is the quantity that was delivered. It is a whole number and can be 0.
-- If you cannot clearly read a value, output null for that field. NEVER guess or invent a value.
+- If a column is unreadable or unclear, set it to null. NEVER make up filler names or digits under any circumstance.
 - Item numbers are ALWAYS in Col 1. They are 6 or 7 digits. If a number has letters or is not 6-7 digits, it is NOT an item number — skip that row.
 - The invoice header (top section) contains: invoice number, invoice date, and total amount. Extract these if visible.
+- itemNumber and pack are OPTIONAL — return null if you cannot read them clearly. description and shippedQty are REQUIRED.
 
 OUTPUT FORMAT — respond with ONLY a raw JSON object, no markdown fences, no explanation:
 {
@@ -113,7 +116,7 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
           content: [
             {
               type: "text" as const,
-              text: `Copy every product row from this invoice page (page ${pageIndex + 1}). Extract only rows with a 6 or 7 digit item number in the first column. Copy all values verbatim.`,
+              text: `You are performing mechanical, literal data transcription of invoice page ${pageIndex + 1}. Do not summarize or use industry abbreviations. Look at the numbers on the far left column — if you see '593174', transcribe exactly '593174'. Look at the text column — transcribe exactly what is printed (e.g., 'ALMNDBRZ MILK ALMOND BARISTA UNSWT'). If a column is unreadable, set it to null. Never make up filler names or digits under any circumstance. Extract every row that has a 6 or 7 digit number in the first column.`,
             },
             {
               type: "image_url" as const,
