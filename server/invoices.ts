@@ -126,17 +126,27 @@ function normalizeDesc(s: string): string {
     .trim();
 }
 
+// Noise words that appear in many items and would cause false positives if used alone
+const DESC_STOP_WORDS = new Set([
+  'the', 'and', 'for', 'with', 'from', 'per', 'pkg', 'pck', 'cnt', 'qty',
+  'lbs', 'doz', 'cts', 'mix', 'dry', 'frd', 'frz', 'fzn', 'iqf', 'rte',
+  'nat', 'org', 'gf', 'whl', 'slcd', 'dcd', 'chpd', 'grnd', 'rst',
+]);
+
 /**
- * Score how well two normalized description strings match.
- * Returns a value 0–1 based on word overlap (Jaccard similarity).
+ * Extract the single best keyword from an invoice description for LIKE matching.
+ * Returns the longest word that is not a stop word and is >= 4 chars.
+ * Returns null if no suitable keyword found.
  */
-function descSimilarity(a: string, b: string): number {
-  const setA = new Set(a.split(" ").filter((w) => w.length > 2));
-  const setB = new Set(b.split(" ").filter((w) => w.length > 2));
-  if (setA.size === 0 || setB.size === 0) return 0;
-  let intersection = 0;
-  Array.from(setA).forEach((w) => { if (setB.has(w)) intersection++; });
-  return intersection / (setA.size + setB.size - intersection);
+function extractBestKeyword(description: string): string | null {
+  const words = description
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length >= 4 && !DESC_STOP_WORDS.has(w));
+  if (words.length === 0) return null;
+  // Return the longest word — longer = more specific = less ambiguous
+  return words.reduce((a, b) => (a.length >= b.length ? a : b));
 }
 
 export async function saveInvoiceLines(
@@ -177,56 +187,41 @@ export async function saveInvoiceLines(
     }
   }
 
-  // ── Pass 2: SQL LIKE keyword search for lines that didn't match by item number ─
-  // For each unmatched line, extract significant words from the description and
-  // run LIKE %word% queries against items.name — the item with the most keyword
-  // hits wins. This handles abbreviated invoice descriptions like "LEMON FRSH"
-  // matching catalog entries like "Peak FRS Lemon Fresh".
+  // ── Pass 2: Strict single-keyword LIKE query ─
+  // Extract the single most specific word from the invoice description and run
+  // SELECT id FROM items WHERE name LIKE '%keyword%'.
+  // If exactly ONE catalog item matches → use it.
+  // If zero OR more than one match → mark as unmatched (fail safe).
+  // False negatives (unmatched) are acceptable; false positives (wrong match) corrupt inventory.
   const linesNeedingFuzzy = lines.filter((l) => !l.itemNumber || !itemNumberMap.has(l.itemNumber));
-  let fuzzyMap = new Map<string, number>(); // invoice description → catalog item id
+  const fuzzyMap = new Map<string, number>(); // invoice description → catalog item id
 
   if (linesNeedingFuzzy.length > 0) {
     const pool2 = getRawPool();
     if (pool2) {
-      // Load all catalog items once for scoring
-      const [catalogRows] = await pool2.promise().execute(
-        'SELECT id, name, itemNumber FROM items WHERE name IS NOT NULL'
-      ) as [Array<{ id: number; name: string; itemNumber: string | null }>, any];
-
       for (const line of linesNeedingFuzzy) {
         if (!line.description) continue;
 
-        // Extract meaningful keywords (>= 3 chars, skip common noise words)
-        const STOP_WORDS = new Set(['the', 'and', 'for', 'with', 'from', 'per', 'pkg', 'pck', 'cnt', 'qty', 'lbs', 'doz', 'cts']);
-        const keywords = normalizeDesc(line.description)
-          .split(' ')
-          .filter((w) => w.length >= 3 && !STOP_WORDS.has(w));
-
-        if (keywords.length === 0) continue;
-
-        // Score each catalog item by how many keywords appear in its name
-        let bestScore = 0;
-        let bestId: number | null = null;
-
-        for (const cat of catalogRows) {
-          const catNorm = normalizeDesc(cat.name);
-          let hits = 0;
-          for (const kw of keywords) {
-            if (catNorm.includes(kw)) hits++;
-          }
-          // Require at least 2 keyword hits OR 1 hit when description is short
-          const minHits = keywords.length <= 2 ? 1 : 2;
-          if (hits >= minHits && hits > bestScore) {
-            bestScore = hits;
-            bestId = cat.id;
-          }
+        const keyword = extractBestKeyword(line.description);
+        if (!keyword) {
+          console.log(`[Invoice Fuzzy] "${line.description}" → unmatched (no usable keyword)`);
+          continue;
         }
 
-        if (bestId !== null) {
-          fuzzyMap.set(line.description, bestId);
-          console.log(`[Invoice Fuzzy] "${line.description}" → item ${bestId} (${bestScore}/${keywords.length} keyword hits)`);
+        const [matchRows] = await pool2.promise().execute(
+          'SELECT id FROM items WHERE LOWER(name) LIKE ?',
+          [`%${keyword}%`]
+        ) as [Array<{ id: number }>, any];
+
+        if (matchRows.length === 1) {
+          // Exactly one match — safe to use
+          fuzzyMap.set(line.description, matchRows[0].id);
+          console.log(`[Invoice Fuzzy] "${line.description}" → item ${matchRows[0].id} (keyword: "${keyword}", 1 match)`);
+        } else if (matchRows.length === 0) {
+          console.log(`[Invoice Fuzzy] "${line.description}" → unmatched (keyword: "${keyword}", 0 results)`);
         } else {
-          console.log(`[Invoice Fuzzy] "${line.description}" → no match (keywords: ${keywords.join(', ')})`);
+          // Ambiguous — multiple items match, fail safe
+          console.log(`[Invoice Fuzzy] "${line.description}" → unmatched (keyword: "${keyword}", ${matchRows.length} results — ambiguous)`);
         }
       }
     }
