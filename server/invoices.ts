@@ -134,19 +134,16 @@ const DESC_STOP_WORDS = new Set([
 ]);
 
 /**
- * Extract the single best keyword from an invoice description for LIKE matching.
- * Returns the longest word that is not a stop word and is >= 4 chars.
- * Returns null if no suitable keyword found.
+ * Extract meaningful keywords from an invoice description for multi-keyword LIKE matching.
+ * Returns words sorted by length (longest/most specific first), filtered of stop words.
  */
-function extractBestKeyword(description: string): string | null {
-  const words = description
+function extractKeywords(description: string): string[] {
+  return description
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/)
-    .filter((w) => w.length >= 4 && !DESC_STOP_WORDS.has(w));
-  if (words.length === 0) return null;
-  // Return the longest word — longer = more specific = less ambiguous
-  return words.reduce((a, b) => (a.length >= b.length ? a : b));
+    .filter((w) => w.length >= 4 && !DESC_STOP_WORDS.has(w))
+    .sort((a, b) => b.length - a.length); // longest first = most specific first
 }
 
 export async function saveInvoiceLines(
@@ -187,11 +184,11 @@ export async function saveInvoiceLines(
     }
   }
 
-  // ── Pass 2: Strict single-keyword LIKE query ─
-  // Extract the single most specific word from the invoice description and run
-  // SELECT id FROM items WHERE name LIKE '%keyword%'.
-  // If exactly ONE catalog item matches → use it.
-  // If zero OR more than one match → mark as unmatched (fail safe).
+  // ── Pass 2: Multi-keyword AND LIKE query ─
+  // Strategy: try progressively fewer keywords (most specific combination first).
+  // Start with the top 3 keywords combined with AND LIKE, then 2, then 1.
+  // If exactly ONE catalog item matches at any level → use it (safe).
+  // If zero OR more than one match at all levels → mark as unmatched (fail safe).
   // False negatives (unmatched) are acceptable; false positives (wrong match) corrupt inventory.
   const linesNeedingFuzzy = lines.filter((l) => !l.itemNumber || !itemNumberMap.has(l.itemNumber));
   const fuzzyMap = new Map<string, number>(); // invoice description → catalog item id
@@ -202,26 +199,56 @@ export async function saveInvoiceLines(
       for (const line of linesNeedingFuzzy) {
         if (!line.description) continue;
 
-        const keyword = extractBestKeyword(line.description);
-        if (!keyword) {
-          console.log(`[Invoice Fuzzy] "${line.description}" → unmatched (no usable keyword)`);
+        const keywords = extractKeywords(line.description);
+        if (keywords.length === 0) {
+          console.log(`[Invoice Fuzzy] "${line.description}" → unmatched (no usable keywords)`);
           continue;
         }
 
-        const [matchRows] = await pool2.promise().execute(
-          'SELECT id FROM items WHERE LOWER(name) LIKE ?',
-          [`%${keyword}%`]
-        ) as [Array<{ id: number }>, any];
+        let matched = false;
+        // Try combinations: top 3 keywords, then top 2, then top 1
+        const attempts = [
+          keywords.slice(0, 3),
+          keywords.slice(0, 2),
+          keywords.slice(0, 1),
+        ].filter((combo) => combo.length > 0);
 
-        if (matchRows.length === 1) {
-          // Exactly one match — safe to use
-          fuzzyMap.set(line.description, matchRows[0].id);
-          console.log(`[Invoice Fuzzy] "${line.description}" → item ${matchRows[0].id} (keyword: "${keyword}", 1 match)`);
-        } else if (matchRows.length === 0) {
-          console.log(`[Invoice Fuzzy] "${line.description}" → unmatched (keyword: "${keyword}", 0 results)`);
-        } else {
-          // Ambiguous — multiple items match, fail safe
-          console.log(`[Invoice Fuzzy] "${line.description}" → unmatched (keyword: "${keyword}", ${matchRows.length} results — ambiguous)`);
+        // Deduplicate attempts (e.g. if only 1 keyword, don't try [k] twice)
+        const seen = new Set<string>();
+        for (const combo of attempts) {
+          const key = combo.join('|');
+          if (seen.has(key)) continue;
+          seen.add(key);
+
+          // Build AND LIKE query: WHERE LOWER(name) LIKE '%kw1%' AND LOWER(name) LIKE '%kw2%' ...
+          const conditions = combo.map(() => 'LOWER(name) LIKE ?').join(' AND ');
+          const params = combo.map((kw) => `%${kw}%`);
+
+          const [matchRows] = await pool2.promise().execute(
+            `SELECT id, name FROM items WHERE ${conditions}`,
+            params
+          ) as [Array<{ id: number; name: string }>, any];
+
+          if (matchRows.length === 1) {
+            fuzzyMap.set(line.description, matchRows[0].id);
+            console.log(`[Invoice Fuzzy] "${line.description}" → item ${matchRows[0].id} "${matchRows[0].name}" (keywords: [${combo.join(', ')}], 1 match)`);
+            matched = true;
+            break;
+          } else if (matchRows.length === 0) {
+            // No match at this level — try fewer keywords
+            continue;
+          } else {
+            // Ambiguous at this level — try fewer keywords for a more specific match
+            if (combo.length === 1) {
+              // Last resort: still ambiguous, fail safe
+              console.log(`[Invoice Fuzzy] "${line.description}" → unmatched (keyword: "${combo[0]}", ${matchRows.length} results — ambiguous)`);
+            }
+            continue;
+          }
+        }
+
+        if (!matched) {
+          console.log(`[Invoice Fuzzy] "${line.description}" → unmatched (tried keywords: [${keywords.slice(0, 3).join(', ')}], no unique match)`);
         }
       }
     }
