@@ -67,20 +67,19 @@ const navItems: NavItem[] = [
     description: "Below-par vendor orders",
   },
   {
-    href: "/invoices",
-    label: "Invoices",
-    icon: <FileText size={22} />,
-    adminOnly: true,
-    permission: "place_orders",
-    description: "Upload & process deliveries",
-  },
-  {
     href: "/par-levels",
     label: "Par Levels",
     icon: <SlidersHorizontal size={22} />,
     adminOnly: true,
     permission: "par_levels",
     description: "Set reorder thresholds",
+  },
+  {
+    href: "/invoices",
+    label: "Invoices",
+    icon: <FileText size={22} />,
+    adminOnly: true,
+    description: "Upload & process deliveries",
   },
   {
     href: "/admin/users",

@@ -75,15 +75,8 @@
     {
       "idx": 10,
       "version": "5",
-      "when": 1780241753665,
-      "tag": "0010_overconfident_shinko_yamashiro",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "5",
-      "when": 1782583203576,
-      "tag": "0011_faulty_orphan",
+      "when": 1782590966796,
+      "tag": "0010_fine_living_tribunal",
       "breakpoints": true
     }
   ]

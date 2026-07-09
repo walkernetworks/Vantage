@@ -44,8 +44,8 @@ function Router() {
             <Route path="/catering" component={CateringCalculator} />
             <Route path="/par-levels" component={ParLevels} />
             <Route path="/settings" component={Settings} />
-            <Route path="/admin/users" component={UserManagement} />
             <Route path="/invoices" component={Invoices} />
+            <Route path="/admin/users" component={UserManagement} />
             <Route path="/account" component={AccountSettings} />
             <Route path="/404" component={NotFound} />
             <Route component={NotFound} />

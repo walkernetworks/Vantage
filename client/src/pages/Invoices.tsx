@@ -52,7 +52,7 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type InvoiceStatus = "pending" | "parsing" | "parsed" | "reviewed" | "applied";
+type InvoiceStatus = "pending" | "reviewed" | "applied";
 
 interface InvoiceSummary {
   id: number;
@@ -88,9 +88,7 @@ interface InvoiceLine {
 
 function statusBadge(status: InvoiceStatus) {
   const map: Record<InvoiceStatus, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-    pending: { label: "Pending", variant: "secondary" },
-    parsing: { label: "Parsing…", variant: "secondary" },
-    parsed: { label: "Needs Review", variant: "outline" },
+    pending: { label: "Needs Review", variant: "outline" },
     reviewed: { label: "Reviewed", variant: "default" },
     applied: { label: "Applied", variant: "default" },
   };
@@ -115,7 +113,7 @@ function formatCurrency(n: number | string | null | undefined) {
 
 // ─── Upload Dialog ────────────────────────────────────────────────────────────
 
-function UploadDialog({ open, onClose, onSuccess }: { open: boolean; onClose: () => void; onSuccess: () => void }) {
+function UploadDialog({ open, onClose, onSuccess }: { open: boolean; onClose: () => void; onSuccess: (invoiceId: number) => void }) {
   const [pages, setPages] = useState<{ file: File; preview: string }[]>([]);
   const [vendor, setVendor] = useState("PFG");
   const [uploading, setUploading] = useState(false);
@@ -123,8 +121,7 @@ function UploadDialog({ open, onClose, onSuccess }: { open: boolean; onClose: ()
   const fileInputRef = useRef<HTMLInputElement>(null);
   const utils = trpc.useUtils();
 
-  const uploadMutation = trpc.invoices.upload.useMutation();
-  const parseMutation = trpc.invoices.parse.useMutation();
+  const uploadAndParseMutation = trpc.invoices.uploadAndParse.useMutation();
 
   const addFiles = useCallback((files: FileList | null) => {
     if (!files) return;
@@ -168,17 +165,17 @@ function UploadDialog({ open, onClose, onSuccess }: { open: boolean; onClose: ()
         })
       );
 
-      const { invoiceId } = await uploadMutation.mutateAsync({ vendor, images });
-      setUploading(false);
       setParsing(true);
+      setUploading(false);
 
-      // Immediately kick off AI parsing
-      await parseMutation.mutateAsync({ invoiceId });
+      // Upload images and parse with AI in a single step (no S3)
+      const result = await uploadAndParseMutation.mutateAsync({ vendor, images });
       await utils.invoices.list.invalidate();
       toast.success("Invoice uploaded and parsed successfully");
-      onSuccess();
-    } catch (err: any) {
-      toast.error(err?.message ?? "Upload failed");
+      onSuccess(result.invoiceId);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Upload failed";
+      toast.error(msg);
     } finally {
       setUploading(false);
       setParsing(false);
@@ -270,7 +267,7 @@ function UploadDialog({ open, onClose, onSuccess }: { open: boolean; onClose: ()
             <div className="flex items-center gap-3 p-3 bg-muted rounded-xl">
               <Spinner className="h-5 w-5 text-primary" />
               <p className="text-sm text-foreground">
-                {uploading ? "Uploading images…" : "AI is reading the invoice…"}
+                {uploading ? "Uploading images…" : "Loading invoice…"}
               </p>
             </div>
           )}
@@ -349,7 +346,7 @@ function ReviewDialog({
     updateLineMutation.mutate({ lineId, matchStatus: "unmatched" });
   };
 
-  const canApply = invoice?.status === "reviewed" || invoice?.status === "parsed";
+  const canApply = invoice?.status === "reviewed" || invoice?.status === "pending";
 
   return (
     <>
@@ -482,15 +479,16 @@ function ReviewDialog({
             </div>
           )}
 
-          <DialogFooter className="border-t border-border pt-4 mt-2 gap-2">
-            <Button variant="outline" onClick={onClose}>Close</Button>
+          <DialogFooter className="border-t border-border pt-4 mt-2 flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={onClose} className="sm:mr-auto w-full sm:w-auto">Close</Button>
             {invoice?.status !== "applied" && (
               <>
-                {invoice?.status === "parsed" && (
+                {invoice?.status === "pending" && (
                   <Button
                     variant="outline"
                     onClick={() => markReviewedMutation.mutate({ invoiceId })}
                     disabled={markReviewedMutation.isPending}
+                    className="w-full sm:w-auto"
                   >
                     Mark Reviewed
                   </Button>
@@ -498,7 +496,7 @@ function ReviewDialog({
                 <Button
                   onClick={() => setConfirmApply(true)}
                   disabled={!canApply || applyMutation.isPending}
-                  className="bg-green-600 hover:bg-green-700 text-white"
+                  className="bg-green-600 hover:bg-green-700 text-white w-full sm:w-auto"
                 >
                   <PackageCheck size={16} className="mr-2" />
                   Apply to Inventory
@@ -558,13 +556,7 @@ export default function Invoices() {
     onError: (err) => toast.error(err.message ?? "Delete failed"),
   });
 
-  const parseMutation = trpc.invoices.parse.useMutation({
-    onSuccess: () => {
-      utils.invoices.list.invalidate();
-      toast.success("Invoice re-parsed");
-    },
-    onError: (err) => toast.error(err.message ?? "Parse failed"),
-  });
+  // Re-parse not available in direct-AI flow (images are not stored)
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
@@ -633,9 +625,9 @@ export default function Invoices() {
                         className="h-8 text-xs"
                         onClick={(e) => {
                           e.stopPropagation();
-                          parseMutation.mutate({ invoiceId: invoice.id });
+                          // Re-parse not available — delete and re-upload instead
                         }}
-                        disabled={parseMutation.isPending}
+                        disabled={false}
                       >
                         <RefreshCw size={12} className="mr-1" /> Parse
                       </Button>
@@ -664,9 +656,10 @@ export default function Invoices() {
       <UploadDialog
         open={uploadOpen}
         onClose={() => setUploadOpen(false)}
-        onSuccess={() => {
+        onSuccess={(invoiceId) => {
           setUploadOpen(false);
           utils.invoices.list.invalidate();
+          setReviewInvoiceId(invoiceId);
         }}
       />
 

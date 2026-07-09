@@ -9,7 +9,6 @@ import {
   decimal,
   boolean,
   index,
-  uniqueIndex,
 } from "drizzle-orm/mysql-core";
 
 // ─── Users ────────────────────────────────────────────────────────────────────
@@ -163,7 +162,6 @@ export const countEntries = mysqlTable(
   (t) => [
     index("idx_count_entries_session").on(t.sessionId),
     index("idx_count_entries_item").on(t.itemId),
-    uniqueIndex("uq_count_entries_session_item").on(t.sessionId, t.itemId),
   ]
 );
 
@@ -245,7 +243,6 @@ export const passwordResetTokens = mysqlTable(
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
 
 // ─── Invoices ─────────────────────────────────────────────────────────────────
-
 export const invoices = mysqlTable(
   "invoices",
   {
@@ -254,58 +251,44 @@ export const invoices = mysqlTable(
     invoiceNumber: varchar("invoiceNumber", { length: 64 }),
     invoiceDate: varchar("invoiceDate", { length: 32 }),
     totalAmount: decimal("totalAmount", { precision: 10, scale: 2 }),
-    // JSON array of S3 storage keys, one per page image
-    imageKeys: json("imageKeys").$type<string[]>().notNull(),
-    // status: pending = uploaded not yet parsed, parsed = AI extracted lines,
-    //         reviewed = user confirmed matches, applied = inventory updated
-    status: mysqlEnum("status", ["pending", "parsed", "reviewed", "applied"]).default("pending").notNull(),
+    imageKeys: json("imageKeys").$type<string[]>().notNull().default([]),
     notes: text("notes"),
+    status: mysqlEnum("status", ["pending", "reviewed", "applied"]).notNull().default("pending"),
     createdBy: int("createdBy").references(() => users.id),
-    appliedAt: timestamp("appliedAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },
-  (t) => [
-    index("idx_invoices_vendor").on(t.vendor),
-    index("idx_invoices_status").on(t.status),
-    index("idx_invoices_created").on(t.createdAt),
-  ]
+  (t) => [index("idx_invoices_status").on(t.status), index("idx_invoices_created").on(t.createdAt)]
 );
-
 export type Invoice = typeof invoices.$inferSelect;
 export type InsertInvoice = typeof invoices.$inferInsert;
 
 // ─── Invoice Lines ────────────────────────────────────────────────────────────
-
 export const invoiceLines = mysqlTable(
   "invoice_lines",
   {
     id: int("id").autoincrement().primaryKey(),
     invoiceId: int("invoiceId")
       .notNull()
-      .references(() => invoices.id),
-    // Matched item from catalog (null = unmatched)
+      .references(() => invoices.id, { onDelete: "cascade" }),
     itemId: int("itemId").references(() => items.id),
-    // Raw data extracted from invoice
     itemNumber: varchar("itemNumber", { length: 64 }),
     description: varchar("description", { length: 255 }),
-    pack: varchar("pack", { length: 32 }),
-    size: varchar("size", { length: 32 }),
+    pack: varchar("pack", { length: 64 }),
+    size: varchar("size", { length: 64 }),
     orderedQty: decimal("orderedQty", { precision: 10, scale: 4 }),
     shippedQty: decimal("shippedQty", { precision: 10, scale: 4 }).notNull().default("0"),
     unitPrice: decimal("unitPrice", { precision: 10, scale: 4 }),
     extension: decimal("extension", { precision: 10, scale: 2 }),
     category: varchar("category", { length: 64 }),
-    // matchStatus: matched = itemId resolved, unmatched = no item found, skipped = user skipped
-    matchStatus: mysqlEnum("matchStatus", ["matched", "unmatched", "skipped"]).default("unmatched").notNull(),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+    matchStatus: mysqlEnum("matchStatus", ["matched", "unmatched", "skipped"])
+      .notNull()
+      .default("unmatched"),
   },
   (t) => [
     index("idx_invoice_lines_invoice").on(t.invoiceId),
     index("idx_invoice_lines_item").on(t.itemId),
   ]
 );
-
 export type InvoiceLine = typeof invoiceLines.$inferSelect;
 export type InsertInvoiceLine = typeof invoiceLines.$inferInsert;

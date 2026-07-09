@@ -14,8 +14,6 @@ import {
   settingsVendors,
   settingsStorageAreas,
   users,
-  invoices,
-  invoiceLines,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { invokeLLM } from "./_core/llm";
@@ -108,53 +106,20 @@ export function computeEachPrice(price: string | null | undefined, caseQty: numb
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let _pool: ReturnType<typeof mysql.createPool> | null = null;
-let _lastPingAt = 0;
-
-function createPool() {
-  const pool = mysql.createPool({
-    uri: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: true },
-    waitForConnections: true,
-    connectionLimit: 10,
-    enableKeepAlive: true,
-    keepAliveInitialDelay: 30000,
-  });
-  // Log pool-level errors without crashing the process
-  pool.on("error", (err: Error) => {
-    console.error("[Database] Pool error — will reconnect on next request:", err.message);
-    _db = null;
-    _pool = null;
-  });
-  return pool;
-}
-
 export async function getDb() {
-  if (!process.env.DATABASE_URL) return null;
-  if (!_db || !_pool) {
+  if (!_db && process.env.DATABASE_URL) {
     try {
-      _pool = createPool();
+      _pool = mysql.createPool({
+        uri: process.env.DATABASE_URL,
+        ssl: { rejectUnauthorized: true },
+        waitForConnections: true,
+        connectionLimit: 10,
+      });
       _db = drizzle(_pool);
-      console.log("[Database] Connection pool created");
     } catch (error) {
-      console.error("[Database] Failed to create pool:", error);
+      console.warn("[Database] Failed to connect:", error);
       _db = null;
       _pool = null;
-      return null;
-    }
-  }
-  // Ping every 5 minutes to keep the connection alive and detect stale pools
-  const now = Date.now();
-  if (now - _lastPingAt > 5 * 60 * 1000) {
-    try {
-      await _pool.promise().query("SELECT 1");
-      _lastPingAt = now;
-    } catch (pingErr) {
-      console.warn("[Database] Ping failed, recreating pool:", (pingErr as Error).message);
-      try { _pool.end(); } catch {}
-      _db = null;
-      _pool = null;
-      // Recurse once to create a fresh pool
-      return getDb();
     }
   }
   return _db;
@@ -431,24 +396,30 @@ export async function upsertCountEntry(
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+  const existing = await db
+    .select()
+    .from(countEntries)
+    .where(and(eq(countEntries.sessionId, sessionId), eq(countEntries.itemId, itemId)))
+    .limit(1);
 
-  // Atomic INSERT ... ON DUPLICATE KEY UPDATE prevents race-condition duplicates.
-  // The unique constraint uq_count_entries_session_item(sessionId, itemId) ensures
-  // only one row per item per session. confirmed is only updated when explicitly provided.
-  const confirmedSql = confirmed !== undefined
-    ? sql`, confirmed = ${confirmed}`
-    : sql``;
-
-  await db.execute(
-    sql`INSERT INTO count_entries (sessionId, itemId, quantity, notes, updatedBy, confirmed)
-        VALUES (${sessionId}, ${itemId}, ${quantity}, ${notes ?? null}, ${updatedBy ?? null}, ${confirmed ?? false})
-        ON DUPLICATE KEY UPDATE
-          quantity = VALUES(quantity),
-          notes = VALUES(notes),
-          updatedBy = VALUES(updatedBy),
-          updatedAt = NOW()
-          ${confirmedSql}`
-  );
+  if (existing.length > 0) {
+    // Only update confirmed if explicitly provided (don't reset it on normal saves)
+    const updateData: Record<string, unknown> = { quantity, notes: notes ?? null, updatedBy: updatedBy ?? null };
+    if (confirmed !== undefined) updateData.confirmed = confirmed;
+    await db
+      .update(countEntries)
+      .set(updateData as any)
+      .where(and(eq(countEntries.sessionId, sessionId), eq(countEntries.itemId, itemId)));
+  } else {
+    await db.insert(countEntries).values({
+      sessionId,
+      itemId,
+      quantity,
+      notes: notes ?? null,
+      updatedBy: updatedBy ?? null,
+      confirmed: confirmed ?? false,
+    });
+  }
 }
 
 export async function getSessionWithEntries(sessionId: number) {
@@ -1269,74 +1240,18 @@ export async function getDashboardMetrics() {
     const latestSessionId = latestSessionRows[0]?.id ?? null;
 
     if (latestSessionId) {
-      // Get the date of the latest count session so we only include deliveries after it
-      const sessionDateResult = await db.execute(
-        sql`SELECT createdAt FROM count_sessions WHERE id = ${latestSessionId} LIMIT 1`
-      );
-      const sessionDateRows = (sessionDateResult[0] as unknown as { createdAt: Date }[]) ?? [];
-      const sessionDate = sessionDateRows[0]?.createdAt ?? new Date(0);
-
-      // Sum delivered quantities per item from applied invoices since the last count
-      const deliveryRows = await db
-        .select({
-          itemId: invoiceLines.itemId,
-          shippedQty: invoiceLines.shippedQty,
-        })
-        .from(invoiceLines)
-        .innerJoin(invoices, eq(invoiceLines.invoiceId, invoices.id))
-        .where(
-          and(
-            eq(invoices.status, "applied"),
-            eq(invoiceLines.matchStatus, "matched"),
-            sql`${invoices.appliedAt} > ${sessionDate}`
-          )
-        );
-
-      // Build itemId → total delivered qty map
-      const deliveryMap = new Map<number, number>();
-      for (const row of deliveryRows) {
-        if (!row.itemId) continue;
-        const qty = parseFloat(String(row.shippedQty) ?? "0");
-        deliveryMap.set(row.itemId, (deliveryMap.get(row.itemId) ?? 0) + qty);
-      }
-
-      // Fetch base count data
       const result = await db.execute(
-        sql`SELECT i.id AS itemId, i.category, i.price,
-               ROUND(COALESCE(i.price, 0) * COALESCE(i.parLevel, 0), 2) AS itemFullParValue,
-               ROUND(COALESCE(i.price, 0) * COALESCE(ce.quantity, 0), 2) AS itemCountValue,
-               COALESCE(ce.quantity, 0) AS countQty
+        sql`SELECT i.category,
+               ROUND(SUM(COALESCE(i.price, 0) * COALESCE(i.parLevel, 0)), 2) AS fullParValue,
+               ROUND(SUM(COALESCE(i.price, 0) * COALESCE(ce.quantity, 0)), 2) AS currentStockValue,
+               COUNT(DISTINCT i.id) AS itemCount
             FROM items i
             LEFT JOIN count_entries ce ON ce.itemId = i.id AND ce.sessionId = ${latestSessionId}
-            WHERE i.isActive = 1`
+            WHERE i.isActive = 1
+            GROUP BY i.category
+            ORDER BY fullParValue DESC`
       );
-      type ItemRow = { itemId: number; category: string; price: string; itemFullParValue: string; itemCountValue: string; countQty: string };
-      const itemRows = (result[0] as unknown as ItemRow[]) ?? [];
-
-      // Aggregate by category, adding delivery quantities to count quantities
-      const catMap = new Map<string, { fullParValue: number; currentStockValue: number; itemCount: number }>();
-      for (const row of itemRows) {
-        const cat = row.category ?? "Uncategorized";
-        const price = parseFloat(row.price ?? "0");
-        const countQty = parseFloat(row.countQty ?? "0");
-        const deliveredQty = deliveryMap.get(row.itemId) ?? 0;
-        const totalQty = countQty + deliveredQty;
-        const existing = catMap.get(cat) ?? { fullParValue: 0, currentStockValue: 0, itemCount: 0 };
-        catMap.set(cat, {
-          fullParValue: existing.fullParValue + parseFloat(row.itemFullParValue ?? "0"),
-          currentStockValue: existing.currentStockValue + price * totalQty,
-          itemCount: existing.itemCount + 1,
-        });
-      }
-
-      categoryRows = Array.from(catMap.entries())
-        .map(([category, vals]) => ({
-          category,
-          fullParValue: String(Math.round(vals.fullParValue * 100) / 100),
-          currentStockValue: String(Math.round(vals.currentStockValue * 100) / 100),
-          itemCount: vals.itemCount,
-        }))
-        .sort((a, b) => parseFloat(b.fullParValue) - parseFloat(a.fullParValue));
+      categoryRows = (result[0] as unknown as CategoryRow[]) ?? [];
     } else {
       // No sessions yet — just show par values, current = 0
       const result = await db.execute(
@@ -1432,25 +1347,7 @@ export async function getDashboardMetrics() {
     }
   }
 
-  // 4. Count applied deliveries since last count session
-  let deliveriesAppliedSinceLastCount = 0;
-  try {
-    const latestSessionResult2 = await db.execute(
-      sql`SELECT createdAt FROM count_sessions ORDER BY createdAt DESC LIMIT 1`
-    );
-    const latestSessionDateRows = (latestSessionResult2[0] as unknown as { createdAt: Date }[]) ?? [];
-    const lastCountDate = latestSessionDateRows[0]?.createdAt ?? new Date(0);
-    const appliedResult = await db.execute(
-      sql`SELECT COUNT(*) AS cnt FROM invoices WHERE status = 'applied' AND appliedAt > ${lastCountDate}`
-    );
-    const appliedRows = (appliedResult[0] as unknown as { cnt: number }[]) ?? [];
-    deliveriesAppliedSinceLastCount = Number(appliedRows[0]?.cnt ?? 0);
-  } catch (e) {
-    console.warn("[dashboard] deliveriesAppliedSinceLastCount query failed:", e);
-  }
-
   return {
-    deliveriesAppliedSinceLastCount,
     inventoryValueByCategory: categoryRows.map((r) => ({
       category: r.category,
       totalValue: parseFloat((r as any).fullParValue ?? "0"),
