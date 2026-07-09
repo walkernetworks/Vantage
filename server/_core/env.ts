@@ -16,4 +16,5 @@ export const ENV = {
       : (process.env.OPENAI_API_KEY ?? ""),
   resendApiKey: process.env.RESEND_API_KEY ?? "",
   resendFromEmail: process.env.RESEND_FROM_EMAIL ?? "welcome@getvantageapp.io",
+  mistralApiKey: process.env.MISTRAL_API_KEY ?? "",
 };

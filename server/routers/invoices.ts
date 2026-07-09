@@ -1,9 +1,12 @@
 /**
  * Invoice tRPC router — upload, parse, review, and apply invoices to inventory.
  *
- * Parsing pipeline:
- *   1. Each page image is sent individually to GPT-4o vision as a pure OCR task.
- *   2. The model acts as a data-entry camera: it copies text from the image verbatim.
+ * Parsing pipeline (two-stage):
+ *   1. Each page image is sent to Mistral OCR (mistral-ocr-latest) which returns
+ *      clean, structured markdown text — far more accurate than GPT-4o vision on
+ *      phone photos with glare/perspective distortion.
+ *   2. The clean markdown text is passed to GPT-4o as a text-only prompt to extract
+ *      structured JSON. Text → JSON is much more reliable than image → JSON.
  *   3. Every extracted row is validated server-side: item_number must match /^\d{6,7}$/.
  *      Rows that fail validation are routed to the unmatched queue — never hallucinated.
  *   4. Validated rows are matched against the catalog strictly by item_number via raw SQL.
@@ -12,8 +15,10 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import sharp from "sharp";
+import { Mistral } from "@mistralai/mistralai";
 import { router, protectedProcedure } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
+import { ENV } from "../_core/env";
 import type { MessageContent } from "../_core/llm";
 import {
   createInvoice,
@@ -30,12 +35,12 @@ import {
 // PFG item numbers are strictly 6–7 consecutive digits. Nothing else is valid.
 const ITEM_NUMBER_RE = /^\d{6,7}$/;
 
-// ─── OCR System Prompt ────────────────────────────────────────────────────────
-const PAGE_SYSTEM_PROMPT = `You are a precise data entry automation engine. Your job is to extract EVERY SINGLE row on the invoice page that contains a valid product entry.
+// ─── Stage 2: JSON Extraction Prompt (OCR markdown text → JSON via GPT-4o) ───
+const JSON_EXTRACTION_PROMPT = `You are a precise data entry automation engine. You will receive the text content of a PFG (Performance Food Group) invoice page, already extracted by OCR. Your job is to parse this text and extract EVERY SINGLE product row into structured JSON.
 
-A row is a valid product entry if it begins with a 6-digit or 7-digit numeric code on the far left column (the item number). You must iterate through the page line-by-line from the absolute top to the absolute bottom. Never skip a row that has a product number, even if it falls under a bolded category header. Extract the itemNumber, description, pack, size, shippedQty, unitPrice, and extension for every single individual row. Do not summarize or aggregate multiple rows into one.
+A row is a valid product entry if it contains a 6-digit or 7-digit numeric code (the item number). Extract the itemNumber, description, pack, size, orderedQty, shippedQty, unitPrice, and extension for every individual row. Do not summarize or aggregate multiple rows into one.
 
-COLUMN LAYOUT (left to right on every product row):
+COLUMN LAYOUT (typical PFG invoice format, left to right):
   Col 1: Item Number   — a 6 or 7 digit integer (e.g. 867175, 1013308)
   Col 2: Ordered       — integer quantity ordered
   Col 3: Shipped       — integer quantity actually delivered (can be 0)
@@ -48,13 +53,10 @@ COLUMN LAYOUT (left to right on every product row):
   Col 10: ST           — tax flag, ignore
 
 CRITICAL RULES:
-- Iterate line-by-line from top to bottom. Do not skip any row that has a 6 or 7 digit number in Col 1.
-- Copy Col 7 (Description) EXACTLY as printed — verbatim, every character (e.g. 'ALMNDBRZ MILK ALMOND BARISTA UNSWT').
-- Copy Col 1 (Item Number) EXACTLY as printed — do not alter, guess, or invent digits.
-- Col 3 (Shipped) is the quantity delivered. It is a whole number.
-- If a value is unreadable, set it to null. NEVER invent or hallucinate values.
-- itemNumber and pack are OPTIONAL — return null if unreadable. description and shippedQty are REQUIRED.
-- The invoice header contains invoiceNumber, invoiceDate, and totalAmount — extract if visible.
+- Copy every field EXACTLY as it appears in the OCR text — do not alter, abbreviate, or invent values.
+- If a value is missing or unclear in the text, set it to null. NEVER hallucinate.
+- itemNumber and pack are OPTIONAL — return null if not present. description and shippedQty are REQUIRED.
+- The invoice header contains invoiceNumber, invoiceDate, and totalAmount — extract if present.
 
 OUTPUT FORMAT — respond with ONLY a raw JSON object, no markdown fences, no explanation:
 {
@@ -95,7 +97,50 @@ interface PageResult {
 }
 
 /**
- * Parse a single invoice page image.
+ * Stage 1: Run Mistral OCR on a base64 JPEG image.
+ * Returns the raw markdown text extracted from the page, or null on failure.
+ */
+async function runMistralOcr(base64Jpeg: string, pageIndex: number): Promise<string | null> {
+  const apiKey = ENV.mistralApiKey;
+  if (!apiKey) {
+    console.error("[Invoice OCR] MISTRAL_API_KEY is not set — cannot run Mistral OCR");
+    return null;
+  }
+
+  const client = new Mistral({ apiKey });
+
+  try {
+    console.log(`[Invoice OCR] page ${pageIndex + 1}: calling Mistral OCR (mistral-ocr-latest)...`);
+    const ocrResponse = await client.ocr.process({
+      model: "mistral-ocr-latest",
+      document: {
+        type: "image_url",
+        imageUrl: `data:image/jpeg;base64,${base64Jpeg}`,
+      },
+    });
+
+    // Concatenate markdown from all pages (should be just 1 for a single image)
+    const markdown = ocrResponse.pages?.map((p: any) => p.markdown ?? "").join("\n\n") ?? "";
+    console.log(`[Invoice OCR] page ${pageIndex + 1}: Mistral OCR complete — ${markdown.length} chars of markdown`);
+
+    if (!markdown.trim()) {
+      console.warn(`[Invoice OCR] page ${pageIndex + 1}: Mistral OCR returned empty markdown`);
+      return null;
+    }
+
+    return markdown;
+  } catch (err) {
+    console.error(`[Invoice OCR] page ${pageIndex + 1}: Mistral OCR failed:`, err);
+    return null;
+  }
+}
+
+/**
+ * Parse a single invoice page image using the two-stage pipeline:
+ *   Stage 1: Mistral OCR → clean markdown text
+ *   Stage 2: GPT-4o text extraction → structured JSON
+ *
+ * Falls back to GPT-4o vision if Mistral OCR fails or returns no text.
  * After parsing, each line's itemNumber is validated against /^\d{6,7}$/.
  * Lines that fail validation have their itemNumber set to null so they land
  * in the unmatched queue — they are never silently dropped.
@@ -103,28 +148,59 @@ interface PageResult {
 async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<PageResult> {
   const empty: PageResult = { invoiceNumber: null, invoiceDate: null, totalAmount: null, lines: [] };
 
+  // ── Extract base64 from data URL ──────────────────────────────────────────
+  const base64Match = dataUrl.match(/^data:[^;]+;base64,(.+)$/);
+  const base64Data = base64Match ? base64Match[1] : null;
+
+  // ── Stage 1: Mistral OCR ──────────────────────────────────────────────────
+  let ocrMarkdown: string | null = null;
+  if (base64Data) {
+    ocrMarkdown = await runMistralOcr(base64Data, pageIndex);
+  } else {
+    console.warn(`[Invoice OCR] page ${pageIndex + 1}: could not extract base64 from data URL, skipping Mistral OCR`);
+  }
+
+  // ── Stage 2: GPT-4o JSON extraction ──────────────────────────────────────
   let response;
   try {
-    response = await invokeLLM({
-      messages: [
-        { role: "system", content: PAGE_SYSTEM_PROMPT },
-        {
-          role: "user",
-          content: [
-            {
-              type: "text" as const,
-              text: `You are performing mechanical, literal data transcription of invoice page ${pageIndex + 1}. Do not summarize or use industry abbreviations. Look at the numbers on the far left column — if you see '593174', transcribe exactly '593174'. Look at the text column — transcribe exactly what is printed (e.g., 'ALMNDBRZ MILK ALMOND BARISTA UNSWT'). If a column is unreadable, set it to null. Never make up filler names or digits under any circumstance. Extract every row that has a 6 or 7 digit number in the first column.`,
-            },
-            {
-              type: "image_url" as const,
-              image_url: { url: dataUrl, detail: "high" as const },
-            },
-          ] as MessageContent[],
-        },
-      ],
-      response_format: { type: "json_object" },
-      max_tokens: 4096,
-    });
+    if (ocrMarkdown) {
+      // Two-stage path: pass clean OCR text to GPT-4o for JSON extraction
+      console.log(`[Invoice OCR] page ${pageIndex + 1}: running GPT-4o JSON extraction on OCR markdown...`);
+      response = await invokeLLM({
+        messages: [
+          { role: "system", content: JSON_EXTRACTION_PROMPT },
+          {
+            role: "user",
+            content: `Here is the OCR-extracted text from invoice page ${pageIndex + 1}. Extract all product rows into the JSON format specified:\n\n${ocrMarkdown}`,
+          },
+        ],
+        response_format: { type: "json_object" },
+        max_tokens: 4096,
+      });
+    } else {
+      // Fallback: GPT-4o vision (original approach)
+      console.warn(`[Invoice OCR] page ${pageIndex + 1}: Mistral OCR unavailable — falling back to GPT-4o vision`);
+      response = await invokeLLM({
+        messages: [
+          { role: "system", content: JSON_EXTRACTION_PROMPT },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text" as const,
+                text: `Extract all product rows from invoice page ${pageIndex + 1} into the JSON format specified. Copy every field verbatim — do not alter, abbreviate, or invent values.`,
+              },
+              {
+                type: "image_url" as const,
+                image_url: { url: dataUrl, detail: "high" as const },
+              },
+            ] as MessageContent[],
+          },
+        ],
+        response_format: { type: "json_object" },
+        max_tokens: 4096,
+      });
+    }
   } catch (err) {
     console.error(`[Invoice OCR] page ${pageIndex + 1} LLM call failed:`, err);
     return empty;
@@ -141,7 +217,6 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
   }
 
   const content = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
-  // Log length only — do not slice the content so the full payload reaches JSON.parse
   console.log(`[Invoice OCR] page ${pageIndex + 1} raw length: ${content.length} chars`);
 
   let parsed: any;
@@ -264,8 +339,8 @@ export const invoicesRouter = router({
         notes: input.notes,
       });
 
-      // Convert HEIC/HEIF images to JPEG before sending to GPT-4o.
-      // GPT-4o vision only supports JPEG, PNG, GIF, and WebP — not HEIC.
+      // Convert HEIC/HEIF images to JPEG before sending to Mistral OCR.
+      // Mistral OCR supports JPEG, PNG, AVIF — not HEIC.
       const imageDataUrls: string[] = [];
       for (const img of input.images) {
         const isHeic = img.mimeType === 'image/heic' || img.mimeType === 'image/heif'
