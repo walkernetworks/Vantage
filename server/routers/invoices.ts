@@ -138,6 +138,8 @@ async function runMistralOcr(base64Jpeg: string, pageIndex: number): Promise<str
     // Concatenate markdown from all pages (should be just 1 for a single image)
     const markdown = ocrResponse.pages?.map((p: any) => p.markdown ?? "").join("\n\n") ?? "";
     console.log(`[Invoice OCR] page ${pageIndex + 1}: Mistral OCR complete — ${markdown.length} chars of markdown`);
+    // Debug: print raw markdown so we can diagnose column alignment issues
+    console.log(`[Invoice OCR] page ${pageIndex + 1} RAW MARKDOWN:\n${markdown.substring(0, 3000)}`);
 
     if (!markdown.trim()) {
       console.warn(`[Invoice OCR] page ${pageIndex + 1}: Mistral OCR returned empty markdown`);
