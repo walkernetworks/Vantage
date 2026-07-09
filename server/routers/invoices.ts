@@ -11,6 +11,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import sharp from "sharp";
 import { router, protectedProcedure } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
 import type { MessageContent } from "../_core/llm";
@@ -263,9 +264,28 @@ export const invoicesRouter = router({
         notes: input.notes,
       });
 
-      const imageDataUrls = input.images.map(
-        (img) => `data:${img.mimeType};base64,${img.base64}`
-      );
+      // Convert HEIC/HEIF images to JPEG before sending to GPT-4o.
+      // GPT-4o vision only supports JPEG, PNG, GIF, and WebP — not HEIC.
+      const imageDataUrls: string[] = [];
+      for (const img of input.images) {
+        const isHeic = img.mimeType === 'image/heic' || img.mimeType === 'image/heif'
+          || (img.filename?.toLowerCase().endsWith('.heic') ?? false)
+          || (img.filename?.toLowerCase().endsWith('.heif') ?? false);
+        if (isHeic) {
+          try {
+            console.log(`[Invoice] Converting HEIC image "${img.filename ?? 'unknown'}" to JPEG...`);
+            const inputBuffer = Buffer.from(img.base64, 'base64');
+            const jpegBuffer = await sharp(inputBuffer).jpeg({ quality: 92 }).toBuffer();
+            imageDataUrls.push(`data:image/jpeg;base64,${jpegBuffer.toString('base64')}`);
+            console.log(`[Invoice] HEIC → JPEG conversion complete (${Math.round(jpegBuffer.length / 1024)}kb)`);
+          } catch (convErr) {
+            console.error(`[Invoice] HEIC conversion failed for "${img.filename}", falling back to original:`, convErr);
+            imageDataUrls.push(`data:${img.mimeType};base64,${img.base64}`);
+          }
+        } else {
+          imageDataUrls.push(`data:${img.mimeType};base64,${img.base64}`);
+        }
+      }
 
       console.log(`[Invoice] Starting OCR parse for invoice ${invoice.id}, ${imageDataUrls.length} page(s), vendor: ${input.vendor}`);
       const parsed = await parseInvoiceImages(imageDataUrls);
