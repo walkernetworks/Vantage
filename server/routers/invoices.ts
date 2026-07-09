@@ -261,6 +261,12 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
   });
 
   console.log(`[Invoice OCR] page ${pageIndex + 1}: ${rawLines.length} rows extracted, ${validCount} valid item numbers, ${invalidCount} rejected`);
+  // Per-line debug: print each extracted item number + description for diagnosis
+  validatedLines.forEach((l, i) => {
+    const num = l.itemNumber ?? '(no number)';
+    const desc = l.description ?? '(no desc)';
+    console.log(`[Invoice OCR] page ${pageIndex + 1} row ${i + 1}: #${num} — ${desc}`);
+  });
 
   return {
     invoiceNumber: typeof parsed.invoiceNumber === "string" ? parsed.invoiceNumber.trim() : null,
