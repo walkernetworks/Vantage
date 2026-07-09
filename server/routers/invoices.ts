@@ -154,6 +154,50 @@ async function runMistralOcr(base64Jpeg: string, pageIndex: number): Promise<str
 }
 
 /**
+ * Pre-process Mistral OCR markdown to remove rows with empty item number columns.
+ *
+ * PFG invoices have category header rows and continuation rows where the item
+ * number column is blank. These orphaned rows confuse GPT-4o into shifting
+ * item numbers to the wrong description. We strip them before extraction.
+ *
+ * Also removes the markdown table header/separator rows since GPT-4o doesn't
+ * need them and they add noise.
+ */
+function preprocessMistralMarkdown(markdown: string): string {
+  const lines = markdown.split('\n');
+  const cleaned: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Keep non-table lines (headers, page numbers, invoice metadata) as-is
+    if (!trimmed.startsWith('|')) {
+      cleaned.push(line);
+      continue;
+    }
+
+    // Skip table separator rows (e.g. |---|---|---|
+    if (/^\|[\s\-|]+\|$/.test(trimmed)) {
+      continue;
+    }
+
+    // Parse the first cell (item number column)
+    const cells = trimmed.split('|').map(c => c.trim());
+    // cells[0] is empty (before first |), cells[1] is the item number column
+    const itemNumCell = cells[1] ?? '';
+
+    // Keep the row only if the item number cell contains a 6-7 digit number
+    // OR if this is a header row (non-numeric text like "Item#", "ITEM", etc.)
+    if (ITEM_NUMBER_RE.test(itemNumCell) || /^[A-Za-z#]/.test(itemNumCell)) {
+      cleaned.push(line);
+    }
+    // Otherwise drop the row (empty item# or category header like "BEIGNETS & FOOD")
+  }
+
+  return cleaned.join('\n');
+}
+
+/**
  * Parse a single invoice page image using the two-stage pipeline:
  *   Stage 1: Mistral OCR → clean markdown text
  *   Stage 2: GPT-4o text extraction → structured JSON
@@ -182,6 +226,10 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
   let response;
   try {
     if (ocrMarkdown) {
+      // Pre-process: strip empty-item-number rows that cause GPT-4o to shift descriptions
+      const cleanedMarkdown = preprocessMistralMarkdown(ocrMarkdown);
+      console.log(`[Invoice OCR] page ${pageIndex + 1}: preprocessed markdown — ${cleanedMarkdown.length} chars (was ${ocrMarkdown.length})`);
+
       // Two-stage path: pass clean OCR text to GPT-4o for JSON extraction
       console.log(`[Invoice OCR] page ${pageIndex + 1}: running GPT-4o JSON extraction on OCR markdown...`);
       response = await invokeLLM({
@@ -189,7 +237,7 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
           { role: "system", content: JSON_EXTRACTION_PROMPT },
           {
             role: "user",
-            content: `Here is the OCR-extracted text from invoice page ${pageIndex + 1}. Extract all product rows into the JSON format specified:\n\n${ocrMarkdown}`,
+            content: `Here is the OCR-extracted text from invoice page ${pageIndex + 1}. Extract all product rows into the JSON format specified:\n\n${cleanedMarkdown}`,
           },
         ],
         response_format: { type: "json_object" },
