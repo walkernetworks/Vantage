@@ -504,18 +504,25 @@ export async function getBelowParItems(vendor?: string) {
   const orderItems = allItems
     .map((item) => {
       const rawQty = parseFloat(entryMap.get(item.id) ?? "0");
-      // If item is counted in eaches, convert back to cases for order math
-      const currentStock =
-        item.countMode === "each" && item.caseQty && item.caseQty > 0
-          ? rawQty / item.caseQty
-          : rawQty;
+      const isEachMode = item.countMode === "each";
+      const caseQty = item.caseQty && item.caseQty > 0 ? item.caseQty : null;
+      // Convert eaches to cases when caseQty is known; otherwise keep as-is
+      const currentStock = isEachMode && caseQty ? rawQty / caseQty : rawQty;
       const parLevel = parseFloat(item.parLevel ?? "0");
       // orderThreshold is stored as a percentage (0–100); default is 50%
       const thresholdPct = item.orderThreshold ? parseFloat(item.orderThreshold) : 50;
       const triggerLevel = parLevel * (thresholdPct / 100);
       const casesNeededRaw = Math.max(0, parLevel - currentStock);
       const casesNeeded = Math.ceil(casesNeededRaw);
-      const needsOrder = parLevel > 0 && currentStock <= triggerLevel;
+      let needsOrder: boolean;
+      if (isEachMode && !caseQty) {
+        // No caseQty — we cannot convert eaches to cases, so we cannot compare
+        // against a case-based par/threshold. Fall back to: always include in
+        // the order list if par > 0, so the item is never silently dropped.
+        needsOrder = parLevel > 0;
+      } else {
+        needsOrder = parLevel > 0 && currentStock <= triggerLevel;
+      }
       return { ...item, currentStock: String(currentStock), casesNeeded, needsOrder };
     })
     .filter((item) => item.needsOrder);
