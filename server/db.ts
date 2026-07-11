@@ -514,6 +514,10 @@ export async function getBelowParItems(vendor?: string) {
       const triggerLevel = parLevel * (thresholdPct / 100);
       const casesNeededRaw = Math.max(0, parLevel - currentStock);
       const casesNeeded = Math.ceil(casesNeededRaw);
+      // Debug: log raw values for 500CC10
+      if (item.itemNumber === "500CC10") {
+        console.log(`[Order Debug] 500CC10: rawQty=${rawQty} isEachMode=${isEachMode} caseQty=${caseQty} currentStock=${currentStock} parLevel=${parLevel} thresholdPct=${thresholdPct} triggerLevel=${triggerLevel}`);
+      }
       let needsOrder: boolean;
       if (isEachMode && !caseQty) {
         // No caseQty — we cannot convert eaches to cases, so we cannot compare
