@@ -516,7 +516,8 @@ export async function getBelowParItems(vendor?: string) {
       const casesNeeded = Math.ceil(casesNeededRaw);
       // Debug: log raw values for 500CC10
       if (item.itemNumber === "500CC10") {
-        console.log(`[Order Debug] 500CC10: rawQty=${rawQty} isEachMode=${isEachMode} caseQty=${caseQty} currentStock=${currentStock} parLevel=${parLevel} thresholdPct=${thresholdPct} triggerLevel=${triggerLevel}`);
+        const rawEntry = entryMap.get(item.id);
+        console.log(`[Order Debug] 500CC10: id=${item.id} sessionId=${latestSession?.id} entryRaw=${rawEntry ?? 'NOT FOUND'} rawQty=${rawQty} isEachMode=${isEachMode} countMode=${item.countMode} caseQty=${item.caseQty} currentStock=${currentStock} parLevel=${parLevel} thresholdPct=${thresholdPct} triggerLevel=${triggerLevel}`);
       }
       let needsOrder: boolean;
       if (isEachMode && !caseQty) {
