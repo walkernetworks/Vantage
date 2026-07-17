@@ -255,6 +255,56 @@ export async function createItem(data: typeof items.$inferInsert) {
   const result = await db.insert(items).values(enriched);
   return result[0];
 }
+/**
+ * When an item's countMode is switched, convert any existing count entry in the
+ * latest open (non-completed) session so the stored value stays consistent with
+ * the new mode:
+ *   case → each:  storedCases × caseQty  = rawEaches
+ *   each → case:  rawEaches  / caseQty  = storedCases
+ * Past completed sessions are left untouched.
+ */
+async function convertCountEntryOnModeSwitch(
+  itemId: number,
+  oldMode: string,
+  newMode: string,
+  caseQty: number
+) {
+  if (oldMode === newMode || caseQty <= 1) return;
+  const db = await getDb();
+  if (!db) return;
+  // Find the latest open session
+  const openSession = await db
+    .select({ id: countSessions.id })
+    .from(countSessions)
+    .where(isNull(countSessions.completedAt))
+    .orderBy(countSessions.createdAt)
+    .limit(1);
+  if (!openSession[0]) return;
+  const sessionId = openSession[0].id;
+  // Find the entry for this item in that session
+  const entry = await db
+    .select({ quantity: countEntries.quantity })
+    .from(countEntries)
+    .where(and(eq(countEntries.sessionId, sessionId), eq(countEntries.itemId, itemId)))
+    .limit(1);
+  if (!entry[0]) return;
+  const stored = parseFloat(entry[0].quantity ?? '0') || 0;
+  if (stored === 0) return;
+  let converted: number;
+  if (oldMode === 'case' && newMode === 'each') {
+    // Was stored as fractional cases → convert to raw eaches
+    converted = stored * caseQty;
+  } else {
+    // Was stored as raw eaches → convert to fractional cases
+    converted = stored / caseQty;
+  }
+  await db
+    .update(countEntries)
+    .set({ quantity: String(parseFloat(converted.toFixed(4))) })
+    .where(and(eq(countEntries.sessionId, sessionId), eq(countEntries.itemId, itemId)));
+  console.log(`[CountMode] Converted entry for item ${itemId} in session ${sessionId}: ${stored} (${oldMode}) → ${converted} (${newMode})`);
+}
+
 export async function updateItem(id: number, data: Partial<typeof items.$inferInsert>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -265,13 +315,18 @@ export async function updateItem(id: number, data: Partial<typeof items.$inferIn
     return;
   }
   // If only countMode changed (or any other field), fetch current price+packSize and
-  // recompute eachPrice so switching to each mode always shows the correct per-unit price
+  // recompute eachPrice so switching to each mode always shows the correct per-unit price.
+  // Also convert any count entries in the current open session to the new format.
   if (data.countMode !== undefined && data.eachPrice === undefined) {
     const current = await getItemById(id);
     if (current) {
       const caseQty = current.caseQty ?? parsePackSizeQty(current.packSize);
       const eachPrice = computeEachPrice(current.price, caseQty);
       await db.update(items).set({ ...data, caseQty: caseQty ?? current.caseQty, eachPrice: eachPrice ?? current.eachPrice ?? null }).where(eq(items.id, id));
+      // Convert count entries in the latest open session when mode switches
+      if (caseQty && caseQty > 1 && data.countMode !== current.countMode) {
+        await convertCountEntryOnModeSwitch(id, current.countMode ?? 'case', data.countMode, caseQty);
+      }
       return;
     }
   }
@@ -504,18 +559,30 @@ export async function getBelowParItems(vendor?: string) {
   const orderItems = allItems
     .map((item) => {
       const rawQty = parseFloat(entryMap.get(item.id) ?? "0");
-      // If item is counted in eaches, convert back to cases for order math
-      const currentStock =
-        item.countMode === "each" && item.caseQty && item.caseQty > 0
-          ? rawQty / item.caseQty
-          : rawQty;
+      const isEachMode = item.countMode === "each";
+      const caseQty = item.caseQty && item.caseQty > 0 ? item.caseQty : null;
+      // Convert eaches to cases when caseQty is known; otherwise keep as-is
+      const currentStock = isEachMode && caseQty ? rawQty / caseQty : rawQty;
       const parLevel = parseFloat(item.parLevel ?? "0");
       // orderThreshold is stored as a percentage (0–100); default is 50%
       const thresholdPct = item.orderThreshold ? parseFloat(item.orderThreshold) : 50;
       const triggerLevel = parLevel * (thresholdPct / 100);
       const casesNeededRaw = Math.max(0, parLevel - currentStock);
       const casesNeeded = Math.ceil(casesNeededRaw);
-      const needsOrder = parLevel > 0 && currentStock <= triggerLevel;
+      // Debug: log raw values for 500CC10
+      if (item.itemNumber === "500CC10") {
+        const rawEntry = entryMap.get(item.id);
+        console.log(`[Order Debug] 500CC10: id=${item.id} sessionId=${latestSession?.id} entryRaw=${rawEntry ?? 'NOT FOUND'} rawQty=${rawQty} isEachMode=${isEachMode} countMode=${item.countMode} caseQty=${item.caseQty} currentStock=${currentStock} parLevel=${parLevel} thresholdPct=${thresholdPct} triggerLevel=${triggerLevel}`);
+      }
+      let needsOrder: boolean;
+      if (isEachMode && !caseQty) {
+        // No caseQty — we cannot convert eaches to cases, so we cannot compare
+        // against a case-based par/threshold. Fall back to: always include in
+        // the order list if par > 0, so the item is never silently dropped.
+        needsOrder = parLevel > 0;
+      } else {
+        needsOrder = parLevel > 0 && currentStock <= triggerLevel;
+      }
       return { ...item, currentStock: String(currentStock), casesNeeded, needsOrder };
     })
     .filter((item) => item.needsOrder);

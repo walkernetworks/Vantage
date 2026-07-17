@@ -38,23 +38,39 @@ const ITEM_NUMBER_RE = /^\d{6,7}$/;
 // ─── Stage 2: JSON Extraction Prompt (OCR markdown text → JSON via GPT-4o) ───
 const JSON_EXTRACTION_PROMPT = `You are a precise data entry automation engine. You will receive the text content of a PFG (Performance Food Group) invoice page, already extracted by OCR. Your job is to parse this text and extract EVERY SINGLE product row into structured JSON.
 
-A row is a valid product entry if it contains a 6-digit or 7-digit numeric code (the item number). Extract the itemNumber, description, pack, size, orderedQty, shippedQty, unitPrice, and extension for every individual row. Do not summarize or aggregate multiple rows into one.
+PFG INVOICE ROW STRUCTURE:
+Each product row in a PFG invoice contains ALL of these fields on THE SAME VISUAL ROW (same line or tightly grouped lines):
+  - Item Number: a 6 or 7 digit integer (e.g. 867175, 1013308)
+  - Ordered: integer quantity ordered
+  - Shipped: integer quantity actually delivered
+  - Pack: pack count (e.g. 1, 4, 10, 20, 80, 100)
+  - Size: unit size string (e.g. "5 LB", "50 CT", "32 OZ")
+  - Description: product name in ALL CAPS (e.g. "PEAK FRS LEMON FRSH", "FABRIKAL LID LS636FK X SLOT CLR PE")
+  - Unit Price: decimal (e.g. 16.4100)
+  - Extension: line total decimal (e.g. 16.41)
 
-COLUMN LAYOUT (typical PFG invoice format, left to right):
-  Col 1: Item Number   — a 6 or 7 digit integer (e.g. 867175, 1013308)
-  Col 2: Ordered       — integer quantity ordered
-  Col 3: Shipped       — integer quantity actually delivered (can be 0)
-  Col 4: Pack          — pack count (e.g. 1, 4, 10, 20, 80, 100)
-  Col 5: Size          — unit size string (e.g. "5 LB", "50 CT", "32 OZ", "100 CT")
-  Col 6: Unit          — usually blank or a unit code, often empty
-  Col 7: Description   — product name text, ALL CAPS, copy verbatim
-  Col 8: Price         — unit price decimal (e.g. 16.4100)
-  Col 9: Extension     — line total decimal (e.g. 16.41)
-  Col 10: ST           — tax flag, ignore
+⚠️ CRITICAL ALIGNMENT RULE — READ THIS CAREFULLY:
+The item number and description for the SAME product ALWAYS appear on the SAME row.
+DO NOT shift or offset — never pair an item number from one row with the description from the next row down.
+If the OCR text appears to have columns misaligned, use the item number's position in the line to anchor which description belongs to it.
+The description is the ALL-CAPS product name text that appears on the SAME line as the item number.
+
+EXAMPLE of correct row pairing (each line = one product):
+  810605  1  1  1  CS  FRST MRK STRAW 10.25 GIANT CLR 1W  62.57  62.57
+  870410  1  1  1  CS  FRST MRK LID CUP PLAS X SLOT 12-24  18.32  18.32
+
+So: itemNumber=810605 → description="FRST MRK STRAW 10.25 GIANT CLR 1W"
+    itemNumber=870410 → description="FRST MRK LID CUP PLAS X SLOT 12-24"
+
+SKIP these non-product rows:
+- Category header rows (e.g. "BEIGNETS & FOOD DRY", "NA BEVERAGES", "CHEMICALS PAPER")
+- Subtotal rows (contain words like "SUBTOTAL", "TOTAL", "SUB-TOTAL")
+- Blank rows
+- Page header/footer rows
 
 CRITICAL RULES:
-- Copy every field EXACTLY as it appears in the OCR text — do not alter, abbreviate, or invent values.
-- If a value is missing or unclear in the text, set it to null. NEVER hallucinate.
+- Copy every field EXACTLY as it appears — do not alter, abbreviate, or invent values.
+- If a value is missing or unclear, set it to null. NEVER hallucinate.
 - itemNumber and pack are OPTIONAL — return null if not present. description and shippedQty are REQUIRED.
 - The invoice header contains invoiceNumber, invoiceDate, and totalAmount — extract if present.
 
@@ -122,6 +138,8 @@ async function runMistralOcr(base64Jpeg: string, pageIndex: number): Promise<str
     // Concatenate markdown from all pages (should be just 1 for a single image)
     const markdown = ocrResponse.pages?.map((p: any) => p.markdown ?? "").join("\n\n") ?? "";
     console.log(`[Invoice OCR] page ${pageIndex + 1}: Mistral OCR complete — ${markdown.length} chars of markdown`);
+    // Debug: print raw markdown so we can diagnose column alignment issues
+    console.log(`[Invoice OCR] page ${pageIndex + 1} RAW MARKDOWN:\n${markdown.substring(0, 3000)}`);
 
     if (!markdown.trim()) {
       console.warn(`[Invoice OCR] page ${pageIndex + 1}: Mistral OCR returned empty markdown`);
@@ -133,6 +151,50 @@ async function runMistralOcr(base64Jpeg: string, pageIndex: number): Promise<str
     console.error(`[Invoice OCR] page ${pageIndex + 1}: Mistral OCR failed:`, err);
     return null;
   }
+}
+
+/**
+ * Pre-process Mistral OCR markdown to remove rows with empty item number columns.
+ *
+ * PFG invoices have category header rows and continuation rows where the item
+ * number column is blank. These orphaned rows confuse GPT-4o into shifting
+ * item numbers to the wrong description. We strip them before extraction.
+ *
+ * Also removes the markdown table header/separator rows since GPT-4o doesn't
+ * need them and they add noise.
+ */
+function preprocessMistralMarkdown(markdown: string): string {
+  const lines = markdown.split('\n');
+  const cleaned: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Keep non-table lines (headers, page numbers, invoice metadata) as-is
+    if (!trimmed.startsWith('|')) {
+      cleaned.push(line);
+      continue;
+    }
+
+    // Skip table separator rows (e.g. |---|---|---|
+    if (/^\|[\s\-|]+\|$/.test(trimmed)) {
+      continue;
+    }
+
+    // Parse the first cell (item number column)
+    const cells = trimmed.split('|').map(c => c.trim());
+    // cells[0] is empty (before first |), cells[1] is the item number column
+    const itemNumCell = cells[1] ?? '';
+
+    // Keep the row only if the item number cell contains a 6-7 digit number
+    // OR if this is a header row (non-numeric text like "Item#", "ITEM", etc.)
+    if (ITEM_NUMBER_RE.test(itemNumCell) || /^[A-Za-z#]/.test(itemNumCell)) {
+      cleaned.push(line);
+    }
+    // Otherwise drop the row (empty item# or category header like "BEIGNETS & FOOD")
+  }
+
+  return cleaned.join('\n');
 }
 
 /**
@@ -164,6 +226,10 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
   let response;
   try {
     if (ocrMarkdown) {
+      // Pre-process: strip empty-item-number rows that cause GPT-4o to shift descriptions
+      const cleanedMarkdown = preprocessMistralMarkdown(ocrMarkdown);
+      console.log(`[Invoice OCR] page ${pageIndex + 1}: preprocessed markdown — ${cleanedMarkdown.length} chars (was ${ocrMarkdown.length})`);
+
       // Two-stage path: pass clean OCR text to GPT-4o for JSON extraction
       console.log(`[Invoice OCR] page ${pageIndex + 1}: running GPT-4o JSON extraction on OCR markdown...`);
       response = await invokeLLM({
@@ -171,7 +237,7 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
           { role: "system", content: JSON_EXTRACTION_PROMPT },
           {
             role: "user",
-            content: `Here is the OCR-extracted text from invoice page ${pageIndex + 1}. Extract all product rows into the JSON format specified:\n\n${ocrMarkdown}`,
+            content: `Here is the OCR-extracted text from invoice page ${pageIndex + 1}. Extract all product rows into the JSON format specified:\n\n${cleanedMarkdown}`,
           },
         ],
         response_format: { type: "json_object" },
@@ -261,6 +327,12 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
   });
 
   console.log(`[Invoice OCR] page ${pageIndex + 1}: ${rawLines.length} rows extracted, ${validCount} valid item numbers, ${invalidCount} rejected`);
+  // Per-line debug: print each extracted item number + description for diagnosis
+  validatedLines.forEach((l, i) => {
+    const num = l.itemNumber ?? '(no number)';
+    const desc = l.description ?? '(no desc)';
+    console.log(`[Invoice OCR] page ${pageIndex + 1} row ${i + 1}: #${num} — ${desc}`);
+  });
 
   return {
     invoiceNumber: typeof parsed.invoiceNumber === "string" ? parsed.invoiceNumber.trim() : null,
