@@ -66,6 +66,10 @@ import {
   setMustResetPassword,
   recalcAllEachPrices,
   getDashboardMetrics,
+  getCurrentStockLevels,
+  getConsumptionRates,
+  getStockTrend,
+  getRedFlags,
   bulkUpdateItems,
   type PfgImportRow,
   type WebstaurantImportRow,
@@ -1002,6 +1006,14 @@ const adminUsersRouter = router({
 
 const dashboardRouter = router({
   metrics: protectedProcedure.query(() => getDashboardMetrics()),
+  stockLevels: protectedProcedure.query(() => getCurrentStockLevels()),
+  consumptionRates: protectedProcedure
+    .input(z.object({ limit: z.number().optional() }).optional())
+    .query(({ input }) => getConsumptionRates(input?.limit ?? 30)),
+  stockTrend: protectedProcedure
+    .input(z.object({ itemId: z.number(), limit: z.number().optional() }))
+    .query(({ input }) => getStockTrend(input.itemId, input.limit ?? 20)),
+  redFlags: protectedProcedure.query(() => getRedFlags()),
 });
 
 // ─── App Router ────────────────────────────────────────────────────────────────────

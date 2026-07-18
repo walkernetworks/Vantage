@@ -7,12 +7,15 @@ import {
   cateringRecipes,
   countEntries,
   countSessions,
+  invoices,
+  invoiceLines,
   items,
   passwordResetTokens,
   priceHistory,
   settingsCategories,
   settingsVendors,
   settingsStorageAreas,
+  stockEvents,
   users,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -1440,6 +1443,340 @@ export async function getDashboardMetrics() {
     })),
     orderCostTrend: orderCostData,
   };
+}
+
+// ─── Analytics: Current Stock Levels ────────────────────────────────────────
+// Current stock = latest count event + sum of receipt events since that count
+export async function getCurrentStockLevels() {
+  const db = await getDb();
+  if (!db) return [];
+
+  try {
+    const result = await db.execute(
+      sql`
+        SELECT
+          i.id,
+          i.name,
+          i.brand,
+          i.category,
+          i.storageArea,
+          i.parLevel,
+          i.orderThreshold,
+          i.caseQty,
+          i.countMode,
+          i.price,
+          i.itemNumber,
+          -- Latest count event
+          latest_count.quantityCases AS lastCountQty,
+          latest_count.eventDate AS lastCountDate,
+          -- Sum of receipts since last count
+          COALESCE(receipts.totalReceived, 0) AS totalReceived,
+          -- Current stock = last count + receipts since
+          COALESCE(latest_count.quantityCases, 0) + COALESCE(receipts.totalReceived, 0) AS currentStockCases
+        FROM items i
+        -- Latest count event per item
+        LEFT JOIN (
+          SELECT se.itemId, se.quantityCases, se.eventDate
+          FROM stock_events se
+          INNER JOIN (
+            SELECT itemId, MAX(eventDate) AS maxDate
+            FROM stock_events
+            WHERE eventType = 'count'
+            GROUP BY itemId
+          ) latest ON se.itemId = latest.itemId AND se.eventDate = latest.maxDate
+          WHERE se.eventType = 'count'
+        ) latest_count ON latest_count.itemId = i.id
+        -- Receipts since last count
+        LEFT JOIN (
+          SELECT se.itemId, SUM(se.quantityCases) AS totalReceived
+          FROM stock_events se
+          INNER JOIN (
+            SELECT itemId, MAX(eventDate) AS maxDate
+            FROM stock_events
+            WHERE eventType = 'count'
+            GROUP BY itemId
+          ) latest_count ON se.itemId = latest_count.itemId AND se.eventDate > latest_count.maxDate
+          WHERE se.eventType = 'receipt'
+          GROUP BY se.itemId
+        ) receipts ON receipts.itemId = i.id
+        WHERE i.isActive = 1
+        ORDER BY i.category, i.name
+      `
+    );
+    type StockRow = {
+      id: number; name: string; brand: string | null; category: string | null;
+      storageArea: string | null; parLevel: string | null; orderThreshold: string | null;
+      caseQty: number | null; countMode: string | null; price: string | null;
+      itemNumber: string | null; lastCountQty: string | null; lastCountDate: Date | null;
+      totalReceived: string; currentStockCases: string;
+    };
+    const rows = (result[0] as unknown as StockRow[]) ?? [];
+    return rows.map((r) => {
+      const parLevel = parseFloat(r.parLevel ?? "0");
+      const threshold = parseFloat(r.orderThreshold ?? "50");
+      const currentStock = parseFloat(r.currentStockCases ?? "0");
+      const triggerLevel = parLevel * (threshold / 100);
+      const stockPct = parLevel > 0 ? Math.round((currentStock / parLevel) * 100) : null;
+      const status: "ok" | "low" | "critical" | "unknown" =
+        r.lastCountDate == null ? "unknown"
+        : currentStock <= triggerLevel * 0.5 ? "critical"
+        : currentStock <= triggerLevel ? "low"
+        : "ok";
+      return {
+        id: r.id,
+        name: r.name,
+        brand: r.brand,
+        category: r.category ?? "Uncategorized",
+        storageArea: r.storageArea,
+        parLevel,
+        orderThreshold: threshold,
+        caseQty: r.caseQty,
+        countMode: r.countMode ?? "case",
+        price: parseFloat(r.price ?? "0"),
+        itemNumber: r.itemNumber,
+        lastCountQty: parseFloat(r.lastCountQty ?? "0"),
+        lastCountDate: r.lastCountDate,
+        totalReceived: parseFloat(r.totalReceived ?? "0"),
+        currentStockCases: currentStock,
+        stockPct,
+        status,
+        triggerLevel,
+      };
+    });
+  } catch (e) {
+    console.warn("[analytics] getCurrentStockLevels failed:", e);
+    return [];
+  }
+}
+
+// ─── Analytics: Consumption Rates ────────────────────────────────────────────
+// Consumption = stock at count N minus stock at count N+1 (adjusted for receipts between)
+export async function getConsumptionRates(limitItems = 30) {
+  const db = await getDb();
+  if (!db) return [];
+
+  try {
+    // Get all count events ordered by item + date
+    const result = await db.execute(
+      sql`
+        SELECT
+          se.itemId,
+          i.name,
+          i.brand,
+          i.category,
+          i.price,
+          i.caseQty,
+          se.quantityCases,
+          se.eventDate,
+          -- Sum receipts between this count and the previous count
+          COALESCE((
+            SELECT SUM(r.quantityCases)
+            FROM stock_events r
+            WHERE r.itemId = se.itemId
+              AND r.eventType = 'receipt'
+              AND r.eventDate < se.eventDate
+              AND r.eventDate > COALESCE((
+                SELECT MAX(prev.eventDate)
+                FROM stock_events prev
+                WHERE prev.itemId = se.itemId
+                  AND prev.eventType = 'count'
+                  AND prev.eventDate < se.eventDate
+              ), '2000-01-01')
+          ), 0) AS receivedBetween
+        FROM stock_events se
+        INNER JOIN items i ON i.id = se.itemId
+        WHERE se.eventType = 'count' AND i.isActive = 1
+        ORDER BY se.itemId, se.eventDate DESC
+      `
+    );
+    type ConsRow = {
+      itemId: number; name: string; brand: string | null; category: string | null;
+      price: string | null; caseQty: number | null;
+      quantityCases: string; eventDate: Date; receivedBetween: string;
+    };
+    const rows = (result[0] as unknown as ConsRow[]) ?? [];
+
+    // Group by item and compute consumption between consecutive counts
+    const byItem: Record<number, ConsRow[]> = {};
+    for (const row of rows) {
+      if (!byItem[row.itemId]) byItem[row.itemId] = [];
+      byItem[row.itemId].push(row);
+    }
+
+    const consumptionData: Array<{
+      itemId: number; name: string; brand: string | null; category: string | null;
+      avgConsumptionPerWeek: number; totalConsumed: number; periods: number;
+      price: number; weeklySpend: number;
+    }> = [];
+
+    for (const [itemIdStr, countRows] of Object.entries(byItem)) {
+      if (countRows.length < 2) continue; // need at least 2 counts to compute consumption
+      const sorted = countRows.sort((a, b) => new Date(a.eventDate).getTime() - new Date(b.eventDate).getTime());
+      let totalConsumed = 0;
+      let totalDays = 0;
+      let periods = 0;
+      for (let i = 1; i < sorted.length; i++) {
+        const prev = sorted[i - 1];
+        const curr = sorted[i];
+        const prevQty = parseFloat(prev.quantityCases);
+        const currQty = parseFloat(curr.quantityCases);
+        const received = parseFloat(curr.receivedBetween ?? "0");
+        // consumed = what we had + what we received - what we have now
+        const consumed = prevQty + received - currQty;
+        if (consumed < 0) continue; // skip anomalous data
+        const days = (new Date(curr.eventDate).getTime() - new Date(prev.eventDate).getTime()) / (1000 * 60 * 60 * 24);
+        if (days < 1) continue;
+        totalConsumed += consumed;
+        totalDays += days;
+        periods++;
+      }
+      if (periods === 0 || totalDays === 0) continue;
+      const avgPerDay = totalConsumed / totalDays;
+      const avgPerWeek = avgPerDay * 7;
+      const price = parseFloat(sorted[0].price ?? "0");
+      consumptionData.push({
+        itemId: Number(itemIdStr),
+        name: sorted[0].name,
+        brand: sorted[0].brand,
+        category: sorted[0].category,
+        avgConsumptionPerWeek: Math.round(avgPerWeek * 100) / 100,
+        totalConsumed: Math.round(totalConsumed * 100) / 100,
+        periods,
+        price,
+        weeklySpend: Math.round(avgPerWeek * price * 100) / 100,
+      });
+    }
+
+    return consumptionData
+      .sort((a, b) => b.weeklySpend - a.weeklySpend)
+      .slice(0, limitItems);
+  } catch (e) {
+    console.warn("[analytics] getConsumptionRates failed:", e);
+    return [];
+  }
+}
+
+// ─── Analytics: Stock Trend (per item, last N events) ────────────────────────
+export async function getStockTrend(itemId: number, limit = 20) {
+  const db = await getDb();
+  if (!db) return [];
+
+  try {
+    const result = await db.execute(
+      sql`
+        SELECT eventType, quantityCases, eventDate, invoiceId, countSessionId
+        FROM stock_events
+        WHERE itemId = ${itemId}
+        ORDER BY eventDate DESC
+        LIMIT ${limit}
+      `
+    );
+    type TrendRow = { eventType: string; quantityCases: string; eventDate: Date; invoiceId: number | null; countSessionId: number | null };
+    const rows = (result[0] as unknown as TrendRow[]) ?? [];
+    // Reverse to chronological order and compute running stock
+    const sorted = rows.reverse();
+    let running = 0;
+    return sorted.map((r) => {
+      if (r.eventType === 'count') {
+        running = parseFloat(r.quantityCases);
+      } else if (r.eventType === 'receipt') {
+        running += parseFloat(r.quantityCases);
+      } else if (r.eventType === 'adjustment') {
+        running += parseFloat(r.quantityCases);
+      }
+      return {
+        eventType: r.eventType,
+        quantityCases: parseFloat(r.quantityCases),
+        runningStock: Math.round(running * 1000) / 1000,
+        eventDate: r.eventDate,
+        invoiceId: r.invoiceId,
+        countSessionId: r.countSessionId,
+      };
+    });
+  } catch (e) {
+    console.warn("[analytics] getStockTrend failed:", e);
+    return [];
+  }
+}
+
+// ─── Analytics: Red Flags ─────────────────────────────────────────────────────
+// Detects items where the count dropped more than expected vs. prior periods
+export async function getRedFlags() {
+  const db = await getDb();
+  if (!db) return [];
+
+  try {
+    const consumption = await getConsumptionRates(200);
+    const stockLevels = await getCurrentStockLevels();
+    const stockMap = new Map(stockLevels.map((s) => [s.id, s]));
+
+    const flags: Array<{
+      itemId: number; name: string; category: string | null;
+      flagType: "critical_stock" | "unusual_drop" | "no_recent_count";
+      message: string;
+      severity: "high" | "medium" | "low";
+    }> = [];
+
+    // Flag 1: Critical stock (below 50% of trigger level)
+    for (const item of stockLevels) {
+      if (item.status === "critical") {
+        flags.push({
+          itemId: item.id,
+          name: item.name,
+          category: item.category,
+          flagType: "critical_stock",
+          message: `Stock at ${item.stockPct ?? 0}% of par — critically low`,
+          severity: "high",
+        });
+      }
+    }
+
+    // Flag 2: No count in 30+ days for items with par levels
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    for (const item of stockLevels) {
+      if (item.parLevel > 0 && (item.lastCountDate == null || new Date(item.lastCountDate) < thirtyDaysAgo)) {
+        flags.push({
+          itemId: item.id,
+          name: item.name,
+          category: item.category,
+          flagType: "no_recent_count",
+          message: item.lastCountDate == null
+            ? "Never counted — no stock data"
+            : `Last count ${Math.round((Date.now() - new Date(item.lastCountDate).getTime()) / (1000 * 60 * 60 * 24))} days ago`,
+          severity: "low",
+        });
+      }
+    }
+
+    // Flag 3: Unusual drop — current stock significantly below expected based on avg consumption
+    for (const item of consumption) {
+      const stock = stockMap.get(item.itemId);
+      if (!stock || stock.lastCountDate == null) continue;
+      const daysSinceCount = (Date.now() - new Date(stock.lastCountDate).getTime()) / (1000 * 60 * 60 * 24);
+      const expectedConsumption = (item.avgConsumptionPerWeek / 7) * daysSinceCount;
+      const expectedStock = stock.lastCountQty + stock.totalReceived - expectedConsumption;
+      const actualStock = stock.currentStockCases;
+      // Flag if actual is more than 30% below expected and the gap is at least 0.5 cases
+      if (expectedStock > 0 && actualStock < expectedStock * 0.7 && (expectedStock - actualStock) > 0.5) {
+        flags.push({
+          itemId: item.itemId,
+          name: item.name,
+          category: item.category,
+          flagType: "unusual_drop",
+          message: `Expected ~${expectedStock.toFixed(1)} cs on hand, counted ${actualStock.toFixed(1)} cs — possible waste or variance`,
+          severity: "medium",
+        });
+      }
+    }
+
+    return flags.sort((a, b) => {
+      const order = { high: 0, medium: 1, low: 2 };
+      return order[a.severity] - order[b.severity];
+    });
+  } catch (e) {
+    console.warn("[analytics] getRedFlags failed:", e);
+    return [];
+  }
 }
 
 // ─── Bulk Update Items ────────────────────────────────────────────────────────
