@@ -8,6 +8,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import {
+  AlertTriangle,
   Calculator,
   ChevronRight,
   ClipboardList,
@@ -17,6 +18,8 @@ import {
   TrendingUp,
   DollarSign,
   BarChart3,
+  Activity,
+  Flame,
 } from "lucide-react";
 import { Link } from "wouter";
 import {
@@ -61,6 +64,9 @@ export default function Home() {
   const { data: metrics, isLoading: metricsLoading } = trpc.dashboard.metrics.useQuery(undefined, {
     enabled: isAdmin,
   });
+  const { data: stockLevels } = trpc.dashboard.stockLevels.useQuery(undefined, { enabled: isAdmin });
+  const { data: consumptionRates } = trpc.dashboard.consumptionRates.useQuery(undefined, { enabled: isAdmin });
+  const { data: redFlags } = trpc.dashboard.redFlags.useQuery(undefined, { enabled: isAdmin });
 
   const belowParItems = Array.isArray(belowParResult)
     ? belowParResult
@@ -113,6 +119,24 @@ export default function Home() {
   const orderCostConfig: ChartConfig = {
     estimatedCost: { label: "Est. Order Cost", color: "#ff7a6e" },
   };
+
+  // Stock status summary from stock_events
+  const stockLevelList = stockLevels ?? [];
+  const criticalItems = stockLevelList.filter((s) => s.status === "critical");
+  const lowItems = stockLevelList.filter((s) => s.status === "low");
+  const okItems = stockLevelList.filter((s) => s.status === "ok");
+  const unknownItems = stockLevelList.filter((s) => s.status === "unknown");
+
+  // Top consumers by weekly spend
+  const topConsumers = (consumptionRates ?? []).slice(0, 10);
+  const consumptionConfig: ChartConfig = {
+    weeklySpend: { label: "Weekly Spend", color: "#57b296" },
+  };
+
+  // Red flags
+  const flags = redFlags ?? [];
+  const highFlags = flags.filter((f) => f.severity === "high");
+  const medFlags = flags.filter((f) => f.severity === "medium");
 
   // Inventory donut — only priced categories
   const inventoryConfig: ChartConfig = Object.fromEntries(
@@ -186,6 +210,164 @@ export default function Home() {
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-5">
+
+              {/* ── Red Flags ── */}
+              {flags.length > 0 && (
+                <div className="bg-card rounded-2xl border border-destructive/30 p-5 shadow-sm">
+                  <div className="flex items-center gap-2 mb-3">
+                    <AlertTriangle size={16} className="text-destructive" />
+                    <h3 className="font-semibold text-foreground">Inventory Alerts</h3>
+                    {highFlags.length > 0 && (
+                      <span className="ml-auto text-xs font-bold px-2 py-0.5 rounded-full bg-destructive/10 text-destructive">
+                        {highFlags.length} critical
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    {flags.slice(0, 8).map((flag, i) => (
+                      <div key={i} className={cn(
+                        "flex items-start gap-3 px-3 py-2.5 rounded-xl border text-sm",
+                        flag.severity === "high" ? "bg-destructive/5 border-destructive/20" :
+                        flag.severity === "medium" ? "bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800" :
+                        "bg-muted/30 border-border"
+                      )}>
+                        <span className={cn(
+                          "w-2 h-2 rounded-full mt-1.5 shrink-0",
+                          flag.severity === "high" ? "bg-destructive" :
+                          flag.severity === "medium" ? "bg-amber-500" : "bg-muted-foreground"
+                        )} />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-foreground truncate">{flag.name}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{flag.message}</p>
+                        </div>
+                        {flag.category && (
+                          <span className="text-xs text-muted-foreground shrink-0">{flag.category}</span>
+                        )}
+                      </div>
+                    ))}
+                    {flags.length > 8 && (
+                      <p className="text-xs text-muted-foreground text-center pt-1">
+                        +{flags.length - 8} more alerts
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Stock Status Overview ── */}
+              {stockLevelList.length > 0 && (
+                <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Activity size={16} className="text-primary" />
+                    <h3 className="font-semibold text-foreground">Live Stock Status</h3>
+                    <span className="text-xs text-muted-foreground ml-auto">{stockLevelList.length} items tracked</span>
+                  </div>
+                  {/* Status bar */}
+                  <div className="flex rounded-full overflow-hidden h-3 mb-3">
+                    {okItems.length > 0 && (
+                      <div
+                        className="bg-emerald-500 transition-all"
+                        style={{ width: `${(okItems.length / stockLevelList.length) * 100}%` }}
+                        title={`${okItems.length} OK`}
+                      />
+                    )}
+                    {lowItems.length > 0 && (
+                      <div
+                        className="bg-amber-400 transition-all"
+                        style={{ width: `${(lowItems.length / stockLevelList.length) * 100}%` }}
+                        title={`${lowItems.length} Low`}
+                      />
+                    )}
+                    {criticalItems.length > 0 && (
+                      <div
+                        className="bg-destructive transition-all"
+                        style={{ width: `${(criticalItems.length / stockLevelList.length) * 100}%` }}
+                        title={`${criticalItems.length} Critical`}
+                      />
+                    )}
+                    {unknownItems.length > 0 && (
+                      <div
+                        className="bg-muted transition-all"
+                        style={{ width: `${(unknownItems.length / stockLevelList.length) * 100}%` }}
+                        title={`${unknownItems.length} Unknown`}
+                      />
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                    <div className="bg-emerald-50 dark:bg-emerald-950/20 rounded-xl p-2.5">
+                      <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{okItems.length}</p>
+                      <p className="text-xs text-muted-foreground">OK</p>
+                    </div>
+                    <div className="bg-amber-50 dark:bg-amber-950/20 rounded-xl p-2.5">
+                      <p className="text-lg font-bold text-amber-600 dark:text-amber-400">{lowItems.length}</p>
+                      <p className="text-xs text-muted-foreground">Low</p>
+                    </div>
+                    <div className="bg-destructive/5 rounded-xl p-2.5">
+                      <p className="text-lg font-bold text-destructive">{criticalItems.length}</p>
+                      <p className="text-xs text-muted-foreground">Critical</p>
+                    </div>
+                    <div className="bg-muted/30 rounded-xl p-2.5">
+                      <p className="text-lg font-bold text-muted-foreground">{unknownItems.length}</p>
+                      <p className="text-xs text-muted-foreground">No Data</p>
+                    </div>
+                  </div>
+                  {/* Critical items list */}
+                  {criticalItems.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-border space-y-1.5">
+                      <p className="text-xs font-semibold text-destructive uppercase tracking-wider">Critical — needs immediate attention</p>
+                      {criticalItems.slice(0, 5).map((item) => (
+                        <div key={item.id} className="flex items-center justify-between gap-2 text-sm">
+                          <span className="text-foreground truncate">{item.name}</span>
+                          <span className="text-xs text-destructive font-semibold shrink-0">
+                            {item.stockPct != null ? `${item.stockPct}% of par` : "< threshold"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Top Consumption Chart ── */}
+              {topConsumers.length > 0 && (
+                <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Flame size={16} className="text-primary" />
+                    <h3 className="font-semibold text-foreground">Top Items by Weekly Spend</h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-4">Average weekly cost based on consumption between counts</p>
+                  <ChartContainer config={consumptionConfig} className="h-56 w-full aspect-auto">
+                    <BarChart
+                      data={topConsumers}
+                      layout="vertical"
+                      margin={{ top: 0, right: 8, left: 0, bottom: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+                      <XAxis
+                        type="number"
+                        tick={{ fontSize: 10 }}
+                        tickFormatter={(v: number) => `$${v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v}`}
+                      />
+                      <YAxis
+                        type="category"
+                        dataKey="name"
+                        width={110}
+                        tick={{ fontSize: 10 }}
+                        tickFormatter={(v: string) => v.length > 14 ? v.slice(0, 14) + "…" : v}
+                      />
+                      <ChartTooltip
+                        content={
+                          <ChartTooltipContent
+                            formatter={(value) => `$${Number(value).toLocaleString("en-US", { maximumFractionDigits: 2 })}/wk`}
+                          />
+                        }
+                      />
+                      <Bar dataKey="weeklySpend" fill="#57b296" radius={[0, 6, 6, 0]} />
+                    </BarChart>
+                  </ChartContainer>
+                </div>
+              )}
+
 
               {/* ── Chart 1: Inventory Value by Category (Donut) ── */}
               <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">

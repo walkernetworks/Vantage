@@ -1,9 +1,9 @@
 /**
  * Invoice DB helpers — create, parse, apply, and query invoices.
  */
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, gt, isNull } from "drizzle-orm";
 import { getDb, getRawPool } from "./db";
-import { invoices, invoiceLines, items } from "../drizzle/schema";
+import { invoices, invoiceLines, items, stockEvents, countEntries, countSessions } from "../drizzle/schema";
 import { invokeLLM } from "./_core/llm";
 
 export interface ParsedLine {
@@ -290,25 +290,125 @@ export async function markInvoiceReviewed(invoiceId: number) {
   await db.update(invoices).set({ status: "reviewed" }).where(eq(invoices.id, invoiceId));
 }
 
-export async function applyInvoiceToInventory(invoiceId: number) {
+export async function applyInvoiceToInventory(invoiceId: number, appliedBy?: number) {
   const db = await getDb();
   if (!db) return [];
 
+  // Only apply matched lines that were actually received
   const lines = await db
     .select()
     .from(invoiceLines)
-    .where(and(eq(invoiceLines.invoiceId, invoiceId), eq(invoiceLines.matchStatus, "matched")));
+    .where(
+      and(
+        eq(invoiceLines.invoiceId, invoiceId),
+        eq(invoiceLines.matchStatus, "matched"),
+        eq(invoiceLines.notReceived, false)
+      )
+    );
 
   const applied: Array<{ itemId: number; shippedQty: number }> = [];
+  const eventRows: Array<typeof stockEvents.$inferInsert> = [];
+
   for (const line of lines) {
     if (!line.itemId) continue;
-    const qty = parseFloat(String(line.shippedQty));
-    if (isNaN(qty) || qty <= 0) continue;
-    applied.push({ itemId: line.itemId, shippedQty: qty });
+    const shippedQty = parseFloat(String(line.shippedQty));
+    if (isNaN(shippedQty) || shippedQty <= 0) continue;
+
+    // shippedQty on invoice lines is in cases (PFG invoices report case quantities)
+    const quantityCases = shippedQty;
+
+    applied.push({ itemId: line.itemId, shippedQty });
+    eventRows.push({
+      itemId: line.itemId,
+      eventType: "receipt",
+      quantityCases: String(quantityCases),
+      invoiceId,
+      invoiceLineId: line.id,
+      createdBy: appliedBy ?? null,
+      eventDate: new Date(),
+    });
+  }
+
+  // Write stock events in bulk
+  if (eventRows.length > 0) {
+    await db.insert(stockEvents).values(eventRows);
+    console.log(`[Invoice Apply] Wrote ${eventRows.length} receipt stock events for invoice ${invoiceId}`);
   }
 
   await db.update(invoices).set({ status: "applied" }).where(eq(invoices.id, invoiceId));
   return applied;
+}
+
+/**
+ * Toggle the notReceived flag on an invoice line.
+ * When notReceived=true the line is excluded from stock updates on apply.
+ */
+export async function toggleInvoiceLineNotReceived(lineId: number, notReceived: boolean) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(invoiceLines).set({ notReceived }).where(eq(invoiceLines.id, lineId));
+}
+
+/**
+ * Backfill stock events from completed count sessions.
+ * Call once after deploy to seed the stock_events table from historical data.
+ */
+export async function backfillCountStockEvents() {
+  const db = await getDb();
+  if (!db) return 0;
+
+  // Find completed sessions that don't already have stock events
+  const sessions = await db
+    .select({ id: countSessions.id, completedAt: countSessions.completedAt })
+    .from(countSessions)
+    .where(and(gt(countSessions.completedAt, new Date(0))));
+
+  let total = 0;
+  for (const session of sessions) {
+    // Check if this session already has stock events
+    const existing = await db
+      .select({ id: stockEvents.id })
+      .from(stockEvents)
+      .where(eq(stockEvents.countSessionId, session.id))
+      .limit(1);
+    if (existing.length > 0) continue;
+
+    const entries = await db
+      .select({
+        itemId: countEntries.itemId,
+        quantity: countEntries.quantity,
+        caseQty: items.caseQty,
+        countMode: items.countMode,
+      })
+      .from(countEntries)
+      .innerJoin(items, eq(countEntries.itemId, items.id))
+      .where(eq(countEntries.sessionId, session.id));
+
+    const eventRows: Array<typeof stockEvents.$inferInsert> = [];
+    for (const entry of entries) {
+      const raw = parseFloat(String(entry.quantity)) || 0;
+      // Normalize to cases
+      let quantityCases: number;
+      if (entry.countMode === 'each' && entry.caseQty && entry.caseQty > 1) {
+        quantityCases = raw / entry.caseQty;
+      } else {
+        quantityCases = raw; // already in cases
+      }
+      eventRows.push({
+        itemId: entry.itemId,
+        eventType: 'count',
+        quantityCases: String(quantityCases),
+        countSessionId: session.id,
+        eventDate: session.completedAt ?? new Date(),
+      });
+    }
+    if (eventRows.length > 0) {
+      await db.insert(stockEvents).values(eventRows);
+      total += eventRows.length;
+    }
+  }
+  console.log(`[Backfill] Wrote ${total} count stock events from ${sessions.length} sessions`);
+  return total;
 }
 
 export async function deleteInvoice(invoiceId: number) {

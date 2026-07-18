@@ -28,6 +28,7 @@ import {
   updateInvoiceLine,
   markInvoiceReviewed,
   applyInvoiceToInventory,
+  toggleInvoiceLineNotReceived,
   deleteInvoice,
 } from "../invoices";
 
@@ -501,10 +502,17 @@ export const invoicesRouter = router({
       return { success: true };
     }),
 
+  toggleNotReceived: protectedProcedure
+    .input(z.object({ lineId: z.number(), notReceived: z.boolean() }))
+    .mutation(async ({ input }) => {
+      await toggleInvoiceLineNotReceived(input.lineId, input.notReceived);
+      return { success: true };
+    }),
+
   applyDelivery: protectedProcedure
     .input(z.object({ invoiceId: z.number() }))
-    .mutation(async ({ input }) => {
-      const applied = await applyInvoiceToInventory(input.invoiceId);
+    .mutation(async ({ input, ctx }) => {
+      const applied = await applyInvoiceToInventory(input.invoiceId, ctx.user.id);
       return { applied, count: applied.length };
     }),
 

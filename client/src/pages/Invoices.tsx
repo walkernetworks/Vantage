@@ -82,6 +82,7 @@ interface InvoiceLine {
   extension: number | string | null;
   category: string | null;
   matchStatus: "matched" | "unmatched" | "skipped";
+  notReceived: boolean;
 }
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
@@ -310,6 +311,10 @@ function ReviewDialog({
     onSuccess: () => utils.invoices.getWithLines.invalidate({ invoiceId }),
   });
 
+  const toggleNotReceivedMutation = trpc.invoices.toggleNotReceived.useMutation({
+    onSuccess: () => utils.invoices.getWithLines.invalidate({ invoiceId }),
+  });
+
   const markReviewedMutation = trpc.invoices.markReviewed.useMutation({
     onSuccess: () => utils.invoices.getWithLines.invalidate({ invoiceId }),
   });
@@ -329,6 +334,7 @@ function ReviewDialog({
   const matchedLines = lines.filter((l) => l.matchStatus === "matched");
   const unmatchedLines = lines.filter((l) => l.matchStatus === "unmatched");
   const skippedLines = lines.filter((l) => l.matchStatus === "skipped");
+  const notReceivedCount = matchedLines.filter((l) => l.notReceived).length;
 
   const handleMatchItem = (lineId: number, itemId: string) => {
     updateLineMutation.mutate({
@@ -436,19 +442,54 @@ function ReviewDialog({
                 <div>
                   <h3 className="text-sm font-semibold text-green-600 dark:text-green-400 mb-2 flex items-center gap-1.5">
                     <CheckCircle2 size={14} /> Matched Items
+                    {notReceivedCount > 0 && (
+                      <span className="ml-auto text-xs font-normal text-amber-600 dark:text-amber-400">
+                        {notReceivedCount} marked not received
+                      </span>
+                    )}
                   </h3>
                   <div className="space-y-1.5">
                     {matchedLines.map((line) => (
-                      <div key={line.id} className="flex items-center gap-3 px-3 py-2 rounded-xl bg-muted/50 border border-border">
-                        <CheckCircle2 size={14} className="text-green-500 shrink-0" />
+                      <div
+                        key={line.id}
+                        className={cn(
+                          "flex items-center gap-3 px-3 py-2 rounded-xl border transition-colors",
+                          line.notReceived
+                            ? "bg-red-50/50 dark:bg-red-950/20 border-red-200 dark:border-red-800 opacity-70"
+                            : "bg-muted/50 border-border"
+                        )}
+                      >
+                        {line.notReceived ? (
+                          <AlertCircle size={14} className="text-red-500 shrink-0" />
+                        ) : (
+                          <CheckCircle2 size={14} className="text-green-500 shrink-0" />
+                        )}
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-foreground truncate">{line.itemName ?? line.description}</p>
+                          <p className={cn("text-sm font-medium truncate", line.notReceived && "line-through text-muted-foreground")}>
+                            {line.itemName ?? line.description}
+                          </p>
                           <p className="text-xs text-muted-foreground truncate">{line.description}</p>
                         </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-sm font-semibold text-foreground">+{line.shippedQty}</p>
+                        <div className="text-right shrink-0 mr-2">
+                          <p className={cn("text-sm font-semibold", line.notReceived ? "text-muted-foreground line-through" : "text-foreground")}>
+                            +{line.shippedQty}
+                          </p>
                           <p className="text-xs text-muted-foreground">{formatCurrency(line.extension)}</p>
                         </div>
+                        {invoice?.status !== "applied" && (
+                          <button
+                            onClick={() => toggleNotReceivedMutation.mutate({ lineId: line.id, notReceived: !line.notReceived })}
+                            className={cn(
+                              "shrink-0 text-xs px-2 py-1 rounded-lg border transition-colors",
+                              line.notReceived
+                                ? "border-green-300 text-green-700 hover:bg-green-50 dark:border-green-700 dark:text-green-400"
+                                : "border-red-200 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400"
+                            )}
+                            title={line.notReceived ? "Mark as received" : "Mark as not received"}
+                          >
+                            {line.notReceived ? "Received" : "Not Rcvd"}
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>

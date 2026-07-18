@@ -284,6 +284,8 @@ export const invoiceLines = mysqlTable(
     matchStatus: mysqlEnum("matchStatus", ["matched", "unmatched", "skipped"])
       .notNull()
       .default("unmatched"),
+    // User can flag a line as not actually received (e.g. short shipment)
+    notReceived: boolean("notReceived").default(false).notNull(),
   },
   (t) => [
     index("idx_invoice_lines_invoice").on(t.invoiceId),
@@ -292,3 +294,39 @@ export const invoiceLines = mysqlTable(
 );
 export type InvoiceLine = typeof invoiceLines.$inferSelect;
 export type InsertInvoiceLine = typeof invoiceLines.$inferInsert;
+
+// ─── Stock Events ─────────────────────────────────────────────────────────────
+// Records every inventory movement: count baselines, invoice receipts, adjustments.
+// Current stock for an item = latest 'count' event + sum of 'receipt' events since.
+export const stockEvents = mysqlTable(
+  "stock_events",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    itemId: int("itemId")
+      .notNull()
+      .references(() => items.id),
+    // 'count' = physical count sets new baseline
+    // 'receipt' = invoice receipt adds to stock
+    // 'adjustment' = manual correction
+    eventType: mysqlEnum("eventType", ["count", "receipt", "adjustment"]).notNull(),
+    // Quantity in cases (fractional for each-mode items)
+    quantityCases: decimal("quantityCases", { precision: 10, scale: 4 }).notNull(),
+    // Reference to source record
+    countSessionId: int("countSessionId").references(() => countSessions.id),
+    invoiceId: int("invoiceId").references(() => invoices.id),
+    invoiceLineId: int("invoiceLineId").references(() => invoiceLines.id),
+    notes: text("notes"),
+    createdBy: int("createdBy").references(() => users.id),
+    eventDate: timestamp("eventDate").defaultNow().notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_stock_events_item").on(t.itemId),
+    index("idx_stock_events_type").on(t.eventType),
+    index("idx_stock_events_date").on(t.eventDate),
+    index("idx_stock_events_invoice").on(t.invoiceId),
+    index("idx_stock_events_session").on(t.countSessionId),
+  ]
+);
+export type StockEvent = typeof stockEvents.$inferSelect;
+export type InsertStockEvent = typeof stockEvents.$inferInsert;
