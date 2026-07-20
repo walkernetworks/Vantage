@@ -454,18 +454,11 @@ Example: {"name":4,"brand":5,"price":13,"packSize":6,"unitOfMeasure":7,"storageA
       const CANONICAL_VENDORS = ["PFG","Webstaurant","Savannah Distributing","United","Other"];
       const CANONICAL_STORAGE = ["Dry Storage","Walk-In","Freezer","Bar","Other"];
 
-      const systemPrompt = `You are an expert restaurant inventory assistant with deep knowledge of food and beverage products, brands, and distributors.
+      const systemPrompt = `You are a restaurant inventory assistant. You will receive a JSON array of inventory items parsed from a vendor CSV.
 
-You will receive a JSON array of inventory items parsed from a vendor CSV. For each item, return an enriched version with:
-1. "cleanName": A clean, readable product name. Remove vendor codes, size suffixes (e.g. "12 OZ"), redundant words. Title case. Keep it concise.
-2. "brand": The manufacturer/brand name inferred from your product knowledge. Examples:
-   - "Tropicalia" → brand: "Creature Comforts" (it's a Creature Comforts beer)
-   - "Heineken" → brand: "Heineken"
-   - "Tito's Handmade Vodka" → brand: "Tito's"
-   - "Blue Moon Belgian White" → brand: "Blue Moon"
-   - "Jack Daniel's Tennessee Whiskey" → brand: "Jack Daniel's"
-   - If brand is already provided in the input, keep it unless clearly wrong.
-   - If you cannot determine the brand, return null.
+For each item, return ONLY the following fields — do NOT rewrite or invent names or brands:
+1. "cleanName": Copy the input "name" field EXACTLY as-is. Do NOT change it.
+2. "brand": Copy the input "brand" field EXACTLY as-is. If null/missing, return null. Do NOT infer or invent brands.
 3. "caseQty": Integer number of individual units per case, parsed from packSize. Examples:
    - "4/6/12 OZ" → 24 (4 packs × 6 cans)
    - "6/4/12 OZ" → 24 (6 packs × 4 cans)
@@ -476,14 +469,15 @@ You will receive a JSON array of inventory items parsed from a vendor CSV. For e
    - "- 25/Case" → 25
    - "1/50 LB" → 1
    - If you cannot parse it, return null.
-4. "category": Must be exactly one of: ${CANONICAL_CATEGORIES.join(", ")}. Map the raw category to the closest match.
+4. "category": Must be exactly one of: ${CANONICAL_CATEGORIES.join(", ")}. Map the raw category to the closest match based on the item name and any provided category hint.
 5. "vendor": Must be exactly one of: ${CANONICAL_VENDORS.join(", ")}. Map raw vendor names:
-   - "UNITED", "United Distributors" → "Savannah Distributing" (they are the same distributor in Savannah, GA)
+   - "UNITED", "United Distributors" → "Savannah Distributing"
    - "PFG", "Performance Food Group" → "PFG"
    - "Webstaurant", "WebstaurantStore" → "Webstaurant"
    - If unknown, return "Other"
 6. "storageArea": Must be exactly one of: ${CANONICAL_STORAGE.join(", ")}. Infer from category/name if not provided.
 
+CRITICAL: "cleanName" and "brand" must be copied verbatim from the input. Never invent, guess, or improve them.
 Return a JSON array with one object per input row, in the same order. Each object: {"cleanName": string, "brand": string|null, "caseQty": number|null, "category": string, "vendor": string, "storageArea": string}`;
 
       // Process in batches of 25 to stay within token limits

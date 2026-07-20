@@ -1956,27 +1956,12 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
           toast.error("No valid rows found in this file.");
           return;
         }
-        // Enrich PFG rows with AI brand/name intelligence
-        setStep("ai-enriching");
+        // PFG CSVs have reliable, accurate data — skip AI enrichment to prevent hallucination.
+        // The parsePfgCsv function already extracts correct name, brand, price, packSize, and
+        // itemNumber directly from the vendor columns. Use the data as-is.
         setAiSource("PFG");
-        enrichImportRows.mutate(
-          { rows: rows.map((r) => ({ name: r.name, brand: r.brand, packSize: r.packSize, category: r.category, vendor: "PFG", storageArea: r.storageArea, price: r.price })), importSource: "PFG" },
-          {
-            onSuccess: (enriched) => {
-              // Merge enriched data back into pfgRows
-              const merged = rows.map((r, i) => ({
-                ...r,
-                name: (enriched[i] as AiMappedRow)?.name ?? r.name,
-                brand: (enriched[i] as AiMappedRow)?.brand ?? r.brand,
-                category: (enriched[i] as AiMappedRow)?.category ?? r.category,
-                storageArea: (enriched[i] as AiMappedRow)?.storageArea ?? r.storageArea,
-              }));
-              setPfgRows(merged);
-              setStep("pfg-preview");
-            },
-            onError: () => { setPfgRows(rows); setStep("pfg-preview"); },
-          }
-        );
+        setPfgRows(rows);
+        setStep("pfg-preview");
       } else if (detected === "webstaurant") {
         const rows = parseWebstaurantCsv(text);
         if (rows.length === 0) {
