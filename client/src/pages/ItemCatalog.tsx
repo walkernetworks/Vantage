@@ -232,6 +232,87 @@ function parsePfgCsv(text: string): PfgRow[] {
   return rows;
 }
 
+// ── Parse PFG XLSX (actual order guide format) ───────────────────────────────
+// The real PFG order guide is an Excel file with 8 metadata rows before the
+// actual column headers on row 9: Product Description, Brand, StateOfOrigin,
+// Domestic, Product Number, Pack Size, UOM
+async function parsePfgXlsx(file: File): Promise<PfgRow[]> {
+  const XLSX = await import("xlsx");
+  const buffer = await file.arrayBuffer();
+  const wb = XLSX.read(buffer, { type: "array" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  // Convert to array of arrays
+  const raw: (string | number | null)[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+
+  // Find the header row — look for a row containing "Product Description" and "Product Number"
+  let headerRowIdx = -1;
+  for (let i = 0; i < Math.min(raw.length, 15); i++) {
+    const row = raw[i].map((c) => String(c ?? "").toLowerCase().trim());
+    if (row.includes("product description") && row.includes("product number")) {
+      headerRowIdx = i;
+      break;
+    }
+  }
+  if (headerRowIdx === -1) return [];
+
+  const headers = raw[headerRowIdx].map((c) => String(c ?? "").toLowerCase().trim());
+  const col = (name: string) => headers.indexOf(name);
+
+  const colProductDesc = col("product description");
+  const colCustomDesc = col("custom product description");
+  const colBrand = col("brand");
+  const colProductNumber = col("product number");
+  const colPackSize = col("pack size");
+  const colUom = col("uom");
+  const colPrice = col("price");
+  const colCategory = col("category name") !== -1 ? col("category name") : col("category");
+
+  const rows: PfgRow[] = [];
+  for (let i = headerRowIdx + 1; i < raw.length; i++) {
+    const r = raw[i];
+    if (!r || r.every((c) => c === null || c === "")) continue;
+
+    const customDesc = colCustomDesc !== -1 ? String(r[colCustomDesc] ?? "").trim() : "";
+    const productDesc = colProductDesc !== -1 ? String(r[colProductDesc] ?? "").trim() : "";
+    const rawName = customDesc || productDesc;
+    if (!rawName) continue;
+
+    const itemNumber = colProductNumber !== -1 ? String(r[colProductNumber] ?? "").trim() : "";
+    if (!itemNumber) continue;
+
+    // Keep the original vendor name (ALL_CAPS abbreviation style) — do NOT title-case
+    const name = rawName.trim();
+    const brand = colBrand !== -1 ? String(r[colBrand] ?? "").trim() : "";
+    const packSize = colPackSize !== -1 ? String(r[colPackSize] ?? "").trim() : "";
+    const unitOfMeasure = colUom !== -1 ? String(r[colUom] ?? "CS").trim() : "CS";
+    const rawPrice = colPrice !== -1 ? String(r[colPrice] ?? "0").replace(/[$,]/g, "").trim() : "0";
+    const price = rawPrice ? (parseFloat(rawPrice) || 0).toFixed(2) : "0.00";
+    const pfgCategory = colCategory !== -1 ? String(r[colCategory] ?? "").trim().toUpperCase() : "";
+
+    const internalCategory = PFG_CATEGORY_MAP[pfgCategory] ?? "Other";
+    const storageArea = PFG_STORAGE_MAP[pfgCategory] ?? "Dry Storage";
+    const isAlcohol = internalCategory.startsWith("Alcohol");
+    const alcoholCategory = internalCategory === "Alcohol - 100" ? "100"
+      : internalCategory === "Alcohol - 130" ? "130" : undefined;
+
+    rows.push({
+      itemNumber,
+      name,
+      brand,
+      category: internalCategory,
+      vendor: "PFG",
+      packSize,
+      unitOfMeasure,
+      price,
+      isAlcohol,
+      alcoholCategory,
+      storageArea,
+      pfgCategory,
+    });
+  }
+  return rows;
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
 export default function ItemCatalog() {
@@ -1163,7 +1244,7 @@ function PfgImportModal({ onClose }: { onClose: () => void }) {
             </p>
           </div>
 
-          <input ref={fileRef} type="file" accept=".csv,.txt" onChange={handleFileChange} className="hidden" />
+          <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx,.xls" onChange={handleFileChange} className="hidden" />
           <button
             onClick={() => fileRef.current?.click()}
             className="w-full h-32 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 flex flex-col items-center justify-center gap-3 hover:bg-primary/10 transition-colors active:scale-[0.98]"
@@ -1640,7 +1721,7 @@ function WebstaurantImportModal({ onClose }: { onClose: () => void }) {
             </p>
           </div>
 
-          <input ref={fileRef} type="file" accept=".csv,.txt" onChange={handleFileChange} className="hidden" />
+          <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx,.xls" onChange={handleFileChange} className="hidden" />
           <button
             onClick={() => fileRef.current?.click()}
             className="w-full h-32 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 flex flex-col items-center justify-center gap-3 hover:bg-primary/10 transition-colors active:scale-[0.98]"
@@ -1944,6 +2025,25 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Handle XLSX/XLS files — these are the actual PFG order guide format
+    const isExcel = file.name.toLowerCase().endsWith(".xlsx") || file.name.toLowerCase().endsWith(".xls");
+    if (isExcel) {
+      setFormat("pfg");
+      setAiSource("PFG");
+      parsePfgXlsx(file).then((rows) => {
+        if (rows.length === 0) {
+          toast.error("No valid rows found in this Excel file. Make sure it's a PFG order guide.");
+          return;
+        }
+        setPfgRows(rows);
+        setStep("pfg-preview");
+      }).catch(() => {
+        toast.error("Failed to read Excel file. Please try saving as CSV and uploading again.");
+      });
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (ev) => {
       const text = (ev.target?.result as string) ?? "";
@@ -1957,8 +2057,6 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
           return;
         }
         // PFG CSVs have reliable, accurate data — skip AI enrichment to prevent hallucination.
-        // The parsePfgCsv function already extracts correct name, brand, price, packSize, and
-        // itemNumber directly from the vendor columns. Use the data as-is.
         setAiSource("PFG");
         setPfgRows(rows);
         setStep("pfg-preview");
@@ -2165,7 +2263,7 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
             </p>
           </div>
 
-          <input ref={fileRef} type="file" accept=".csv,.txt" onChange={handleFileChange} className="hidden" />
+          <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx,.xls" onChange={handleFileChange} className="hidden" />
           <button
             onClick={() => fileRef.current?.click()}
             className="w-full h-32 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 flex flex-col items-center justify-center gap-3 hover:bg-primary/10 transition-colors active:scale-[0.98]"
