@@ -1208,12 +1208,29 @@ function PfgImportModal({ onClose }: { onClose: () => void }) {
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Handle XLSX/XLS — actual PFG order guide format
+    const isExcel = file.name.toLowerCase().endsWith(".xlsx") || file.name.toLowerCase().endsWith(".xls");
+    if (isExcel) {
+      parsePfgXlsx(file).then((parsed) => {
+        if (parsed.length === 0) {
+          toast.error("No valid rows found in this Excel file. Make sure it's a PFG order guide.");
+          return;
+        }
+        setRows(parsed);
+        setStep("preview");
+      }).catch(() => {
+        toast.error("Failed to read Excel file. Please check the file and try again.");
+      });
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (ev) => {
       const text = ev.target?.result as string ?? "";
       const parsed = parsePfgCsv(text);
       if (parsed.length === 0) {
-        toast.error("No valid rows found. Make sure this is a PFG Order Guide CSV.");
+        toast.error("No valid rows found. Make sure this is a PFG Order Guide (.xlsx or .csv).");
         return;
       }
       setRows(parsed);
@@ -1236,7 +1253,7 @@ function PfgImportModal({ onClose }: { onClose: () => void }) {
         <div className="space-y-5">
           <div className="bg-secondary border border-border rounded-xl p-4 text-sm text-foreground space-y-1">
             <p className="font-semibold flex items-center gap-2">
-              <Upload size={16} /> PFG Order Guide CSV
+              <Upload size={16} /> PFG Order Guide
             </p>
             <p>Upload your PFG Order Guide export. The system will automatically map all columns and categories.</p>
             <p className="text-xs text-muted-foreground mt-1">
@@ -1251,8 +1268,8 @@ function PfgImportModal({ onClose }: { onClose: () => void }) {
           >
             <Upload size={32} className="text-primary" />
             <div className="text-center">
-              <p className="font-semibold text-foreground">Tap to select PFG CSV file</p>
-              <p className="text-sm text-muted-foreground">Supports .csv and .txt files</p>
+              <p className="font-semibold text-foreground">Tap to select PFG Order Guide</p>
+              <p className="text-sm text-muted-foreground">Supports .xlsx, .csv, and .txt files</p>
             </div>
           </button>
 
@@ -2039,7 +2056,7 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
         setPfgRows(rows);
         setStep("pfg-preview");
       }).catch(() => {
-        toast.error("Failed to read Excel file. Please try saving as CSV and uploading again.");
+        toast.error("Failed to read Excel file. Please check the file and try again.");
       });
       return;
     }
