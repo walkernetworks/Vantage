@@ -761,18 +761,23 @@ export async function importPfgItems(rows: PfgImportRow[]): Promise<PfgImportRes
         continue;
       }
 
-      const oldPrice = item.price ?? "0";
+      const oldPriceRaw = item.price; // null if never set
+      const oldPrice = oldPriceRaw ?? "0";
       const newPrice = row.price;
-      if (parseFloat(oldPrice) !== parseFloat(newPrice)) {
-        // Price changed — record history and update
+      const oldF = parseFloat(oldPrice);
+      const newF = parseFloat(newPrice);
+      const priceActuallyChanged = oldPriceRaw !== null && Math.abs(oldF - newF) >= 0.005;
+
+      if (priceActuallyChanged) {
+        // Real price change — record history and update
         await db.insert(priceHistory).values({
           itemId: item.id,
           oldPrice,
           newPrice,
           importSource: "PFG",
         });
-        const diff = parseFloat(newPrice) - parseFloat(oldPrice);
-        const pct = oldPrice !== "0" ? (diff / parseFloat(oldPrice)) * 100 : 0;
+        const diff = newF - oldF;
+        const pct = oldF !== 0 ? (diff / oldF) * 100 : 0;
         priceChanges.push({
           itemId: item.id,
           name: item.name,
@@ -788,10 +793,10 @@ export async function importPfgItems(rows: PfgImportRow[]): Promise<PfgImportRes
           .where(eq(items.id, item.id));
         updated++;
       } else {
-        // Price unchanged — still update brand/packSize/caseQty/eachPrice in case they changed
+        // Price unchanged (or first-time price set) — update price + metadata silently
         await db
           .update(items)
-          .set({ brand: row.brand, packSize: row.packSize, caseQty, eachPrice, updatedAt: new Date() })
+          .set({ price: newPrice, brand: row.brand, packSize: row.packSize, caseQty, eachPrice, updatedAt: new Date() })
           .where(eq(items.id, item.id));
         unchanged++;
       }
@@ -1066,18 +1071,22 @@ export async function importWebstaurantItems(
         continue;
       }
 
-      const oldPrice = item.price ?? "0";
+      const oldPriceRaw = item.price; // null if never set
+      const oldPrice = oldPriceRaw ?? "0";
       const newPrice = row.price;
+      const oldF = parseFloat(oldPrice);
+      const newF = parseFloat(newPrice);
+      const priceActuallyChanged = oldPriceRaw !== null && Math.abs(oldF - newF) >= 0.005;
 
-      if (parseFloat(oldPrice) !== parseFloat(newPrice)) {
+      if (priceActuallyChanged) {
         await db.insert(priceHistory).values({
           itemId: item.id,
           oldPrice,
           newPrice,
           importSource: "Webstaurant",
         });
-        const diff = parseFloat(newPrice) - parseFloat(oldPrice);
-        const pct = parseFloat(oldPrice) !== 0 ? (diff / parseFloat(oldPrice)) * 100 : 0;
+        const diff = newF - oldF;
+        const pct = oldF !== 0 ? (diff / oldF) * 100 : 0;
         priceChanges.push({
           itemId: item.id,
           name: item.name,
@@ -1092,9 +1101,10 @@ export async function importWebstaurantItems(
           .where(eq(items.id, item.id));
         updated++;
       } else {
+        // Price unchanged (or first-time price set) — update price + metadata silently
         await db
           .update(items)
-          .set({ packSize: row.packSize, caseQty, eachPrice, updatedAt: new Date() })
+          .set({ price: newPrice, packSize: row.packSize, caseQty, eachPrice, updatedAt: new Date() })
           .where(eq(items.id, item.id));
         unchanged++;
       }
@@ -1233,16 +1243,21 @@ export async function importUniversalItems(
         continue;
       }
 
-      const oldPrice = item.price ?? "0";
-      if (parseFloat(oldPrice) !== parseFloat(newPrice)) {
+      const oldPriceRaw = item.price; // null if never set
+      const oldPrice = oldPriceRaw ?? "0";
+      const oldF = parseFloat(oldPrice);
+      const newF = parseFloat(newPrice);
+      const priceActuallyChanged = oldPriceRaw !== null && Math.abs(oldF - newF) >= 0.005;
+
+      if (priceActuallyChanged) {
         await db.insert(priceHistory).values({
           itemId: item.id,
           oldPrice,
           newPrice,
           importSource,
         });
-        const diff = parseFloat(newPrice) - parseFloat(oldPrice);
-        const pct = parseFloat(oldPrice) !== 0 ? (diff / parseFloat(oldPrice)) * 100 : 0;
+        const diff = newF - oldF;
+        const pct = oldF !== 0 ? (diff / oldF) * 100 : 0;
         priceChanges.push({
           itemId: item.id,
           name: item.name,
@@ -1265,9 +1280,11 @@ export async function importUniversalItems(
           .where(eq(items.id, item.id));
         updated++;
       } else {
+        // Price unchanged (or first-time price set) — update price + metadata silently
         await db
           .update(items)
           .set({
+            price: newPrice,
             brand: row.brand ?? item.brand,
             packSize: row.packSize ?? item.packSize,
             caseQty,
@@ -1417,6 +1434,42 @@ export async function getDashboardMetrics() {
     }
   }
 
+  // 4. Top recent price changes: biggest absolute $ movers from last 90 days
+  type TopPriceRow = {
+    itemId: number;
+    itemName: string;
+    brand: string | null;
+    importSource: string;
+    oldPrice: string;
+    newPrice: string;
+    importedAt: string;
+  };
+  let topPriceRows: TopPriceRow[] = [];
+  try {
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    const cutoff90 = ninetyDaysAgo.toISOString().slice(0, 10);
+    const result = await db.execute(
+      sql`SELECT ph.itemId,
+             i.name AS itemName,
+             i.brand,
+             ph.importSource,
+             ph.oldPrice,
+             ph.newPrice,
+             ph.importedAt
+          FROM price_history ph
+          JOIN items i ON i.id = ph.itemId
+          WHERE ph.importedAt >= ${cutoff90}
+            AND ph.oldPrice IS NOT NULL
+            AND ABS(ph.newPrice - ph.oldPrice) >= 0.005
+          ORDER BY ABS(ph.newPrice - ph.oldPrice) DESC
+          LIMIT 10`
+    );
+    topPriceRows = (result[0] as unknown as TopPriceRow[]) ?? [];
+  } catch (e) {
+    console.warn("[dashboard] topPriceChanges query failed:", e);
+  }
+
   return {
     inventoryValueByCategory: categoryRows.map((r) => ({
       category: r.category,
@@ -1442,6 +1495,20 @@ export async function getDashboardMetrics() {
           : 0,
     })),
     orderCostTrend: orderCostData,
+    topPriceChanges: topPriceRows.map((r) => ({
+      itemId: r.itemId,
+      name: r.itemName,
+      brand: r.brand ?? "",
+      importSource: r.importSource,
+      oldPrice: parseFloat(r.oldPrice ?? "0"),
+      newPrice: parseFloat(r.newPrice ?? "0"),
+      diff: parseFloat(r.newPrice ?? "0") - parseFloat(r.oldPrice ?? "0"),
+      pctChange:
+        parseFloat(r.oldPrice ?? "0") !== 0
+          ? Math.round(((parseFloat(r.newPrice ?? "0") - parseFloat(r.oldPrice ?? "0")) / parseFloat(r.oldPrice ?? "0")) * 1000) / 10
+          : 0,
+      importedAt: r.importedAt,
+    })),
   };
 }
 
