@@ -1261,7 +1261,7 @@ function PfgImportModal({ onClose }: { onClose: () => void }) {
             </p>
           </div>
 
-          <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx,.xls" onChange={handleFileChange} className="hidden" />
+          <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,text/plain" onChange={handleFileChange} className="hidden" />
           <button
             onClick={() => fileRef.current?.click()}
             className="w-full h-32 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 flex flex-col items-center justify-center gap-3 hover:bg-primary/10 transition-colors active:scale-[0.98]"
@@ -1738,7 +1738,7 @@ function WebstaurantImportModal({ onClose }: { onClose: () => void }) {
             </p>
           </div>
 
-          <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx,.xls" onChange={handleFileChange} className="hidden" />
+          <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,text/plain" onChange={handleFileChange} className="hidden" />
           <button
             onClick={() => fileRef.current?.click()}
             className="w-full h-32 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 flex flex-col items-center justify-center gap-3 hover:bg-primary/10 transition-colors active:scale-[0.98]"
@@ -2273,22 +2273,22 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
             </p>
             <p>Upload any vendor spreadsheet — PFG, Webstaurant, alcohol distributor, or any other format. AI automatically maps the columns.</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Supports: <span className="font-mono">PFG</span> · <span className="font-mono">Webstaurant</span> · <span className="font-mono">Any Distributor CSV</span>
+              Supports: <span className="font-mono">PFG</span> · <span className="font-mono">Webstaurant</span> · <span className="font-mono">Any Distributor (.xlsx, .csv, .txt)</span>
             </p>
             <p className="text-xs text-muted-foreground">
               Re-uploading will update prices and track changes. Historical price data is preserved.
             </p>
           </div>
 
-          <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx,.xls" onChange={handleFileChange} className="hidden" />
+          <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,text/plain" onChange={handleFileChange} className="hidden" />
           <button
             onClick={() => fileRef.current?.click()}
             className="w-full h-32 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 flex flex-col items-center justify-center gap-3 hover:bg-primary/10 transition-colors active:scale-[0.98]"
           >
             <Upload size={32} className="text-primary" />
             <div className="text-center">
-              <p className="font-semibold text-foreground">Tap to select CSV file</p>
-              <p className="text-sm text-muted-foreground">Any vendor format · .csv or .txt</p>
+              <p className="font-semibold text-foreground">Tap to select order guide file</p>
+              <p className="text-sm text-muted-foreground">Any vendor format · .xlsx, .csv, or .txt</p>
             </div>
           </button>
 
