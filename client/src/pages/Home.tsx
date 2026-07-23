@@ -369,6 +369,58 @@ export default function Home() {
               )}
 
 
+              {/* ── Top Price Changes ── */}
+              {(metrics?.topPriceChanges?.length ?? 0) > 0 ? (
+                <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">
+                  <div className="flex items-center gap-2 mb-1">
+                    <TrendingUp size={16} className="text-primary" />
+                    <h3 className="font-semibold text-foreground">Top Price Changes</h3>
+                    <span className="ml-auto text-xs text-muted-foreground">Last 90 days</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-4">Biggest price movers from the most recent order guide imports</p>
+                  <div className="space-y-2">
+                    {(metrics?.topPriceChanges ?? []).map((item) => {
+                      const isUp = item.diff > 0;
+                      return (
+                        <div key={`${item.itemId}-${item.importedAt}`} className={cn(
+                          "flex items-center gap-3 px-3 py-2.5 rounded-xl border text-sm",
+                          isUp ? "bg-destructive/5 border-destructive/20" : "bg-accent/5 border-accent/20"
+                        )}>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-foreground truncate text-xs">{item.name}</p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {item.brand ? `${item.brand} · ` : ""}{item.importSource}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0 space-y-0.5">
+                            <div className="flex items-center gap-1.5 justify-end">
+                              <span className="text-xs text-muted-foreground font-mono">${item.oldPrice.toFixed(2)}</span>
+                              <span className="text-xs text-muted-foreground">→</span>
+                              <span className="text-xs font-bold text-foreground font-mono">${item.newPrice.toFixed(2)}</span>
+                            </div>
+                            <div className={cn(
+                              "inline-flex items-center gap-0.5 text-xs font-bold px-1.5 py-0.5 rounded-md",
+                              isUp ? "bg-destructive/10 text-destructive" : "bg-accent/10 text-accent"
+                            )}>
+                              {isUp ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                              {isUp ? "+" : ""}{item.diff.toFixed(2)} ({isUp ? "+" : ""}{item.pctChange.toFixed(1)}%)
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">
+                  <div className="flex items-center gap-2 mb-1">
+                    <TrendingUp size={16} className="text-primary" />
+                    <h3 className="font-semibold text-foreground">Top Price Changes</h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">No price changes recorded yet. Re-upload an order guide after prices have been set to track changes.</p>
+                </div>
+              )}
+
               {/* ── Chart 1: Inventory Value by Category (Donut) ── */}
               <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">
                 <div className="mb-4">
