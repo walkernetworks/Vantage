@@ -357,8 +357,8 @@ function ReviewDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
-          <DialogHeader>
+        <DialogContent className="max-w-3xl h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <FileText size={18} />
               Invoice Review
@@ -375,7 +375,7 @@ function ReviewDialog({
               <Spinner className="h-8 w-8 text-primary" />
             </div>
           ) : (
-            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+            <div className="flex-1 overflow-y-auto min-h-0 px-6 py-4 space-y-4">
               {/* Summary bar */}
               <div className="grid grid-cols-3 gap-3">
                 <div className="bg-green-50 dark:bg-green-950/30 rounded-xl p-3 text-center">
@@ -520,7 +520,7 @@ function ReviewDialog({
             </div>
           )}
 
-          <DialogFooter className="border-t border-border pt-4 mt-2 flex-col sm:flex-row gap-2">
+          <DialogFooter className="border-t border-border px-6 py-4 shrink-0 flex-col sm:flex-row gap-2 bg-background">
             <Button variant="outline" onClick={onClose} className="sm:mr-auto w-full sm:w-auto">Close</Button>
             {invoice?.status !== "applied" && (
               <>
