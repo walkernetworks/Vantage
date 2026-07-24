@@ -8,6 +8,7 @@ import {
   ArrowUp,
   CheckCircle2,
   CheckSquare,
+  Clock,
   Copy,
   Edit2,
   Filter,
@@ -15,6 +16,7 @@ import {
   Package,
   Plus,
   RefreshCw,
+  RotateCcw,
   Search,
   Sparkles,
   Square,
@@ -330,6 +332,7 @@ export default function ItemCatalog() {
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState<ItemForm>(emptyForm);
   const [showImport, setShowImport] = useState(false);
+  const [showImportHistory, setShowImportHistory] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [bulkMode, setBulkMode] = useState(false);
@@ -539,6 +542,13 @@ export default function ItemCatalog() {
               title={bulkMode ? "Exit bulk select" : "Bulk select items"}
             >
               <CheckSquare size={20} />
+            </button>
+            <button
+              onClick={() => setShowImportHistory(true)}
+              className="p-3 rounded-xl bg-secondary text-secondary-foreground hover:bg-muted transition-colors active:scale-95"
+              title="View import history & revert prices"
+            >
+              <Clock size={20} />
             </button>
             <button
               onClick={() => setShowImport(true)}
@@ -1184,6 +1194,11 @@ export default function ItemCatalog() {
           }}
         />
       )}
+
+      {/* ── Import History Modal ── */}
+      {showImportHistory && (
+        <ImportHistoryModal onClose={() => setShowImportHistory(false)} />
+      )}
     </div>
   );
 }
@@ -1195,6 +1210,7 @@ function PfgImportModal({ onClose }: { onClose: () => void }) {
   const [rows, setRows] = useState<PfgRow[]>([]);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [filterCat, setFilterCat] = useState("");
+  const [fileName, setFileName] = useState<string | undefined>(undefined);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const importMutation = trpc.items.importPfg.useMutation({
@@ -1208,6 +1224,7 @@ function PfgImportModal({ onClose }: { onClose: () => void }) {
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    setFileName(file.name);
 
     // Handle XLSX/XLS — actual PFG order guide format
     const isExcel = file.name.toLowerCase().endsWith(".xlsx") || file.name.toLowerCase().endsWith(".xls");
@@ -1240,7 +1257,7 @@ function PfgImportModal({ onClose }: { onClose: () => void }) {
   }
 
   function handleImport() {
-    importMutation.mutate({ rows });
+    importMutation.mutate({ rows, fileName });
   }
 
   const uniqueCats = Array.from(new Set(rows.map((r) => r.pfgCategory))).sort();
@@ -1987,6 +2004,7 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
   const [filterCat, setFilterCat] = useState("");
   const [result, setResult] = useState<ImportResult | null>(null);
   const [aiProgress, setAiProgress] = useState(0);
+  const [fileName, setFileName] = useState<string | undefined>(undefined);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const generateCleanName = trpc.items.generateCleanName.useMutation();
@@ -2042,6 +2060,7 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    setFileName(file.name);
 
     // Handle XLSX/XLS files — these are the actual PFG order guide format
     const isExcel = file.name.toLowerCase().endsWith(".xlsx") || file.name.toLowerCase().endsWith(".xls");
@@ -2359,7 +2378,7 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
           <div className="flex gap-3">
             <button onClick={() => setStep("upload")} className="flex-1 btn-big bg-muted text-foreground">Back</button>
             <button
-              onClick={() => importPfgMutation.mutate({ rows: pfgRows })}
+               onClick={() => importPfgMutation.mutate({ rows: pfgRows, fileName })}
               disabled={importPfgMutation.isPending}
               className="flex-1 btn-big bg-primary text-primary-foreground disabled:opacity-60"
             >
@@ -2505,7 +2524,7 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
           <div className="flex gap-3">
             <button onClick={() => setStep("upload")} className="flex-1 btn-big bg-muted text-foreground">Back</button>
             <button
-              onClick={() => importUniversalMutation.mutate({ rows: aiRows, importSource: aiSource })}
+               onClick={() => importUniversalMutation.mutate({ rows: aiRows, importSource: aiSource, fileName })}
               disabled={importUniversalMutation.isPending}
               className="flex-1 btn-big bg-primary text-primary-foreground disabled:opacity-60"
             >
@@ -2539,6 +2558,144 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
 
       {/* Result */}
       {step === "result" && <ResultStep />}
+    </Modal>
+  );
+}
+
+// ── Import History Modal ───────────────────────────────────────────────────────
+
+function ImportHistoryModal({ onClose }: { onClose: () => void }) {
+  const utils = trpc.useUtils();
+  const { data: batches = [], isLoading } = trpc.items.listImportBatches.useQuery();
+  const [revertConfirm, setRevertConfirm] = useState<number | null>(null);
+
+  const revertMutation = trpc.items.revertImportBatch.useMutation({
+    onSuccess: (res) => {
+      toast.success(`Reverted prices for ${res.reverted} items`);
+      utils.items.list.invalidate();
+      setRevertConfirm(null);
+    },
+    onError: (e) => {
+      toast.error("Revert failed: " + e.message);
+      setRevertConfirm(null);
+    },
+  });
+
+  function formatDate(d: Date | string | null) {
+    if (!d) return "—";
+    return new Date(d).toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+
+  return (
+    <Modal title="Import History" onClose={onClose}>
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Every order guide upload is logged here. Use <strong>Revert Prices</strong> to restore item prices to what they were before a specific import.
+        </p>
+
+        {isLoading && (
+          <div className="flex items-center justify-center py-10">
+            <RefreshCw size={20} className="animate-spin text-muted-foreground" />
+          </div>
+        )}
+
+        {!isLoading && batches.length === 0 && (
+          <div className="text-center py-10 text-muted-foreground text-sm">
+            <Clock size={32} className="mx-auto mb-2 opacity-30" />
+            <p>No imports recorded yet.</p>
+            <p className="text-xs mt-1">Future uploads will appear here.</p>
+          </div>
+        )}
+
+        {!isLoading && batches.length > 0 && (
+          <div className="space-y-2">
+            {(batches as any[]).map((batch) => {
+              const snapshot = (batch.priceSnapshot ?? []) as Array<{ itemId: number; itemNumber: string; name: string; oldPrice: string | null; newPrice: string }>;
+              const hasSnapshot = snapshot.length > 0;
+              const hasRealPrices = snapshot.some((s) => s.oldPrice !== null);
+
+              return (
+                <div key={batch.id} className="bg-card border border-border rounded-xl p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                          {batch.importSource}
+                        </span>
+                        <span className="text-xs text-muted-foreground">{formatDate(batch.importedAt)}</span>
+                      </div>
+                      {batch.fileName && (
+                        <p className="text-xs text-muted-foreground mt-1 truncate">{batch.fileName}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="bg-accent/10 rounded-lg p-2">
+                      <p className="text-lg font-bold text-accent">{batch.itemsCreated}</p>
+                      <p className="text-xs text-muted-foreground">New</p>
+                    </div>
+                    <div className="bg-ring/10 rounded-lg p-2">
+                      <p className="text-lg font-bold text-ring">{batch.itemsUpdated}</p>
+                      <p className="text-xs text-muted-foreground">Updated</p>
+                    </div>
+                    <div className="bg-muted rounded-lg p-2">
+                      <p className="text-lg font-bold text-muted-foreground">{batch.priceChangesCount}</p>
+                      <p className="text-xs text-muted-foreground">Price Δ</p>
+                    </div>
+                  </div>
+
+                  {hasSnapshot && hasRealPrices && (
+                    revertConfirm === batch.id ? (
+                      <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-3 space-y-2">
+                        <p className="text-sm font-semibold text-destructive">
+                          Revert prices for {snapshot.length} items to their values before this import?
+                        </p>
+                        <p className="text-xs text-muted-foreground">This cannot be undone.</p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setRevertConfirm(null)}
+                            className="flex-1 py-2 rounded-lg border border-border bg-card text-sm font-semibold"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => revertMutation.mutate({ batchId: batch.id })}
+                            disabled={revertMutation.isPending}
+                            className="flex-1 py-2 rounded-lg bg-destructive text-destructive-foreground text-sm font-semibold disabled:opacity-60"
+                          >
+                            {revertMutation.isPending ? "Reverting…" : "Yes, Revert"}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setRevertConfirm(batch.id)}
+                        className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-border bg-card text-sm font-semibold text-foreground hover:bg-muted transition-colors active:scale-95"
+                      >
+                        <RotateCcw size={14} />
+                        Revert Prices
+                      </button>
+                    )
+                  )}
+
+                  {hasSnapshot && !hasRealPrices && (
+                    <p className="text-xs text-muted-foreground text-center py-1">
+                      First import — no prior prices to revert to
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </Modal>
   );
 }

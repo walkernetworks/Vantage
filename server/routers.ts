@@ -71,6 +71,8 @@ import {
   getStockTrend,
   getRedFlags,
   bulkUpdateItems,
+  listImportBatches,
+  revertImportBatch,
   type PfgImportRow,
   type WebstaurantImportRow,
   type UniversalImportRow,
@@ -190,9 +192,10 @@ const itemsRouter = router({
             storageArea: z.string().optional(),
           })
         ),
+        fileName: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => importPfgItems(input.rows as PfgImportRow[])),
+    .mutation(async ({ input, ctx }) => importPfgItems(input.rows as PfgImportRow[], ctx.user.id, input.fileName)),
 
   getPriceHistory: protectedProcedure
     .input(z.object({ itemId: z.number() }))
@@ -573,11 +576,20 @@ Return a JSON array with one object per input row, in the same order. Each objec
           })
         ),
         importSource: z.string().default("Universal"),
+        fileName: z.string().optional(),
       })
     )
-    .mutation(({ input }) =>
-      importUniversalItems(input.rows as UniversalImportRow[], input.importSource)
+    .mutation(({ input, ctx }) =>
+      importUniversalItems(input.rows as UniversalImportRow[], input.importSource, ctx.user.id, input.fileName)
     ),
+
+  // ── Import history & revert ────────────────────────────────────────────────
+  listImportBatches: adminProcedure
+    .query(() => listImportBatches(50)),
+
+  revertImportBatch: adminProcedure
+    .input(z.object({ batchId: z.number() }))
+    .mutation(({ input }) => revertImportBatch(input.batchId)),
 });
 
 // ─── Counts Router ────────────────────────────────────────────────────────────

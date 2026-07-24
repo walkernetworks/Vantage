@@ -7,6 +7,7 @@ import {
   cateringRecipes,
   countEntries,
   countSessions,
+  importBatches,
   invoices,
   invoiceLines,
   items,
@@ -693,7 +694,7 @@ export type PfgImportResult = {
   }>;
 };
 
-export async function importPfgItems(rows: PfgImportRow[]): Promise<PfgImportResult> {
+export async function importPfgItems(rows: PfgImportRow[], importedBy?: number, fileName?: string): Promise<PfgImportResult> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
@@ -701,6 +702,7 @@ export async function importPfgItems(rows: PfgImportRow[]): Promise<PfgImportRes
   let updated = 0;
   let unchanged = 0;
   const priceChanges: PfgImportResult["priceChanges"] = [];
+  const priceSnapshot: Array<{ itemId: number; itemNumber: string; name: string; oldPrice: string | null; newPrice: string }> = [];
 
   for (const row of rows) {
     // Look up by PFG product number (including soft-deleted rows)
@@ -768,6 +770,15 @@ export async function importPfgItems(rows: PfgImportRow[]): Promise<PfgImportRes
       const newF = parseFloat(newPrice);
       const priceActuallyChanged = oldPriceRaw !== null && Math.abs(oldF - newF) >= 0.005;
 
+      // Always snapshot the before/after for this item so we can revert
+      priceSnapshot.push({
+        itemId: item.id,
+        itemNumber: row.itemNumber,
+        name: item.name,
+        oldPrice: oldPriceRaw,
+        newPrice,
+      });
+
       if (priceActuallyChanged) {
         // Real price change — record history and update
         await db.insert(priceHistory).values({
@@ -803,6 +814,22 @@ export async function importPfgItems(rows: PfgImportRow[]): Promise<PfgImportRes
     }
   }
 
+  // Save import batch log
+  try {
+    await createImportBatch({
+      importSource: "PFG",
+      fileName,
+      itemsCreated: created,
+      itemsUpdated: updated,
+      itemsUnchanged: unchanged,
+      priceChangesCount: priceChanges.length,
+      priceSnapshot,
+      importedBy,
+    });
+  } catch (e) {
+    console.warn("[importPfgItems] Failed to save import batch:", e);
+  }
+
   return { created, updated, unchanged, priceChanges };
 }
 
@@ -815,6 +842,72 @@ export async function getPriceHistory(itemId: number) {
     .where(eq(priceHistory.itemId, itemId))
     .orderBy(desc(priceHistory.importedAt))
     .limit(20);
+}
+
+// ─── Import Batch Helpers ────────────────────────────────────────────────────
+
+export async function listImportBatches(limit = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(importBatches)
+    .orderBy(desc(importBatches.importedAt))
+    .limit(limit);
+}
+
+export async function createImportBatch(data: {
+  importSource: string;
+  fileName?: string;
+  itemsCreated: number;
+  itemsUpdated: number;
+  itemsUnchanged: number;
+  priceChangesCount: number;
+  priceSnapshot: Array<{ itemId: number; itemNumber: string; name: string; oldPrice: string | null; newPrice: string }>;
+  importedBy?: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(importBatches).values({
+    importSource: data.importSource,
+    fileName: data.fileName ?? null,
+    itemsCreated: data.itemsCreated,
+    itemsUpdated: data.itemsUpdated,
+    itemsUnchanged: data.itemsUnchanged,
+    priceChangesCount: data.priceChangesCount,
+    priceSnapshot: data.priceSnapshot,
+    importedBy: data.importedBy ?? null,
+  });
+  return result;
+}
+
+export async function revertImportBatch(batchId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const [batch] = await db
+    .select()
+    .from(importBatches)
+    .where(eq(importBatches.id, batchId))
+    .limit(1);
+
+  if (!batch) throw new Error("Import batch not found");
+
+  const snapshot = batch.priceSnapshot ?? [];
+  if (snapshot.length === 0) throw new Error("No price snapshot available for this batch");
+
+  let reverted = 0;
+  for (const entry of snapshot) {
+    // Restore the OLD price (what it was before this batch ran)
+    const restorePrice = entry.oldPrice ?? null;
+    await db
+      .update(items)
+      .set({ price: restorePrice, updatedAt: new Date() })
+      .where(eq(items.id, entry.itemId));
+    reverted++;
+  }
+
+  return { reverted, batchId };
 }
 
 export async function calculateShortfall(recipeId: number, orderVolume: number) {
@@ -1175,7 +1268,9 @@ export type UniversalImportResult = {
 
 export async function importUniversalItems(
   rows: UniversalImportRow[],
-  importSource: string
+  importSource: string,
+  importedBy?: number,
+  fileName?: string
 ): Promise<UniversalImportResult> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -1184,6 +1279,7 @@ export async function importUniversalItems(
   let updated = 0;
   let unchanged = 0;
   const priceChanges: UniversalImportResult["priceChanges"] = [];
+  const priceSnapshot: Array<{ itemId: number; itemNumber: string; name: string; oldPrice: string | null; newPrice: string }> = [];
 
   for (const row of rows) {
     if (!row.name?.trim()) continue;
@@ -1249,6 +1345,15 @@ export async function importUniversalItems(
       const newF = parseFloat(newPrice);
       const priceActuallyChanged = oldPriceRaw !== null && Math.abs(oldF - newF) >= 0.005;
 
+      // Always snapshot the before/after for this item so we can revert
+      priceSnapshot.push({
+        itemId: item.id,
+        itemNumber: item.itemNumber ?? "",
+        name: item.name,
+        oldPrice: oldPriceRaw,
+        newPrice,
+      });
+
       if (priceActuallyChanged) {
         await db.insert(priceHistory).values({
           itemId: item.id,
@@ -1295,6 +1400,22 @@ export async function importUniversalItems(
         unchanged++;
       }
     }
+  }
+
+  // Save import batch log
+  try {
+    await createImportBatch({
+      importSource,
+      fileName,
+      itemsCreated: created,
+      itemsUpdated: updated,
+      itemsUnchanged: unchanged,
+      priceChangesCount: priceChanges.length,
+      priceSnapshot,
+      importedBy,
+    });
+  } catch (e) {
+    console.warn("[importUniversalItems] Failed to save import batch:", e);
   }
 
   return { created, updated, unchanged, priceChanges };
