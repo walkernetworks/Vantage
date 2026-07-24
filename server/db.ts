@@ -768,7 +768,7 @@ export async function importPfgItems(rows: PfgImportRow[], importedBy?: number, 
       const newPrice = row.price;
       const oldF = parseFloat(oldPrice);
       const newF = parseFloat(newPrice);
-      const priceActuallyChanged = oldPriceRaw !== null && Math.abs(oldF - newF) >= 0.005;
+      const priceActuallyChanged = oldPriceRaw !== null && oldF > 0 && newF > 0 && Math.abs(oldF - newF) >= 0.005;
 
       // Always snapshot the before/after for this item so we can revert
       priceSnapshot.push({
@@ -1169,7 +1169,7 @@ export async function importWebstaurantItems(
       const newPrice = row.price;
       const oldF = parseFloat(oldPrice);
       const newF = parseFloat(newPrice);
-      const priceActuallyChanged = oldPriceRaw !== null && Math.abs(oldF - newF) >= 0.005;
+      const priceActuallyChanged = oldPriceRaw !== null && oldF > 0 && newF > 0 && Math.abs(oldF - newF) >= 0.005;
 
       if (priceActuallyChanged) {
         await db.insert(priceHistory).values({
@@ -1343,7 +1343,7 @@ export async function importUniversalItems(
       const oldPrice = oldPriceRaw ?? "0";
       const oldF = parseFloat(oldPrice);
       const newF = parseFloat(newPrice);
-      const priceActuallyChanged = oldPriceRaw !== null && Math.abs(oldF - newF) >= 0.005;
+      const priceActuallyChanged = oldPriceRaw !== null && oldF > 0 && newF > 0 && Math.abs(oldF - newF) >= 0.005;
 
       // Always snapshot the before/after for this item so we can revert
       priceSnapshot.push({
@@ -1582,6 +1582,8 @@ export async function getDashboardMetrics() {
           JOIN items i ON i.id = ph.itemId
           WHERE ph.importedAt >= ${cutoff90}
             AND ph.oldPrice IS NOT NULL
+            AND ph.oldPrice > 0
+            AND ph.newPrice > 0
             AND ABS(ph.newPrice - ph.oldPrice) >= 0.005
           ORDER BY ABS(ph.newPrice - ph.oldPrice) DESC
           LIMIT 10`
