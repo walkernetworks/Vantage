@@ -330,3 +330,28 @@ export const stockEvents = mysqlTable(
 );
 export type StockEvent = typeof stockEvents.$inferSelect;
 export type InsertStockEvent = typeof stockEvents.$inferInsert;
+
+// ─── Import Batches ───────────────────────────────────────────────────────────
+// Logs every order guide upload so admins can view history and revert prices.
+export const importBatches = mysqlTable(
+  "import_batches",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    importSource: varchar("importSource", { length: 32 }).notNull(),
+    fileName: varchar("fileName", { length: 255 }),
+    itemsCreated: int("itemsCreated").notNull().default(0),
+    itemsUpdated: int("itemsUpdated").notNull().default(0),
+    itemsUnchanged: int("itemsUnchanged").notNull().default(0),
+    priceChangesCount: int("priceChangesCount").notNull().default(0),
+    // JSON snapshot: Array<{ itemId, itemNumber, name, oldPrice, newPrice }>
+    // Stores the before/after prices for every item touched so we can revert
+    priceSnapshot: json("priceSnapshot")
+      .$type<Array<{ itemId: number; itemNumber: string; name: string; oldPrice: string | null; newPrice: string }>>(),
+    importedBy: int("importedBy").references(() => users.id),
+    importedAt: timestamp("importedAt").defaultNow().notNull(),
+  },
+  (t) => [index("idx_import_batches_source").on(t.importSource), index("idx_import_batches_date").on(t.importedAt)]
+);
+
+export type ImportBatch = typeof importBatches.$inferSelect;
+export type InsertImportBatch = typeof importBatches.$inferInsert;
