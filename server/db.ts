@@ -827,7 +827,7 @@ export async function importPfgItems(rows: PfgImportRow[], importedBy?: number, 
       importedBy,
     });
   } catch (e) {
-    console.warn("[importPfgItems] Failed to save import batch:", e);
+    console.error("[importPfgItems] Failed to save import batch:", (e as Error).message, (e as Error).stack);
   }
 
   return { created, updated, unchanged, priceChanges };
@@ -868,6 +868,7 @@ export async function createImportBatch(data: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+  console.log(`[createImportBatch] Saving batch: source=${data.importSource} created=${data.itemsCreated} updated=${data.itemsUpdated} unchanged=${data.itemsUnchanged} priceChanges=${data.priceChangesCount} snapshotItems=${data.priceSnapshot.length}`);
   const result = await db.insert(importBatches).values({
     importSource: data.importSource,
     fileName: data.fileName ?? null,
@@ -875,9 +876,10 @@ export async function createImportBatch(data: {
     itemsUpdated: data.itemsUpdated,
     itemsUnchanged: data.itemsUnchanged,
     priceChangesCount: data.priceChangesCount,
-    priceSnapshot: data.priceSnapshot,
+    priceSnapshot: data.priceSnapshot as unknown as null,
     importedBy: data.importedBy ?? null,
   });
+  console.log(`[createImportBatch] Batch saved successfully`);
   return result;
 }
 
@@ -1415,7 +1417,7 @@ export async function importUniversalItems(
       importedBy,
     });
   } catch (e) {
-    console.warn("[importUniversalItems] Failed to save import batch:", e);
+    console.error("[importUniversalItems] Failed to save import batch:", (e as Error).message, (e as Error).stack);
   }
 
   return { created, updated, unchanged, priceChanges };
