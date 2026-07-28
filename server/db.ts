@@ -849,11 +849,30 @@ export async function getPriceHistory(itemId: number) {
 export async function listImportBatches(limit = 50) {
   const db = await getDb();
   if (!db) return [];
-  return db
-    .select()
-    .from(importBatches)
-    .orderBy(desc(importBatches.importedAt))
-    .limit(limit);
+  try {
+    const rows = await db
+      .select({
+        id: importBatches.id,
+        importSource: importBatches.importSource,
+        fileName: importBatches.fileName,
+        itemsCreated: importBatches.itemsCreated,
+        itemsUpdated: importBatches.itemsUpdated,
+        itemsUnchanged: importBatches.itemsUnchanged,
+        priceChangesCount: importBatches.priceChangesCount,
+        importedBy: importBatches.importedBy,
+        importedAt: importBatches.importedAt,
+        // Include snapshot size indicator but not full payload
+        priceSnapshot: importBatches.priceSnapshot,
+      })
+      .from(importBatches)
+      .orderBy(desc(importBatches.importedAt))
+      .limit(limit);
+    console.log(`[listImportBatches] Found ${rows.length} batches`);
+    return rows;
+  } catch (e) {
+    console.error("[listImportBatches] Query failed:", (e as Error).message);
+    return [];
+  }
 }
 
 export async function createImportBatch(data: {
