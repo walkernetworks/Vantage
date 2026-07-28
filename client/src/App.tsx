@@ -21,6 +21,7 @@ import ForcePasswordReset from "./pages/ForcePasswordReset";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import Invoices from "./pages/Invoices";
+import Reports from "./pages/Reports";
 
 function Router() {
   return (
@@ -45,6 +46,7 @@ function Router() {
             <Route path="/par-levels" component={ParLevels} />
             <Route path="/settings" component={Settings} />
             <Route path="/invoices" component={Invoices} />
+            <Route path="/reports" component={Reports} />
             <Route path="/admin/users" component={UserManagement} />
             <Route path="/account" component={AccountSettings} />
             <Route path="/404" component={NotFound} />

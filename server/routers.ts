@@ -7,6 +7,7 @@ import { signLocalSession } from "./_core/localAuth";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { invoicesRouter } from "./routers/invoices";
+import { reportsRouter } from "./routers/reports";
 import {
   getUserByEmail,
   createLocalUser,
@@ -1187,7 +1188,7 @@ export const appRouter = router({
   settings: settingsRouter,
   adminUsers: adminUsersRouter,
   dashboard: dashboardRouter,
-  invoices: invoicesRouter,
+    invoices: invoicesRouter,
+  reports: reportsRouter,
 });
-
 export type AppRouter = typeof appRouter;

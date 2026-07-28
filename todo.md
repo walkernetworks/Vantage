@@ -439,3 +439,12 @@
 - [x] Add Export CSV button to each session row in Count History
 - [x] CSV columns: Category, Item Name, Vendor, Pack Size, Unit, Par Level, Quantity Counted, Confirmed, Last Edited By, Notes
 - [x] Push to GitHub
+
+## Round 51 — Reports Page
+- [x] server/reports.ts: query helpers for getWeeklyCogs, getInvoiceHistoryReport, getPriceChangeReport, getCountHistoryReport, getCountSessionDetail
+- [x] server/routers/reports.ts: tRPC reports router with weeklyCogs, invoiceHistory, priceChanges, countHistory, countSessionDetail procedures
+- [x] server/routers.ts: import and register reportsRouter as reports: reportsRouter
+- [x] client/src/pages/Reports.tsx: Reports page with 4 sub-tabs (Weekly COGS, Invoice History, Price Changes, Count History)
+- [x] client/src/components/AppLayout.tsx: add BarChart2 icon and Reports nav item (adminOnly, /reports path)
+- [x] client/src/App.tsx: add /reports route pointing to Reports page
+- [x] TypeScript: 0 errors

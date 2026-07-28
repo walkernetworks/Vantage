@@ -2,6 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { logoDataUrl } from "@/lib/logo";
 import {
+  BarChart2,
   BookOpen,
   ChevronRight,
   ClipboardList,
@@ -80,6 +81,13 @@ const navItems: NavItem[] = [
     icon: <FileText size={22} />,
     adminOnly: true,
     description: "Upload & process deliveries",
+  },
+  {
+    href: "/reports",
+    label: "Reports",
+    icon: <BarChart2 size={22} />,
+    adminOnly: true,
+    description: "COGS, invoices & price history",
   },
   {
     href: "/admin/users",
