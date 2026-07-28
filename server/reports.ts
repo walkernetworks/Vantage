@@ -599,6 +599,77 @@ export async function getCountSessionDetail(sessionId: number): Promise<CountSes
   return { session, entries };
 }
 
+// ─── Count Session Comparison ────────────────────────────────────────────────
+export interface CountCompareRow {
+  itemId: number;
+  itemName: string;
+  vendor: string | null;
+  category: string | null;
+  unit: string;
+  parLevel: number | null;
+  price: number | null;
+  qtyA: number | null;   // session A quantity
+  qtyB: number | null;   // session B quantity
+  costA: number | null;
+  costB: number | null;
+  diff: number | null;   // qtyB - qtyA
+  costDiff: number | null;
+}
+
+export async function compareCountSessions(
+  sessionIdA: number,
+  sessionIdB: number
+): Promise<CountCompareRow[]> {
+  await getDb();
+  const pool = getRawPool();
+  if (!pool) return [];
+
+  // Fetch all items that appear in either session
+  const [rows] = await pool.promise().execute(`
+    SELECT
+      it.id AS itemId,
+      it.name AS itemName,
+      it.vendor,
+      it.category,
+      it.countMode AS unit,
+      CAST(it.parLevel AS DECIMAL(10,4)) AS parLevel,
+      CAST(it.price AS DECIMAL(10,2)) AS price,
+      MAX(CASE WHEN ce.sessionId = ? THEN CAST(ce.quantity AS DECIMAL(10,4)) END) AS qtyA,
+      MAX(CASE WHEN ce.sessionId = ? THEN CAST(ce.quantity AS DECIMAL(10,4)) END) AS qtyB
+    FROM items it
+    LEFT JOIN count_entries ce ON ce.itemId = it.id AND ce.sessionId IN (?, ?)
+    WHERE it.isActive = 1
+    GROUP BY it.id
+    HAVING qtyA IS NOT NULL OR qtyB IS NOT NULL
+    ORDER BY it.category, it.name
+  `, [sessionIdA, sessionIdB, sessionIdA, sessionIdB]) as any;
+
+  return (Array.isArray(rows) ? rows : []).map((r: any) => {
+    const qtyA = r.qtyA !== null ? parseFloat(r.qtyA) : null;
+    const qtyB = r.qtyB !== null ? parseFloat(r.qtyB) : null;
+    const price = r.price ? parseFloat(r.price) : null;
+    const costA = qtyA !== null && price !== null ? Math.round(qtyA * price * 100) / 100 : null;
+    const costB = qtyB !== null && price !== null ? Math.round(qtyB * price * 100) / 100 : null;
+    const diff = qtyA !== null && qtyB !== null ? Math.round((qtyB - qtyA) * 10000) / 10000 : null;
+    const costDiff = costA !== null && costB !== null ? Math.round((costB - costA) * 100) / 100 : null;
+    return {
+      itemId: r.itemId,
+      itemName: r.itemName,
+      vendor: r.vendor,
+      category: r.category,
+      unit: r.unit || "case",
+      parLevel: r.parLevel ? parseFloat(r.parLevel) : null,
+      price,
+      qtyA,
+      qtyB,
+      costA,
+      costB,
+      diff,
+      costDiff,
+    };
+  });
+}
+
 // Legacy wrapper kept for backward compat
 export async function getWeeklyCogs(weeks = 12) {
   const end = new Date();
