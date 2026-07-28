@@ -478,13 +478,13 @@ export async function getPriceChangeReport(days = 90): Promise<PriceChangeRow[]>
       CAST(ph.oldPrice AS DECIMAL(10,2)) AS oldPrice,
       CAST(ph.newPrice AS DECIMAL(10,2)) AS newPrice,
       CAST(ph.newPrice AS DECIMAL(10,2)) - CAST(ph.oldPrice AS DECIMAL(10,2)) AS diff,
-      ph.source, ph.changedAt
+      ph.importSource AS source, ph.importedAt AS changedAt
     FROM price_history ph
     JOIN items it ON it.id = ph.itemId
-    WHERE ph.changedAt >= DATE_SUB(NOW(), INTERVAL ? DAY)
+    WHERE ph.importedAt >= DATE_SUB(NOW(), INTERVAL ? DAY)
       AND CAST(ph.oldPrice AS DECIMAL(10,2)) > 0
       AND CAST(ph.newPrice AS DECIMAL(10,2)) > 0
-    ORDER BY ph.changedAt DESC
+    ORDER BY ph.importedAt DESC
     LIMIT 200
   `, [days]) as any;
 
@@ -533,7 +533,7 @@ export async function getCountHistoryReport(): Promise<CountHistoryRow[]> {
     FROM count_sessions cs
     LEFT JOIN count_entries ce ON ce.sessionId = cs.id
     LEFT JOIN items it ON it.id = ce.itemId
-    WHERE cs.status = 'completed'
+    WHERE cs.completedAt IS NOT NULL
     GROUP BY cs.id
     ORDER BY cs.completedAt DESC
   `) as any;
