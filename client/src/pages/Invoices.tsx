@@ -584,7 +584,12 @@ function ReviewDialog({
 
 export default function Invoices() {
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [reviewInvoiceId, setReviewInvoiceId] = useState<number | null>(null);
+  // Support deep-link from Reports: /invoices?id=123 auto-opens that invoice
+  const [reviewInvoiceId, setReviewInvoiceId] = useState<number | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("id");
+    return id ? parseInt(id, 10) : null;
+  });
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const utils = trpc.useUtils();
 

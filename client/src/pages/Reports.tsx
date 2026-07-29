@@ -381,7 +381,11 @@ function InvoiceHistoryReport() {
                 const hasGap = gap !== null && gap > 1;
                 return (
                   <tr key={row.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
-                    <td className="px-4 py-3"><div className="font-medium text-foreground">{row.invoiceNumber ?? `#${row.id}`}</div></td>
+                    <td className="px-4 py-3">
+                      <Link href={`/invoices?id=${row.id}`} className="font-medium text-primary hover:underline">
+                        {row.invoiceNumber ?? `#${row.id}`}
+                      </Link>
+                    </td>
                     <td className="px-4 py-3 text-muted-foreground">{row.vendor}</td>
                     <td className="px-4 py-3 text-muted-foreground">{row.invoiceDate ?? <span className="text-muted-foreground/50 italic">not extracted</span>}</td>
                     <td className="px-4 py-3 text-muted-foreground text-xs">{fmtDate(row.appliedAt)}</td>
