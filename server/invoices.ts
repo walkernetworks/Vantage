@@ -1,7 +1,7 @@
 /**
  * Invoice DB helpers — create, parse, apply, and query invoices.
  */
-import { eq, and, desc, gt, isNull, sql } from "drizzle-orm";
+import { eq, and, desc, gt, isNull } from "drizzle-orm";
 import { getDb, getRawPool } from "./db";
 import { invoices, invoiceLines, items, stockEvents, countEntries, countSessions } from "../drizzle/schema";
 import { invokeLLM } from "./_core/llm";
@@ -215,89 +215,49 @@ export async function saveInvoiceLines(
 }
 
 export async function listInvoices() {
-  const pool = getRawPool();
-  if (!pool) return [];
-  const [rows] = await pool.promise().execute(`
-    SELECT
-      i.id, i.vendor, i.invoiceNumber, i.invoiceDate, i.totalAmount, i.status, i.createdAt,
-      COALESCE(SUM(CAST(il.extension AS DECIMAL(10,2))), 0) AS calculatedTotal,
-      SUM(CASE WHEN il.matchStatus = 'matched' AND (it.price IS NULL OR it.price = '0.00') THEN 1 ELSE 0 END) AS missingPriceCount,
-      COUNT(il.id) AS lineCount,
-      SUM(CASE WHEN il.matchStatus = 'matched' THEN 1 ELSE 0 END) AS matchedCount,
-      SUM(CASE WHEN il.matchStatus = 'unmatched' THEN 1 ELSE 0 END) AS unmatchedCount
-    FROM invoices i
-    LEFT JOIN invoice_lines il ON il.invoiceId = i.id
-    LEFT JOIN items it ON it.id = il.itemId
-    GROUP BY i.id
-    ORDER BY i.createdAt DESC
-  `);
-  return (rows as any[]).map(r => ({
-    id: r.id,
-    vendor: r.vendor,
-    invoiceNumber: r.invoiceNumber,
-    invoiceDate: r.invoiceDate,
-    totalAmount: r.totalAmount,
-    calculatedTotal: parseFloat(r.calculatedTotal) || 0,
-    missingPriceCount: Number(r.missingPriceCount) || 0,
-    lineCount: Number(r.lineCount) || 0,
-    matchedCount: Number(r.matchedCount) || 0,
-    unmatchedCount: Number(r.unmatchedCount) || 0,
-    status: r.status,
-    createdAt: r.createdAt,
-  }));
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      id: invoices.id,
+      vendor: invoices.vendor,
+      invoiceNumber: invoices.invoiceNumber,
+      invoiceDate: invoices.invoiceDate,
+      totalAmount: invoices.totalAmount,
+      status: invoices.status,
+      createdAt: invoices.createdAt,
+    })
+    .from(invoices)
+    .orderBy(desc(invoices.createdAt));
 }
 
 export async function getInvoiceWithLines(invoiceId: number) {
-  const pool = getRawPool();
-  if (!pool) return null;
+  const db = await getDb();
+  if (!db) return null;
 
-  const [[invoiceRows]] = await pool.promise().execute(
-    `SELECT i.*,
-      COALESCE(SUM(CAST(il.extension AS DECIMAL(10,2))), 0) AS calculatedTotal,
-      SUM(CASE WHEN il.matchStatus = 'matched' AND (it.price IS NULL OR it.price = '0.00') THEN 1 ELSE 0 END) AS missingPriceCount,
-      COUNT(il.id) AS lineCount,
-      SUM(CASE WHEN il.matchStatus = 'matched' THEN 1 ELSE 0 END) AS matchedCount,
-      SUM(CASE WHEN il.matchStatus = 'unmatched' THEN 1 ELSE 0 END) AS unmatchedCount
-    FROM invoices i
-    LEFT JOIN invoice_lines il ON il.invoiceId = i.id
-    LEFT JOIN items it ON it.id = il.itemId
-    WHERE i.id = ?
-    GROUP BY i.id`,
-    [invoiceId]
-  ) as any;
-  const invoice = Array.isArray(invoiceRows) ? invoiceRows[0] : invoiceRows;
+  const [invoice] = await db.select().from(invoices).where(eq(invoices.id, invoiceId));
   if (!invoice) return null;
 
-  const [lineRows] = await pool.promise().execute(
-    `SELECT il.id, il.invoiceId, il.itemId, il.itemNumber, il.description, il.pack, il.size,
-            il.orderedQty, il.shippedQty, il.unitPrice, il.extension, il.category,
-            il.matchStatus, il.notReceived,
-            it.name AS itemName, it.price AS catalogPrice
-     FROM invoice_lines il
-     LEFT JOIN items it ON it.id = il.itemId
-     WHERE il.invoiceId = ?
-     ORDER BY il.id`,
-    [invoiceId]
-  ) as any;
-  const lines = (Array.isArray(lineRows) ? lineRows : []).map((r: any) => ({
-    ...r,
-    calculatedExtension: r.shippedQty && r.catalogPrice
-      ? (parseFloat(r.shippedQty) * parseFloat(r.catalogPrice)).toFixed(2)
-      : null,
-    priceMissing: r.matchStatus === 'matched' && (!r.catalogPrice || r.catalogPrice === '0.00'),
-  }));
+  const lines = await db
+    .select({
+      id: invoiceLines.id,
+      invoiceId: invoiceLines.invoiceId,
+      itemId: invoiceLines.itemId,
+      itemNumber: invoiceLines.itemNumber,
+      description: invoiceLines.description,
+      pack: invoiceLines.pack,
+      size: invoiceLines.size,
+      shippedQty: invoiceLines.shippedQty,
+      unitPrice: invoiceLines.unitPrice,
+      extension: invoiceLines.extension,
+      matchStatus: invoiceLines.matchStatus,
+      itemName: items.name,
+    })
+    .from(invoiceLines)
+    .leftJoin(items, eq(invoiceLines.itemId, items.id))
+    .where(eq(invoiceLines.invoiceId, invoiceId));
 
-  return {
-    invoice: {
-      ...invoice,
-      calculatedTotal: parseFloat(invoice.calculatedTotal) || 0,
-      missingPriceCount: Number(invoice.missingPriceCount) || 0,
-      lineCount: Number(invoice.lineCount) || 0,
-      matchedCount: Number(invoice.matchedCount) || 0,
-      unmatchedCount: Number(invoice.unmatchedCount) || 0,
-    },
-    lines,
-  };
+  return { invoice, lines };
 }
 
 export async function updateInvoiceLine(

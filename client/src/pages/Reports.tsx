@@ -21,7 +21,12 @@ function fmtExact$(n: number) {
 }
 function fmtDate(d: Date | string | null) {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  // If it's already a short human-readable date string (e.g. "6/23/26", "06/23/2026"),
+  // return it as-is rather than re-parsing through Date() which can misinterpret 2-digit years.
+  if (typeof d === "string" && /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(d.trim())) return d.trim();
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return typeof d === "string" ? d : "—";
+  return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 function fmtPct(n: number) {
   const sign = n >= 0 ? "+" : "";
@@ -335,8 +340,8 @@ function InvoiceHistoryReport() {
   const handleExport = () => {
     if (!data) return;
     downloadCsv("invoice-history.csv",
-      data.map(r => [r.invoiceNumber ?? `#${r.id}`, r.vendor, r.invoiceDate ?? "", r.totalAmount?.toFixed(2) ?? "", r.calculatedTotal.toFixed(2), r.status, String(r.lineCount), String(r.matchedCount), String(r.unmatchedCount), fmtDate(r.appliedAt)]),
-      ["Invoice #", "Vendor", "Invoice Date", "Stated Total", "Calculated Total", "Status", "Lines", "Matched", "Unmatched", "Applied At"]);
+      data.map(r => [r.invoiceNumber ?? `#${r.id}`, r.vendor, r.invoiceDate ?? "", fmtDate(r.appliedAt), r.totalAmount?.toFixed(2) ?? "", r.calculatedTotal.toFixed(2), r.status, String(r.lineCount), String(r.matchedCount), String(r.unmatchedCount)]),
+      ["Invoice #", "Vendor", "Invoice Date", "Uploaded", "Stated Total", "Calculated Total", "Status", "Lines", "Matched", "Unmatched"]);
   };
 
   if (isLoading) return <ReportSkeleton />;
@@ -363,6 +368,8 @@ function InvoiceHistoryReport() {
             <thead><tr className="bg-muted/50 border-b border-border">
               <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Invoice</th>
               <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Vendor</th>
+              <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Invoice Date</th>
+              <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Uploaded</th>
               <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Stated</th>
               <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Calculated</th>
               <th className="text-center px-4 py-3 font-semibold text-muted-foreground">Status</th>
@@ -374,8 +381,10 @@ function InvoiceHistoryReport() {
                 const hasGap = gap !== null && gap > 1;
                 return (
                   <tr key={row.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
-                    <td className="px-4 py-3"><div className="font-medium text-foreground">{row.invoiceNumber ?? `#${row.id}`}</div><div className="text-xs text-muted-foreground">{fmtDate(row.invoiceDate ?? row.appliedAt)}</div></td>
+                    <td className="px-4 py-3"><div className="font-medium text-foreground">{row.invoiceNumber ?? `#${row.id}`}</div></td>
                     <td className="px-4 py-3 text-muted-foreground">{row.vendor}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{row.invoiceDate ?? <span className="text-muted-foreground/50 italic">not extracted</span>}</td>
+                    <td className="px-4 py-3 text-muted-foreground text-xs">{fmtDate(row.appliedAt)}</td>
                     <td className="px-4 py-3 text-right">{row.totalAmount !== null ? fmtExact$(row.totalAmount) : <span className="text-muted-foreground">—</span>}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="font-medium">{fmtExact$(row.calculatedTotal)}</div>

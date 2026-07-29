@@ -448,8 +448,3 @@
 - [x] client/src/components/AppLayout.tsx: add BarChart2 icon and Reports nav item (adminOnly, /reports path)
 - [x] client/src/App.tsx: add /reports route pointing to Reports page
 - [x] TypeScript: 0 errors
-
-## Reports Enhancements
-- [ ] Count History: compare two sessions side-by-side (select "Compare with X count")
-- [ ] Price Changes: replace fixed day buttons with same custom date range picker as COGS
-- [ ] All reports: CSV export button on each tab
