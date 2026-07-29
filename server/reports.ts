@@ -44,13 +44,27 @@ export interface InvoiceHistoryRow {
   vendor: string;
   invoiceNumber: string | null;
   invoiceDate: string | null;
-  totalAmount: number | null;
-  calculatedTotal: number;
   status: string;
   appliedAt: Date | null;
   lineCount: number;
   matchedCount: number;
   unmatchedCount: number;
+  // Price discrepancy: matched lines where invoice unitPrice != catalog price
+  priceGapCount: number;   // number of lines with a price mismatch
+  priceGapAmount: number;  // total $ difference across all mismatched lines
+}
+
+export interface InvoicePriceGapRow {
+  lineId: number;
+  itemId: number;
+  itemName: string;
+  description: string | null;
+  shippedQty: number;
+  invoiceUnitPrice: number;
+  catalogPrice: number;
+  priceDiff: number;       // invoiceUnitPrice - catalogPrice
+  pctChange: number;
+  totalImpact: number;     // priceDiff * shippedQty
 }
 
 export interface PriceChangeRow {
@@ -436,36 +450,95 @@ export async function getCogsDrilldown(
 export async function getInvoiceHistoryReport(limit = 50): Promise<InvoiceHistoryRow[]> {
   const db = await getDb();
   if (!db) return [];
-
-  // Use Drizzle with raw SQL aggregates — same connection path as the Invoices page
+  // Compare invoice line unit prices to current catalog prices for matched lines
   const rows = await db.execute(sql`
     SELECT
-      i.id, i.vendor, i.invoiceNumber, i.invoiceDate, i.totalAmount, i.status, i.createdAt,
-      COALESCE(SUM(CAST(il.extension AS DECIMAL(10,2))), 0) AS calculatedTotal,
+      i.id, i.vendor, i.invoiceNumber, i.invoiceDate, i.status, i.createdAt,
       COUNT(il.id) AS lineCount,
       SUM(CASE WHEN il.matchStatus = 'matched' THEN 1 ELSE 0 END) AS matchedCount,
-      SUM(CASE WHEN il.matchStatus = 'unmatched' THEN 1 ELSE 0 END) AS unmatchedCount
+      SUM(CASE WHEN il.matchStatus = 'unmatched' THEN 1 ELSE 0 END) AS unmatchedCount,
+      SUM(CASE
+        WHEN il.matchStatus = 'matched'
+          AND il.itemId IS NOT NULL
+          AND it.price IS NOT NULL
+          AND il.unitPrice IS NOT NULL
+          AND ABS(CAST(il.unitPrice AS DECIMAL(10,4)) - CAST(it.price AS DECIMAL(10,4))) > 0.01
+        THEN 1 ELSE 0
+      END) AS priceGapCount,
+      COALESCE(SUM(CASE
+        WHEN il.matchStatus = 'matched'
+          AND il.itemId IS NOT NULL
+          AND it.price IS NOT NULL
+          AND il.unitPrice IS NOT NULL
+          AND ABS(CAST(il.unitPrice AS DECIMAL(10,4)) - CAST(it.price AS DECIMAL(10,4))) > 0.01
+        THEN ABS(CAST(il.unitPrice AS DECIMAL(10,4)) - CAST(it.price AS DECIMAL(10,4))) * CAST(il.shippedQty AS DECIMAL(10,4))
+        ELSE 0
+      END), 0) AS priceGapAmount
     FROM invoices i
     LEFT JOIN invoice_lines il ON il.invoiceId = i.id
+    LEFT JOIN items it ON it.id = il.itemId
     GROUP BY i.id
     ORDER BY i.createdAt DESC
     LIMIT ${limit}
   `);
-
   const data: any[] = ((rows as any)[0] as any[]) ?? [];
   return data.map((r: any) => ({
     id: r.id,
     vendor: r.vendor,
     invoiceNumber: r.invoiceNumber,
     invoiceDate: r.invoiceDate,
-    totalAmount: r.totalAmount ? parseFloat(r.totalAmount) : null,
-    calculatedTotal: parseFloat(r.calculatedTotal) || 0,
     status: r.status,
     appliedAt: r.createdAt,
     lineCount: Number(r.lineCount) || 0,
     matchedCount: Number(r.matchedCount) || 0,
     unmatchedCount: Number(r.unmatchedCount) || 0,
+    priceGapCount: Number(r.priceGapCount) || 0,
+    priceGapAmount: parseFloat(r.priceGapAmount) || 0,
   }));
+}
+
+// Returns line-level price discrepancies for a specific invoice
+export async function getInvoicePriceGaps(invoiceId: number): Promise<InvoicePriceGapRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.execute(sql`
+    SELECT
+      il.id AS lineId,
+      il.itemId,
+      COALESCE(it.name, il.description) AS itemName,
+      il.description,
+      CAST(il.shippedQty AS DECIMAL(10,4)) AS shippedQty,
+      CAST(il.unitPrice AS DECIMAL(10,4)) AS invoiceUnitPrice,
+      CAST(it.price AS DECIMAL(10,4)) AS catalogPrice,
+      CAST(il.unitPrice AS DECIMAL(10,4)) - CAST(it.price AS DECIMAL(10,4)) AS priceDiff,
+      CAST(il.shippedQty AS DECIMAL(10,4)) * (CAST(il.unitPrice AS DECIMAL(10,4)) - CAST(it.price AS DECIMAL(10,4))) AS totalImpact
+    FROM invoice_lines il
+    JOIN items it ON it.id = il.itemId
+    WHERE il.invoiceId = ${invoiceId}
+      AND il.matchStatus = 'matched'
+      AND il.unitPrice IS NOT NULL
+      AND it.price IS NOT NULL
+      AND ABS(CAST(il.unitPrice AS DECIMAL(10,4)) - CAST(it.price AS DECIMAL(10,4))) > 0.01
+    ORDER BY ABS(CAST(il.unitPrice AS DECIMAL(10,4)) - CAST(it.price AS DECIMAL(10,4))) * CAST(il.shippedQty AS DECIMAL(10,4)) DESC
+  `);
+  const data: any[] = ((rows as any)[0] as any[]) ?? [];
+  return data.map((r: any) => {
+    const inv = parseFloat(r.invoiceUnitPrice) || 0;
+    const cat = parseFloat(r.catalogPrice) || 0;
+    const diff = parseFloat(r.priceDiff) || 0;
+    return {
+      lineId: r.lineId,
+      itemId: r.itemId,
+      itemName: r.itemName,
+      description: r.description,
+      shippedQty: parseFloat(r.shippedQty) || 0,
+      invoiceUnitPrice: inv,
+      catalogPrice: cat,
+      priceDiff: diff,
+      pctChange: cat > 0 ? (diff / cat) * 100 : 0,
+      totalImpact: parseFloat(r.totalImpact) || 0,
+    };
+  });
 }
 
 // ─── Price Change Report ──────────────────────────────────────────────────────

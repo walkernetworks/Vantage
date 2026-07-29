@@ -4,6 +4,7 @@ import {
   getCogsPeriods,
   getCogsDrilldown,
   getInvoiceHistoryReport,
+  getInvoicePriceGaps,
   getPriceChangeReport,
   getCountHistoryReport,
   getCountSessionDetail,
@@ -53,6 +54,11 @@ export const reportsRouter = router({
   invoiceHistory: protectedProcedure
     .input(z.object({ limit: z.number().min(1).max(200).default(50) }))
     .query(async ({ input }) => getInvoiceHistoryReport(input.limit)),
+
+  // Line-level price discrepancies for a specific invoice
+  invoicePriceGaps: protectedProcedure
+    .input(z.object({ invoiceId: z.number() }))
+    .query(async ({ input }) => getInvoicePriceGaps(input.invoiceId)),
 
   // Price changes with legacy days param
   priceChanges: protectedProcedure

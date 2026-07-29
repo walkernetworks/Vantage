@@ -334,31 +334,112 @@ function WeeklyCogsReport() {
 }
 
 // ─── Invoice History Report ───────────────────────────────────────────────────
+// ─── Invoice Price Gap Drill-down ────────────────────────────────────────────
+function InvoicePriceGapView({ invoiceId, invoiceLabel, onBack }: {
+  invoiceId: number; invoiceLabel: string; onBack: () => void;
+}) {
+  const { data, isLoading } = trpc.reports.invoicePriceGaps.useQuery({ invoiceId });
+  type GapRow = NonNullable<typeof data>[number];
+  const totalImpact = useMemo(() => (data ?? []).reduce((s, r) => s + r.totalImpact, 0), [data]);
+  const handleExport = () => {
+    if (!data) return;
+    downloadCsv(`invoice-price-gaps-${invoiceId}.csv`,
+      data.map((r: GapRow) => [r.itemName, r.shippedQty.toFixed(2), r.invoiceUnitPrice.toFixed(4), r.catalogPrice.toFixed(4), r.priceDiff.toFixed(4), fmtPct(r.pctChange), r.totalImpact.toFixed(2)]),
+      ["Item", "Shipped Qty", "Invoice Price", "Catalog Price", "Difference", "% Change", "Total Impact"]);
+  };
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <button onClick={onBack} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <ArrowLeft size={16} />Back to Invoice History
+        </button>
+        {data && data.length > 0 && <ExportButton onClick={handleExport} />}
+      </div>
+      <div>
+        <h2 className="text-lg font-semibold text-foreground">Price Discrepancies — {invoiceLabel}</h2>
+        <p className="text-xs text-muted-foreground">Matched lines where the invoice unit price differs from the current catalog price.</p>
+      </div>
+      {isLoading ? <ReportSkeleton /> : !data || data.length === 0 ? (
+        <EmptyState icon={<Tag size={40} className="text-muted-foreground/40" />}
+          title="No price discrepancies"
+          description="All matched line items on this invoice are priced consistently with your catalog." />
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <SummaryCard label="Items with Price Gaps" value={String(data.length)} sub="matched lines" />
+            <SummaryCard label="Total Price Impact" value={fmtExact$(Math.abs(totalImpact))} sub={totalImpact > 0 ? "paid more than catalog" : "paid less than catalog"} valueClass={totalImpact > 0 ? "text-red-500" : "text-green-600"} />
+          </div>
+          <div className="rounded-xl border border-border overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="bg-muted/50 border-b border-border">
+                  <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Item</th>
+                  <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Qty</th>
+                  <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Invoice Price</th>
+                  <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Catalog Price</th>
+                  <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Diff</th>
+                  <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Impact</th>
+                </tr></thead>
+                <tbody>
+                  {data.map((row: GapRow) => (
+                    <tr key={row.lineId} className="border-b border-border last:border-0 hover:bg-muted/20">
+                      <td className="px-4 py-3 font-medium text-foreground">{row.itemName}</td>
+                      <td className="px-4 py-3 text-right text-muted-foreground">{row.shippedQty.toFixed(2)}</td>
+                      <td className="px-4 py-3 text-right">{fmtExact$(row.invoiceUnitPrice)}</td>
+                      <td className="px-4 py-3 text-right text-muted-foreground">{fmtExact$(row.catalogPrice)}</td>
+                      <td className={`px-4 py-3 text-right font-semibold ${row.priceDiff > 0 ? "text-red-500" : "text-green-600"}`}>
+                        {row.priceDiff > 0 ? "+" : ""}{fmtExact$(row.priceDiff)} ({fmtPct(row.pctChange)})
+                      </td>
+                      <td className={`px-4 py-3 text-right font-semibold ${row.totalImpact > 0 ? "text-red-500" : "text-green-600"}`}>
+                        {row.totalImpact > 0 ? "+" : ""}{fmtExact$(row.totalImpact)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            <AlertTriangle size={12} className="inline mr-1 text-amber-500" />
+            Items with price increases should be updated in your order guide.
+            <Link href="/catalog" className="text-primary ml-1 hover:underline">Update catalog prices →</Link>
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 function InvoiceHistoryReport() {
   const { data, isLoading } = trpc.reports.invoiceHistory.useQuery({ limit: 100 });
+  const [priceGapInvoice, setPriceGapInvoice] = useState<{ id: number; label: string } | null>(null);
 
   const handleExport = () => {
     if (!data) return;
     downloadCsv("invoice-history.csv",
-      data.map(r => [r.invoiceNumber ?? `#${r.id}`, r.vendor, r.invoiceDate ?? "", fmtDate(r.appliedAt), r.totalAmount?.toFixed(2) ?? "", r.calculatedTotal.toFixed(2), r.status, String(r.lineCount), String(r.matchedCount), String(r.unmatchedCount)]),
-      ["Invoice #", "Vendor", "Invoice Date", "Uploaded", "Stated Total", "Calculated Total", "Status", "Lines", "Matched", "Unmatched"]);
+      data.map(r => [r.invoiceNumber ?? `#${r.id}`, r.vendor, r.invoiceDate ?? "", fmtDate(r.appliedAt), r.status, String(r.lineCount), String(r.matchedCount), String(r.unmatchedCount), String(r.priceGapCount), r.priceGapAmount.toFixed(2)]),
+      ["Invoice #", "Vendor", "Invoice Date", "Uploaded", "Status", "Lines", "Matched", "Unmatched", "Price Gap Items", "Price Gap Amount"]);
   };
+
+  if (priceGapInvoice) {
+    return <InvoicePriceGapView invoiceId={priceGapInvoice.id} invoiceLabel={priceGapInvoice.label} onBack={() => setPriceGapInvoice(null)} />;
+  }
 
   if (isLoading) return <ReportSkeleton />;
   if (!data || data.length === 0) {
     return <EmptyState icon={<FileText size={40} className="text-muted-foreground/40" />} title="No invoices yet" description="Upload vendor invoices to see history here." action={<Link href="/invoices"><Button size="sm">Go to Invoices</Button></Link>} />;
   }
-  const totalInvoiced = data.reduce((s, r) => s + (r.totalAmount ?? r.calculatedTotal), 0);
   const applied = data.filter(r => r.status === "applied").length;
   const totalLines = data.reduce((s, r) => s + r.lineCount, 0);
   const matchedLines = data.reduce((s, r) => s + r.matchedCount, 0);
+  const totalPriceGapItems = data.reduce((s, r) => s + r.priceGapCount, 0);
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 flex-1">
-          <SummaryCard label="Total Invoiced" value={fmt$(totalInvoiced)} sub={`${data.length} invoices`} />
-          <SummaryCard label="Applied" value={String(applied)} sub={`${data.length - applied} pending`} />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 flex-1">
+          <SummaryCard label="Invoices" value={String(data.length)} sub={`${applied} applied`} />
           <SummaryCard label="Match Rate" value={totalLines > 0 ? `${Math.round(matchedLines / totalLines * 100)}%` : "—"} sub="Lines matched" />
+          <SummaryCard label="Price Gaps" value={String(totalPriceGapItems)} sub="items priced differently" valueClass={totalPriceGapItems > 0 ? "text-amber-500" : undefined} />
         </div>
         <ExportButton onClick={handleExport} />
       </div>
@@ -370,44 +451,40 @@ function InvoiceHistoryReport() {
               <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Vendor</th>
               <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Invoice Date</th>
               <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Uploaded</th>
-              <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Stated</th>
-              <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Calculated</th>
               <th className="text-center px-4 py-3 font-semibold text-muted-foreground">Status</th>
               <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Lines</th>
+              <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Price Gaps</th>
             </tr></thead>
             <tbody>
-              {data.map(row => {
-                const gap = row.totalAmount !== null ? Math.abs(row.totalAmount - row.calculatedTotal) : null;
-                const hasGap = gap !== null && gap > 1;
-                return (
-                  <tr key={row.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
-                    <td className="px-4 py-3">
-                      <Link href={`/invoices?id=${row.id}`} className="font-medium text-primary hover:underline">
-                        {row.invoiceNumber ?? `#${row.id}`}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{row.vendor}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{row.invoiceDate ?? <span className="text-muted-foreground/50 italic">not extracted</span>}</td>
-                    <td className="px-4 py-3 text-muted-foreground text-xs">{fmtDate(row.appliedAt)}</td>
-                    <td className="px-4 py-3 text-right">{row.totalAmount !== null ? fmtExact$(row.totalAmount) : <span className="text-muted-foreground">—</span>}</td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="font-medium">{fmtExact$(row.calculatedTotal)}</div>
-                      {hasGap && <div className="text-xs text-amber-600 flex items-center justify-end gap-1"><AlertTriangle size={10} />{fmtExact$(gap!)} gap</div>}
-                    </td>
-                    <td className="px-4 py-3 text-center"><StatusBadge status={row.status} /></td>
-                    <td className="px-4 py-3 text-right text-muted-foreground">{row.matchedCount}/{row.lineCount}{row.unmatchedCount > 0 && <span className="text-xs text-amber-600 ml-1">({row.unmatchedCount} unmatched)</span>}</td>
-                  </tr>
-                );
-              })}
+              {data.map(row => (
+                <tr key={row.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
+                  <td className="px-4 py-3">
+                    <Link href={`/invoices?id=${row.id}`} className="font-medium text-primary hover:underline">
+                      {row.invoiceNumber ?? `#${row.id}`}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">{row.vendor}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{row.invoiceDate ?? <span className="text-muted-foreground/50 italic">not extracted</span>}</td>
+                  <td className="px-4 py-3 text-muted-foreground text-xs">{fmtDate(row.appliedAt)}</td>
+                  <td className="px-4 py-3 text-center"><StatusBadge status={row.status} /></td>
+                  <td className="px-4 py-3 text-right text-muted-foreground">{row.matchedCount}/{row.lineCount}{row.unmatchedCount > 0 && <span className="text-xs text-amber-600 ml-1">({row.unmatchedCount} unmatched)</span>}</td>
+                  <td className="px-4 py-3 text-right">
+                    {row.priceGapCount > 0 ? (
+                      <button
+                        onClick={() => setPriceGapInvoice({ id: row.id, label: row.invoiceNumber ?? `#${row.id}` })}
+                        className="inline-flex items-center gap-1 text-amber-600 hover:text-amber-700 font-semibold text-xs hover:underline">
+                        <AlertTriangle size={11} />{row.priceGapCount} items · {fmtExact$(row.priceGapAmount)}
+                      </button>
+                    ) : (
+                      <span className="text-xs text-green-600 font-medium">✓ No gaps</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       </div>
-      <p className="text-xs text-muted-foreground">
-        <AlertTriangle size={12} className="inline mr-1 text-amber-500" />
-        A gap between Stated and Calculated totals may indicate unmatched lines, items without catalog prices, or multi-page invoices.
-        <Link href="/catalog" className="text-primary ml-1 hover:underline">Update item prices →</Link>
-      </p>
     </div>
   );
 }
