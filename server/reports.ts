@@ -6,6 +6,8 @@
  * connection pool is initialized. getRawPool() returns null until getDb() runs.
  */
 import { getDb, getRawPool } from "./db";
+import { invoices, invoiceLines } from "../drizzle/schema";
+import { sql, desc } from "drizzle-orm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -432,11 +434,11 @@ export async function getCogsDrilldown(
 // ─── Invoice History Report ───────────────────────────────────────────────────
 
 export async function getInvoiceHistoryReport(limit = 50): Promise<InvoiceHistoryRow[]> {
-  await getDb(); // ensure pool is initialized
-  const pool = getRawPool();
-  if (!pool) return [];
+  const db = await getDb();
+  if (!db) return [];
 
-  const [rows] = await pool.promise().execute(`
+  // Use Drizzle with raw SQL aggregates — same connection path as the Invoices page
+  const rows = await db.execute(sql`
     SELECT
       i.id, i.vendor, i.invoiceNumber, i.invoiceDate, i.totalAmount, i.status, i.createdAt,
       COALESCE(SUM(CAST(il.extension AS DECIMAL(10,2))), 0) AS calculatedTotal,
@@ -447,10 +449,11 @@ export async function getInvoiceHistoryReport(limit = 50): Promise<InvoiceHistor
     LEFT JOIN invoice_lines il ON il.invoiceId = i.id
     GROUP BY i.id
     ORDER BY i.createdAt DESC
-    LIMIT ?
-  `, [limit]) as any;
+    LIMIT ${limit}
+  `);
 
-  return (Array.isArray(rows) ? rows : []).map((r: any) => ({
+  const data: any[] = ((rows as any)[0] as any[]) ?? [];
+  return data.map((r: any) => ({
     id: r.id,
     vendor: r.vendor,
     invoiceNumber: r.invoiceNumber,
