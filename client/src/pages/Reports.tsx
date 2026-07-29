@@ -344,8 +344,8 @@ function InvoicePriceGapView({ invoiceId, invoiceLabel, onBack }: {
   const handleExport = () => {
     if (!data) return;
     downloadCsv(`invoice-price-gaps-${invoiceId}.csv`,
-      data.map((r: GapRow) => [r.itemName, r.shippedQty.toFixed(2), r.invoiceUnitPrice.toFixed(4), r.catalogPrice.toFixed(4), r.priceDiff.toFixed(4), fmtPct(r.pctChange), r.totalImpact.toFixed(2)]),
-      ["Item", "Shipped Qty", "Invoice Price", "Catalog Price", "Difference", "% Change", "Total Impact"]);
+      data.map((r: GapRow) => [r.invoiceItemNumber ?? "", r.invoiceDescription ?? r.itemName, r.catalogItemNumber ?? "", r.itemName, r.shippedQty.toFixed(2), r.invoiceUnitPrice.toFixed(4), r.catalogPrice.toFixed(4), r.priceDiff.toFixed(4), fmtPct(r.pctChange), r.totalImpact.toFixed(2)]),
+      ["Invoice Item #", "Invoice Description", "Catalog Item #", "Catalog Name", "Shipped Qty", "Invoice Price", "Catalog Price", "Difference", "% Change", "Total Impact"]);
   };
   return (
     <div className="space-y-5">
@@ -373,7 +373,9 @@ function InvoicePriceGapView({ invoiceId, invoiceLabel, onBack }: {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="bg-muted/50 border-b border-border">
-                  <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Item</th>
+                  <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Invoice Item #</th>
+                  <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Invoice Description</th>
+                  <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Catalog Name</th>
                   <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Qty</th>
                   <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Invoice Price</th>
                   <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Catalog Price</th>
@@ -383,7 +385,14 @@ function InvoicePriceGapView({ invoiceId, invoiceLabel, onBack }: {
                 <tbody>
                   {data.map((row: GapRow) => (
                     <tr key={row.lineId} className="border-b border-border last:border-0 hover:bg-muted/20">
-                      <td className="px-4 py-3 font-medium text-foreground">{row.itemName}</td>
+                      <td className="px-4 py-3 text-xs font-mono text-muted-foreground">{row.invoiceItemNumber ?? <span className="italic text-muted-foreground/50">—</span>}</td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-foreground text-sm">{row.invoiceDescription ?? row.itemName}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="text-sm text-foreground">{row.itemName}</div>
+                        {row.catalogItemNumber && <div className="text-xs text-muted-foreground font-mono">{row.catalogItemNumber}</div>}
+                      </td>
                       <td className="px-4 py-3 text-right text-muted-foreground">{row.shippedQty.toFixed(2)}</td>
                       <td className="px-4 py-3 text-right">{fmtExact$(row.invoiceUnitPrice)}</td>
                       <td className="px-4 py-3 text-right text-muted-foreground">{fmtExact$(row.catalogPrice)}</td>

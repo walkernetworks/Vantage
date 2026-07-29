@@ -57,8 +57,10 @@ export interface InvoiceHistoryRow {
 export interface InvoicePriceGapRow {
   lineId: number;
   itemId: number;
-  itemName: string;
-  description: string | null;
+  itemName: string;           // catalog item name
+  catalogItemNumber: string | null;  // item number in our catalog
+  invoiceItemNumber: string | null;  // item number as it appears on the invoice
+  invoiceDescription: string | null; // description as it appears on the invoice
   shippedQty: number;
   invoiceUnitPrice: number;
   catalogPrice: number;
@@ -505,8 +507,10 @@ export async function getInvoicePriceGaps(invoiceId: number): Promise<InvoicePri
     SELECT
       il.id AS lineId,
       il.itemId,
-      COALESCE(it.name, il.description) AS itemName,
-      il.description,
+      it.name AS itemName,
+      it.itemNumber AS catalogItemNumber,
+      il.itemNumber AS invoiceItemNumber,
+      il.description AS invoiceDescription,
       CAST(il.shippedQty AS DECIMAL(10,4)) AS shippedQty,
       CAST(il.unitPrice AS DECIMAL(10,4)) AS invoiceUnitPrice,
       CAST(it.price AS DECIMAL(10,4)) AS catalogPrice,
@@ -530,7 +534,9 @@ export async function getInvoicePriceGaps(invoiceId: number): Promise<InvoicePri
       lineId: r.lineId,
       itemId: r.itemId,
       itemName: r.itemName,
-      description: r.description,
+      catalogItemNumber: r.catalogItemNumber ?? null,
+      invoiceItemNumber: r.invoiceItemNumber ?? null,
+      invoiceDescription: r.invoiceDescription ?? null,
       shippedQty: parseFloat(r.shippedQty) || 0,
       invoiceUnitPrice: inv,
       catalogPrice: cat,
