@@ -40,31 +40,41 @@ const ITEM_NUMBER_RE = /^\d{6,7}$/;
 const JSON_EXTRACTION_PROMPT = `You are a precise data entry automation engine. You will receive the text content of a PFG (Performance Food Group) invoice page, already extracted by OCR. Your job is to parse this text and extract EVERY SINGLE product row into structured JSON.
 
 PFG INVOICE ROW STRUCTURE:
-Each product row in a PFG invoice contains ALL of these fields on THE SAME VISUAL ROW (same line or tightly grouped lines):
+Each product row in a PFG invoice contains ALL of these fields on THE SAME VISUAL ROW:
   - Item Number: a 6 or 7 digit integer (e.g. 867175, 1013308)
   - Ordered: integer quantity ordered
-  - Shipped: integer quantity actually delivered
+  - Shipped: integer quantity actually delivered  
   - Pack: pack count (e.g. 1, 4, 10, 20, 80, 100)
   - Size: unit size string (e.g. "5 LB", "50 CT", "32 OZ")
   - Description: product name in ALL CAPS (e.g. "PEAK FRS LEMON FRSH", "FABRIKAL LID LS636FK X SLOT CLR PE")
   - Unit Price: decimal (e.g. 16.4100)
   - Extension: line total decimal (e.g. 16.41)
 
-⚠️ CRITICAL ALIGNMENT RULE — READ THIS CAREFULLY:
+⚠️ CRITICAL ALIGNMENT RULE — THIS IS THE MOST IMPORTANT INSTRUCTION:
 The item number and description for the SAME product ALWAYS appear on the SAME row.
-DO NOT shift or offset — never pair an item number from one row with the description from the next row down.
-If the OCR text appears to have columns misaligned, use the item number's position in the line to anchor which description belongs to it.
-The description is the ALL-CAPS product name text that appears on the SAME line as the item number.
+DO NOT shift or offset — NEVER pair an item number from one row with the description from the next row down.
 
-EXAMPLE of correct row pairing (each line = one product):
+HOW TO CORRECTLY PAIR ITEM NUMBER WITH DESCRIPTION:
+1. Find a 6-7 digit number at the start of a row — that is the item number.
+2. The description for THAT item number is the ALL-CAPS text on THE SAME ROW, not the row below.
+3. If a row has a 6-7 digit number but no ALL-CAPS description on the same line, look for the description text that immediately follows the numeric columns (Ordered, Shipped, Pack, Size) on that same line.
+4. NEVER take the description from the line below the item number.
+
+EXAMPLE — correct pairing (each line = one product):
+  867175  1  1  1  5 LB  NA BEVERAGES-PRODUCE PEAK FRS LEMON FRSH  16.4100  16.41
+  158889  1  1  1  5 LB  BEIGNETS & FOOD-DAIRY WEST CRK CHEESE AMER YLW SLCD 160  16.4100  16.41
   810605  1  1  1  CS  FRST MRK STRAW 10.25 GIANT CLR 1W  62.57  62.57
-  870410  1  1  1  CS  FRST MRK LID CUP PLAS X SLOT 12-24  18.32  18.32
+  870410  2  2  1  CS  FRST MRK LID CUP PLAS X SLOT 12-24  18.32  36.64
 
-So: itemNumber=810605 → description="FRST MRK STRAW 10.25 GIANT CLR 1W"
+So: itemNumber=867175 → description="NA BEVERAGES-PRODUCE PEAK FRS LEMON FRSH"
+    itemNumber=158889 → description="BEIGNETS & FOOD-DAIRY WEST CRK CHEESE AMER YLW SLCD 160"
+    itemNumber=810605 → description="FRST MRK STRAW 10.25 GIANT CLR 1W"
     itemNumber=870410 → description="FRST MRK LID CUP PLAS X SLOT 12-24"
 
+NOTE: Some descriptions include a category prefix like "BEIGNETS & FOOD-DAIRY" or "NA BEVERAGES-PRODUCE" — include this prefix in the description field.
+
 SKIP these non-product rows:
-- Category header rows (e.g. "BEIGNETS & FOOD DRY", "NA BEVERAGES", "CHEMICALS PAPER")
+- Category header rows (e.g. "BEIGNETS & FOOD DRY", "NA BEVERAGES", "CHEMICALS PAPER") that have NO item number
 - Subtotal rows (contain words like "SUBTOTAL", "TOTAL", "SUB-TOTAL")
 - Blank rows
 - Page header/footer rows
@@ -74,6 +84,7 @@ CRITICAL RULES:
 - If a value is missing or unclear, set it to null. NEVER hallucinate.
 - itemNumber and pack are OPTIONAL — return null if not present. description and shippedQty are REQUIRED.
 - The invoice header contains invoiceNumber, invoiceDate, and totalAmount — extract if present.
+- DOUBLE-CHECK: for each extracted row, verify the description you assigned matches the ALL-CAPS text on the SAME line as the item number, not the line above or below.
 
 OUTPUT FORMAT — respond with ONLY a raw JSON object, no markdown fences, no explanation:
 {
