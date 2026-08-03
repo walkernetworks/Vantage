@@ -411,6 +411,24 @@ export async function backfillCountStockEvents() {
   return total;
 }
 
+/**
+ * Unapply an invoice: delete all stock events created by this invoice
+ * and reset the invoice status back to "reviewed" so lines can be corrected
+ * and the invoice re-applied.
+ */
+export async function unapplyInvoice(invoiceId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  // Delete all receipt stock events that were created by this invoice
+  await db.delete(stockEvents).where(eq(stockEvents.invoiceId, invoiceId));
+
+  // Reset invoice status to reviewed so it can be edited and re-applied
+  await db.update(invoices).set({ status: "reviewed" }).where(eq(invoices.id, invoiceId));
+
+  console.log(`[Invoice Unapply] Reversed stock events for invoice ${invoiceId}, status reset to reviewed`);
+}
+
 export async function deleteInvoice(invoiceId: number) {
   const db = await getDb();
   if (!db) return;

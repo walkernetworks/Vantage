@@ -329,6 +329,27 @@ function ReviewDialog({
     onError: (err) => toast.error(err.message ?? "Failed to apply invoice"),
   });
 
+  const unapplyMutation = trpc.invoices.unapply.useMutation({
+    onSuccess: () => {
+      utils.invoices.list.invalidate();
+      utils.invoices.getWithLines.invalidate({ invoiceId });
+      toast.success("Invoice unapplied — stock events reversed. You can now correct and re-apply.");
+    },
+    onError: (err) => toast.error(err.message ?? "Failed to unapply invoice"),
+  });
+
+  const [confirmUnapply, setConfirmUnapply] = useState(false);
+  const [reassigningLineId, setReassigningLineId] = useState<number | null>(null);
+
+  const handleReassignLine = (lineId: number, itemId: string) => {
+    updateLineMutation.mutate({
+      lineId,
+      itemId: itemId === "__skip__" ? null : Number(itemId),
+      matchStatus: itemId === "__skip__" ? "skipped" : "matched",
+    });
+    setReassigningLineId(null);
+  };
+
   const invoice = data?.invoice;
   const lines: InvoiceLine[] = (data?.lines ?? []) as unknown as InvoiceLine[];
   const matchedLines = lines.filter((l) => l.matchStatus === "matched");
@@ -490,6 +511,16 @@ function ReviewDialog({
                             {line.notReceived ? "Received" : "Not Rcvd"}
                           </button>
                         )}
+                        {/* Reassign button — available when reviewed (after unapply) */}
+                        {invoice?.status === "reviewed" && (
+                          <button
+                            onClick={() => setReassigningLineId(reassigningLineId === line.id ? null : line.id)}
+                            className="shrink-0 text-xs px-2 py-1 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 transition-colors"
+                            title="Reassign to a different catalog item"
+                          >
+                            Reassign
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -545,13 +576,74 @@ function ReviewDialog({
               </>
             )}
             {invoice?.status === "applied" && (
-              <Badge className="bg-green-600 text-white border-green-600 px-3 py-1.5">
-                <CheckCircle2 size={14} className="mr-1.5" /> Applied to Inventory
-              </Badge>
+              <>
+                <Badge className="bg-green-600 text-white border-green-600 px-3 py-1.5 sm:mr-auto">
+                  <CheckCircle2 size={14} className="mr-1.5" /> Applied to Inventory
+                </Badge>
+                <Button
+                  variant="outline"
+                  onClick={() => setConfirmUnapply(true)}
+                  disabled={unapplyMutation.isPending}
+                  className="w-full sm:w-auto border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400"
+                >
+                  <RefreshCw size={15} className="mr-2" />
+                  Unapply &amp; Edit
+                </Button>
+              </>
             )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Reassign popover — rendered outside the matched list so it can overlap */}
+      {reassigningLineId != null && (
+        <Dialog open onOpenChange={() => setReassigningLineId(null)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Reassign item</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground mb-3">
+              Select the correct catalog item for this invoice line.
+            </p>
+            <Select onValueChange={(v) => handleReassignLine(reassigningLineId, v)}>
+              <SelectTrigger className="h-9 text-sm">
+                <SelectValue placeholder="Choose catalog item…" />
+              </SelectTrigger>
+              <SelectContent>
+                {allItems?.map((item) => (
+                  <SelectItem key={item.id} value={String(item.id)}>
+                    {item.name}{item.brand ? ` · ${item.brand}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Confirm unapply dialog */}
+      <AlertDialog open={confirmUnapply} onOpenChange={setConfirmUnapply}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unapply this invoice?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will <strong>reverse all stock events</strong> created when this invoice was applied — removing those received quantities from inventory. The invoice will return to "Reviewed" status so you can correct line assignments and re-apply.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={() => {
+                setConfirmUnapply(false);
+                unapplyMutation.mutate({ invoiceId });
+              }}
+            >
+              Unapply &amp; Edit
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Confirm apply dialog */}
       <AlertDialog open={confirmApply} onOpenChange={setConfirmApply}>

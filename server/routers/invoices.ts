@@ -28,6 +28,7 @@ import {
   updateInvoiceLine,
   markInvoiceReviewed,
   applyInvoiceToInventory,
+  unapplyInvoice,
   toggleInvoiceLineNotReceived,
   deleteInvoice,
 } from "../invoices";
@@ -525,6 +526,13 @@ export const invoicesRouter = router({
     .mutation(async ({ input, ctx }) => {
       const applied = await applyInvoiceToInventory(input.invoiceId, ctx.user.id);
       return { applied, count: applied.length };
+    }),
+
+  unapply: protectedProcedure
+    .input(z.object({ invoiceId: z.number() }))
+    .mutation(async ({ input }) => {
+      await unapplyInvoice(input.invoiceId);
+      return { success: true };
     }),
 
   delete: protectedProcedure
