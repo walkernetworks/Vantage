@@ -418,15 +418,72 @@ export async function listCountSessions() {
   return rows;
 }
 
+/**
+ * Stock events are a derived inventory timeline. Replace a session's count events
+ * whenever its completed snapshot changes, so dashboard inventory and reports use
+ * the same physical count data.
+ */
+export async function syncCountSessionStockEvents(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const [session] = await db
+    .select({ id: countSessions.id, completedAt: countSessions.completedAt })
+    .from(countSessions)
+    .where(eq(countSessions.id, id))
+    .limit(1);
+  const completedAt = session?.completedAt;
+  if (!completedAt) return 0;
+
+  const entries = await db
+    .select({
+      itemId: countEntries.itemId,
+      quantity: countEntries.quantity,
+      caseQty: items.caseQty,
+      countMode: items.countMode,
+    })
+    .from(countEntries)
+    .innerJoin(items, eq(countEntries.itemId, items.id))
+    .where(eq(countEntries.sessionId, id));
+
+  // A completed session represents a snapshot, so its old count events must not
+  // remain alongside an edited or corrected replacement snapshot.
+  await db
+    .delete(stockEvents)
+    .where(and(eq(stockEvents.countSessionId, id), eq(stockEvents.eventType, "count")));
+
+  const eventRows: Array<typeof stockEvents.$inferInsert> = entries.map((entry) => {
+    const raw = parseFloat(String(entry.quantity)) || 0;
+    const quantityCases = entry.countMode === "each" && entry.caseQty && entry.caseQty > 1
+      ? raw / entry.caseQty
+      : raw;
+    return {
+      itemId: entry.itemId,
+      eventType: "count" as const,
+      quantityCases: String(quantityCases),
+      countSessionId: id,
+      eventDate: completedAt,
+    };
+  });
+
+  if (eventRows.length > 0) await db.insert(stockEvents).values(eventRows);
+  return eventRows.length;
+}
+
 export async function completeCountSession(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(countSessions).set({ completedAt: new Date() }).where(eq(countSessions.id, id));
+  await syncCountSessionStockEvents(id);
 }
 export async function reopenCountSession(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(countSessions).set({ completedAt: null }).where(eq(countSessions.id, id));
+  // An open session is not an inventory snapshot and must not affect stock levels.
+  await db
+    .delete(stockEvents)
+    .where(and(eq(stockEvents.countSessionId, id), eq(stockEvents.eventType, "count")));
 }
 
 export async function deleteCountSession(id: number) {

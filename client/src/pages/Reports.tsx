@@ -19,6 +19,9 @@ function fmt$(n: number) {
 function fmtExact$(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
 }
+function fmtCogsMetric(n: number | null) {
+  return n === null ? "Needs count" : fmt$(n);
+}
 function fmtDate(d: Date | string | null) {
   if (!d) return "—";
   // If it's already a short human-readable date string (e.g. "6/23/26", "06/23/2026"),
@@ -250,7 +253,7 @@ function WeeklyCogsReport() {
   const handleExport = () => {
     if (!data) return;
     downloadCsv(`cogs-${grouping}-${startDate}-to-${endDate}.csv`,
-      data.map(r => [r.periodLabel, r.periodStart, r.periodEnd, r.openingCost.toFixed(2), r.receiptsCost.toFixed(2), r.closingCost.toFixed(2), r.consumptionCost.toFixed(2), String(r.invoiceCount)]),
+      data.map(r => [r.periodLabel, r.periodStart, r.periodEnd, r.openingCost?.toFixed(2) ?? "", r.receiptsCost.toFixed(2), r.closingCost?.toFixed(2) ?? "", r.consumptionCost?.toFixed(2) ?? "", String(r.invoiceCount)]),
       ["Period", "Start Date", "End Date", "Opening Cost", "Receipts Cost", "Closing Cost", "Consumption Cost", "Invoice Count"]);
   };
 
@@ -258,11 +261,15 @@ function WeeklyCogsReport() {
     return <CogsDrilldownView periodLabel={drilldown.label} periodStart={drilldown.start} periodEnd={drilldown.end} onBack={() => setDrilldown(null)} />;
   }
 
-  const totalConsumption = (data ?? []).reduce((s, r) => s + r.consumptionCost, 0);
-  const activePeriods = (data ?? []).filter(r => r.consumptionCost > 0);
+  const completedPeriods = (data ?? []).filter(
+    (r): r is typeof r & { consumptionCost: number; openingCost: number; closingCost: number } =>
+      r.isComplete && r.consumptionCost !== null && r.openingCost !== null && r.closingCost !== null
+  );
+  const totalConsumption = completedPeriods.reduce((s, r) => s + r.consumptionCost, 0);
+  const activePeriods = completedPeriods.filter(r => r.consumptionCost > 0);
   const avgPeriod = activePeriods.length > 0 ? totalConsumption / activePeriods.length : 0;
-  const lastPeriod = data?.[data.length - 1];
-  const prevPeriod = data?.[data.length - 2];
+  const lastPeriod = completedPeriods[completedPeriods.length - 1];
+  const prevPeriod = completedPeriods[completedPeriods.length - 2];
   const periodOverPeriod = prevPeriod && prevPeriod.consumptionCost > 0 && lastPeriod
     ? ((lastPeriod.consumptionCost - prevPeriod.consumptionCost) / prevPeriod.consumptionCost) * 100 : null;
 
@@ -290,7 +297,7 @@ function WeeklyCogsReport() {
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <SummaryCard label="Total COGS" value={fmt$(totalConsumption)} sub={`${data.length} periods`} />
+            <SummaryCard label="Total COGS" value={fmt$(totalConsumption)} sub={`${completedPeriods.length} count-to-count periods`} />
             <SummaryCard label={`Avg / ${grouping === "weekly" ? "Week" : grouping === "monthly" ? "Month" : "Quarter"}`} value={fmt$(avgPeriod)} sub="Active periods only" />
             {periodOverPeriod !== null && (
               <SummaryCard label="Latest vs Prior" value={fmtPct(periodOverPeriod)} sub="Most recent period" valueClass={periodOverPeriod > 0 ? "text-destructive" : "text-green-600"} />
@@ -302,31 +309,36 @@ function WeeklyCogsReport() {
                 <thead><tr className="bg-muted/50 border-b border-border">
                   <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Period</th>
                   <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Opening</th>
-                  <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Receipts</th>
+                  <th className="text-right px-4 py-3 font-semibold text-muted-foreground" title="All applied invoice lines that are matched to a catalog item and not marked Not Received">Invoice Receipts</th>
                   <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Closing</th>
                   <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Consumed</th>
                   <th className="px-4 py-3 w-8" />
                 </tr></thead>
                 <tbody>
                   {[...data].reverse().map((row, i) => (
-                    <tr key={i} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors cursor-pointer group"
-                      onClick={() => setDrilldown({ label: row.periodLabel, start: row.periodStart, end: row.periodEnd })}>
+                    <tr key={i} className={cn("border-b border-border last:border-0 transition-colors group", row.isComplete ? "hover:bg-muted/30 cursor-pointer" : "opacity-75")}
+                      onClick={() => row.isComplete && setDrilldown({ label: row.periodLabel, start: row.periodStart, end: row.periodEnd })}>
                       <td className="px-4 py-3">
                         <div className="font-medium text-foreground">{row.periodLabel}</div>
                         <div className="text-xs text-muted-foreground">{fmtDate(row.periodStart)} – {fmtDate(row.periodEnd)}</div>
+                        {row.isComplete ? (
+                          <div className="text-xs text-muted-foreground">Counts: {fmtDate(row.openingCountedAt)} → {fmtDate(row.closingCountedAt)}</div>
+                        ) : (
+                          <div className="text-xs text-amber-600 dark:text-amber-400">Complete a count in this period to finalize COGS</div>
+                        )}
                       </td>
-                      <td className="px-4 py-3 text-right text-muted-foreground">{fmt$(row.openingCost)}</td>
+                      <td className="px-4 py-3 text-right text-muted-foreground">{fmtCogsMetric(row.openingCost)}</td>
                       <td className="px-4 py-3 text-right text-muted-foreground">{fmt$(row.receiptsCost)}</td>
-                      <td className="px-4 py-3 text-right text-muted-foreground">{fmt$(row.closingCost)}</td>
-                      <td className="px-4 py-3 text-right"><span className={cn("font-semibold", row.consumptionCost > 0 ? "text-foreground" : "text-muted-foreground")}>{fmt$(row.consumptionCost)}</span></td>
-                      <td className="px-4 py-3 text-right"><ChevronRight size={14} className="text-muted-foreground group-hover:text-foreground transition-colors ml-auto" /></td>
+                      <td className="px-4 py-3 text-right text-muted-foreground">{fmtCogsMetric(row.closingCost)}</td>
+                      <td className="px-4 py-3 text-right"><span className={cn("font-semibold", (row.consumptionCost ?? 0) > 0 ? "text-foreground" : "text-muted-foreground")}>{fmtCogsMetric(row.consumptionCost)}</span></td>
+                      <td className="px-4 py-3 text-right">{row.isComplete && <ChevronRight size={14} className="text-muted-foreground group-hover:text-foreground transition-colors ml-auto" />}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           </div>
-          <p className="text-xs text-muted-foreground">Click any row to drill down into item-level consumption for that period.</p>
+          <p className="text-xs text-muted-foreground">Invoice Receipts include all applied, matched invoice lines that were actually received. COGS is available only after physical counts establish both the opening and closing inventory snapshots.</p>
         </>
       )}
     </div>

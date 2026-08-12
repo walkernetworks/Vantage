@@ -448,3 +448,9 @@
 - [x] client/src/components/AppLayout.tsx: add BarChart2 icon and Reports nav item (adminOnly, /reports path)
 - [x] client/src/App.tsx: add /reports route pointing to Reports page
 - [x] TypeScript: 0 errors
+
+## Round 52 — Invoice Review & COGS Reconciliation Fixes
+- [x] Invoice review: make the Not Received control usable before an invoice is applied, including for matched lines that require a receipt exception
+- [x] COGS: calculate opening and closing inventory from the actual completed count sessions bracketing each selected period, rather than repeating the latest snapshot
+- [x] COGS: define receipts as stock added by all applied invoices within the period and reconcile the figure to applied invoice line extensions
+- [x] COGS: add focused tests for period boundary selection, receipt aggregation, and consumption calculation

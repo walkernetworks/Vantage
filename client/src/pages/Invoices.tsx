@@ -313,6 +313,7 @@ function ReviewDialog({
 
   const toggleNotReceivedMutation = trpc.invoices.toggleNotReceived.useMutation({
     onSuccess: () => utils.invoices.getWithLines.invalidate({ invoiceId }),
+    onError: (err) => toast.error(err.message ?? "Could not update receipt status"),
   });
 
   const markReviewedMutation = trpc.invoices.markReviewed.useMutation({

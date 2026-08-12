@@ -8,6 +8,11 @@
 import { getDb, getRawPool } from "./db";
 import { invoices, invoiceLines } from "../drizzle/schema";
 import { sql, desc } from "drizzle-orm";
+import {
+  calculateCogsPeriod,
+  type CogsCountSnapshot,
+  type CogsReceiptLine,
+} from "./cogs";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -18,11 +23,14 @@ export interface CogsPeriodRow {
   periodLabel: string;     // e.g. "Mar 17 – Mar 23", "March 2025", "Q1 2025"
   periodStart: string;     // ISO date string
   periodEnd: string;       // ISO date string
-  openingCost: number;
+  openingCost: number | null;
   receiptsCost: number;
-  closingCost: number;
-  consumptionCost: number;
+  closingCost: number | null;
+  consumptionCost: number | null;
   invoiceCount: number;
+  isComplete: boolean;
+  openingCountedAt: string | null;
+  closingCountedAt: string | null;
   topItems: Array<{ name: string; cost: number }>;
 }
 
@@ -213,238 +221,199 @@ function getISOWeek(d: Date): number {
 
 // ─── COGS Report ──────────────────────────────────────────────────────────────
 
+type QueryRow = Record<string, unknown>;
+
+function rowsFromResult<T extends QueryRow>(result: unknown): T[] {
+  const rows = (result as [T[]] | undefined)?.[0];
+  return Array.isArray(rows) ? rows : [];
+}
+
+function parseNumber(value: unknown): number {
+  const parsed = parseFloat(String(value ?? "0"));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function asDate(value: unknown): Date | null {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  const parsed = new Date(String(value));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/** Invoice dates are saved as OCR strings, so parse them without browser-dependent two-digit-year behavior. */
+function invoiceReceiptDate(value: unknown, fallback: unknown): Date | null {
+  const raw = typeof value === "string" ? value.trim() : "";
+  const match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (match) {
+    const month = Number(match[1]);
+    const day = Number(match[2]);
+    const yearValue = Number(match[3]);
+    const year = yearValue < 100 ? 2000 + yearValue : yearValue;
+    const parsed = new Date(year, month - 1, day, 12, 0, 0, 0);
+    if (parsed.getFullYear() === year && parsed.getMonth() === month - 1 && parsed.getDate() === day) return parsed;
+  }
+  return asDate(fallback);
+}
+
+async function loadCogsSourceData(endDate: Date): Promise<{
+  snapshots: CogsCountSnapshot[];
+  receiptLines: CogsReceiptLine[];
+}> {
+  const db = await getDb();
+  if (!db) return { snapshots: [], receiptLines: [] };
+
+  // Count entries are the authoritative record of a physical inventory count.
+  const countResult = await db.execute(sql`
+    SELECT
+      cs.id AS sessionId,
+      cs.completedAt,
+      ce.itemId,
+      ce.quantity,
+      it.name AS itemName,
+      it.vendor,
+      it.category,
+      it.price,
+      it.caseQty,
+      it.countMode
+    FROM count_sessions cs
+    JOIN count_entries ce ON ce.sessionId = cs.id
+    JOIN items it ON it.id = ce.itemId
+    WHERE cs.completedAt IS NOT NULL
+      AND cs.completedAt <= ${endDate}
+    ORDER BY cs.completedAt ASC, cs.id ASC
+  `);
+  const countRows = rowsFromResult<QueryRow>(countResult);
+  const snapshotMap = new Map<number, CogsCountSnapshot>();
+
+  for (const row of countRows) {
+    const sessionId = Number(row.sessionId);
+    const completedAt = asDate(row.completedAt);
+    if (!sessionId || !completedAt) continue;
+
+    const rawQuantity = parseNumber(row.quantity);
+    const caseQty = parseNumber(row.caseQty);
+    const quantityCases = row.countMode === "each" && caseQty > 1
+      ? rawQuantity / caseQty
+      : rawQuantity;
+    const snapshot = snapshotMap.get(sessionId) ?? {
+      sessionId,
+      completedAt,
+      lines: [],
+    };
+    snapshot.lines.push({
+      itemId: Number(row.itemId),
+      itemName: String(row.itemName ?? `Item ${row.itemId}`),
+      vendor: row.vendor == null ? null : String(row.vendor),
+      category: row.category == null ? null : String(row.category),
+      quantityCases,
+      price: parseNumber(row.price),
+    });
+    snapshotMap.set(sessionId, snapshot);
+  }
+
+  // Receipts are all matched, actually received lines on every applied invoice.
+  const receiptResult = await db.execute(sql`
+    SELECT
+      i.id AS invoiceId,
+      i.invoiceDate,
+      i.createdAt AS invoiceCreatedAt,
+      il.itemId,
+      il.shippedQty,
+      il.unitPrice,
+      it.price AS catalogPrice,
+      it.name AS itemName,
+      it.vendor,
+      it.category
+    FROM invoices i
+    JOIN invoice_lines il ON il.invoiceId = i.id
+    JOIN items it ON it.id = il.itemId
+    WHERE i.status = 'applied'
+      AND il.matchStatus = 'matched'
+      AND il.notReceived = 0
+      AND il.shippedQty > 0
+  `);
+  const receiptRows = rowsFromResult<QueryRow>(receiptResult);
+  const receiptLines: CogsReceiptLine[] = [];
+  for (const row of receiptRows) {
+    const receivedAt = invoiceReceiptDate(row.invoiceDate, row.invoiceCreatedAt);
+    if (!receivedAt || receivedAt > endDate) continue;
+    receiptLines.push({
+      invoiceId: Number(row.invoiceId),
+      receivedAt,
+      itemId: Number(row.itemId),
+      itemName: String(row.itemName ?? `Item ${row.itemId}`),
+      vendor: row.vendor == null ? null : String(row.vendor),
+      category: row.category == null ? null : String(row.category),
+      quantityCases: parseNumber(row.shippedQty),
+      // The invoice unit price is the historical cost of this receipt.
+      unitCost: parseNumber(row.unitPrice) || parseNumber(row.catalogPrice),
+    });
+  }
+
+  return {
+    snapshots: Array.from(snapshotMap.values()).sort(
+      (left, right) => left.completedAt.getTime() - right.completedAt.getTime()
+    ),
+    receiptLines,
+  };
+}
+
 export async function getCogsPeriods(
   startDate: Date,
   endDate: Date,
   grouping: CogsGrouping
 ): Promise<CogsPeriodRow[]> {
-  await getDb(); // ensure pool is initialized
-  const pool = getRawPool();
-  if (!pool) return [];
-
-  // Fetch a window slightly wider than requested to get opening stock for first period
-  const fetchFrom = new Date(startDate);
-  fetchFrom.setDate(fetchFrom.getDate() - 90); // look back 90 days for opening stock
-
-  const [eventRows] = await pool.promise().execute(`
-    SELECT
-      se.eventType,
-      se.quantityCases,
-      se.eventDate,
-      it.price,
-      it.name AS itemName,
-      it.id AS itemId,
-      it.vendor,
-      it.category
-    FROM stock_events se
-    JOIN items it ON it.id = se.itemId
-    WHERE se.eventDate >= ?
-      AND se.eventDate <= ?
-      AND it.price IS NOT NULL AND it.price > 0
-    ORDER BY se.eventDate ASC
-  `, [isoDate(fetchFrom) + " 00:00:00", isoDate(endDate) + " 23:59:59"]) as any;
-
-  const events = (Array.isArray(eventRows) ? eventRows : []) as Array<{
-    eventType: string;
-    quantityCases: string;
-    eventDate: Date;
-    price: string;
-    itemName: string;
-    itemId: number;
-    vendor: string | null;
-    category: string | null;
-  }>;
-
-  if (events.length === 0) return [];
-
+  const source = await loadCogsSourceData(endDate);
   const periods = buildPeriods(startDate, endDate, grouping);
-  const result: CogsPeriodRow[] = [];
 
-  // Build price map (latest price per item)
-  const priceByItem = new Map<number, number>();
-  for (const e of events) {
-    priceByItem.set(e.itemId, parseFloat(e.price) || 0);
-  }
-
-  for (const period of periods) {
-    // Opening stock: last count event per item BEFORE period start
-    const openingByItem = new Map<number, number>();
-    for (const e of events) {
-      if (e.eventType === "count" && new Date(e.eventDate) < period.start) {
-        openingByItem.set(e.itemId, parseFloat(e.quantityCases) || 0);
-      }
-    }
-
-    // Receipts during the period
-    const receiptsByItem = new Map<number, number>();
-    for (const e of events) {
-      const d = new Date(e.eventDate);
-      if (e.eventType === "receipt" && d >= period.start && d <= period.end) {
-        receiptsByItem.set(e.itemId, (receiptsByItem.get(e.itemId) || 0) + (parseFloat(e.quantityCases) || 0));
-      }
-    }
-
-    // Closing stock: last count event per item ON or BEFORE period end
-    const closingByItem = new Map<number, number>();
-    for (const e of events) {
-      if (e.eventType === "count" && new Date(e.eventDate) <= period.end) {
-        closingByItem.set(e.itemId, parseFloat(e.quantityCases) || 0);
-      }
-    }
-
-    let openingCost = 0, receiptsCost = 0, closingCost = 0;
-    const itemConsumption = new Map<number, { name: string; cost: number }>();
-
-    const allItemIds = Array.from(new Set([
-      ...Array.from(openingByItem.keys()),
-      ...Array.from(receiptsByItem.keys()),
-      ...Array.from(closingByItem.keys()),
-    ]));
-
-    for (const itemId of allItemIds) {
-      const price = priceByItem.get(itemId) || 0;
-      const opening = openingByItem.get(itemId) || 0;
-      const receipts = receiptsByItem.get(itemId) || 0;
-      const closing = closingByItem.get(itemId) || 0;
-      const consumption = Math.max(0, opening + receipts - closing);
-
-      openingCost += opening * price;
-      receiptsCost += receipts * price;
-      closingCost += closing * price;
-
-      if (consumption > 0) {
-        const itemName = events.find(e => e.itemId === itemId)?.itemName || `Item ${itemId}`;
-        itemConsumption.set(itemId, { name: itemName, cost: consumption * price });
-      }
-    }
-
-    const topItems = Array.from(itemConsumption.values())
-      .sort((a, b) => b.cost - a.cost)
-      .slice(0, 5);
-
-    result.push({
+  return periods.map((period) => {
+    const metric = calculateCogsPeriod(period.start, period.end, source.snapshots, source.receiptLines);
+    const isComplete = metric.openingCost !== null && metric.closingCost !== null && metric.consumptionCost !== null;
+    return {
       periodKey: period.key,
       periodLabel: period.label,
       periodStart: isoDate(period.start),
       periodEnd: isoDate(period.end),
-      openingCost: Math.round(openingCost * 100) / 100,
-      receiptsCost: Math.round(receiptsCost * 100) / 100,
-      closingCost: Math.round(closingCost * 100) / 100,
-      consumptionCost: Math.round(Math.max(0, openingCost + receiptsCost - closingCost) * 100) / 100,
-      invoiceCount: 0,
-      topItems,
-    });
-  }
-
-  return result;
+      openingCost: metric.openingCost,
+      receiptsCost: metric.receiptsCost,
+      closingCost: metric.closingCost,
+      consumptionCost: metric.consumptionCost,
+      invoiceCount: metric.receiptInvoiceIds.length,
+      isComplete,
+      openingCountedAt: metric.openingSnapshot ? isoDate(metric.openingSnapshot.completedAt) : null,
+      closingCountedAt: metric.closingSnapshot ? isoDate(metric.closingSnapshot.completedAt) : null,
+      topItems: metric.items
+        .filter((item) => item.consumptionCost > 0)
+        .sort((left, right) => right.consumptionCost - left.consumptionCost)
+        .slice(0, 5)
+        .map((item) => ({ name: item.itemName, cost: item.consumptionCost })),
+    };
+  });
 }
 
-/** Drill-down: item-level breakdown for a specific period */
+/** Drill-down: item-level breakdown for a specific period with valid physical count boundaries. */
 export async function getCogsDrilldown(
   periodStart: Date,
   periodEnd: Date
 ): Promise<CogsDrillRow[]> {
-  await getDb();
-  const pool = getRawPool();
-  if (!pool) return [];
+  const source = await loadCogsSourceData(periodEnd);
+  const metric = calculateCogsPeriod(periodStart, periodEnd, source.snapshots, source.receiptLines);
+  if (metric.openingCost === null || metric.closingCost === null) return [];
 
-  const fetchFrom = new Date(periodStart);
-  fetchFrom.setDate(fetchFrom.getDate() - 90);
-
-  const [eventRows] = await pool.promise().execute(`
-    SELECT
-      se.eventType,
-      se.quantityCases,
-      se.eventDate,
-      it.price,
-      it.name AS itemName,
-      it.id AS itemId,
-      it.vendor,
-      it.category
-    FROM stock_events se
-    JOIN items it ON it.id = se.itemId
-    WHERE se.eventDate >= ?
-      AND se.eventDate <= ?
-      AND it.price IS NOT NULL AND it.price > 0
-    ORDER BY se.eventDate ASC
-  `, [isoDate(fetchFrom) + " 00:00:00", isoDate(periodEnd) + " 23:59:59"]) as any;
-
-  const events = (Array.isArray(eventRows) ? eventRows : []) as Array<{
-    eventType: string;
-    quantityCases: string;
-    eventDate: Date;
-    price: string;
-    itemName: string;
-    itemId: number;
-    vendor: string | null;
-    category: string | null;
-  }>;
-
-  if (events.length === 0) return [];
-
-  const priceByItem = new Map<number, number>();
-  const nameByItem = new Map<number, string>();
-  const vendorByItem = new Map<number, string | null>();
-  const categoryByItem = new Map<number, string | null>();
-  for (const e of events) {
-    priceByItem.set(e.itemId, parseFloat(e.price) || 0);
-    nameByItem.set(e.itemId, e.itemName);
-    vendorByItem.set(e.itemId, e.vendor);
-    categoryByItem.set(e.itemId, e.category);
-  }
-
-  const openingByItem = new Map<number, number>();
-  for (const e of events) {
-    if (e.eventType === "count" && new Date(e.eventDate) < periodStart) {
-      openingByItem.set(e.itemId, parseFloat(e.quantityCases) || 0);
-    }
-  }
-
-  const receiptsByItem = new Map<number, number>();
-  for (const e of events) {
-    const d = new Date(e.eventDate);
-    if (e.eventType === "receipt" && d >= periodStart && d <= periodEnd) {
-      receiptsByItem.set(e.itemId, (receiptsByItem.get(e.itemId) || 0) + (parseFloat(e.quantityCases) || 0));
-    }
-  }
-
-  const closingByItem = new Map<number, number>();
-  for (const e of events) {
-    if (e.eventType === "count" && new Date(e.eventDate) <= periodEnd) {
-      closingByItem.set(e.itemId, parseFloat(e.quantityCases) || 0);
-    }
-  }
-
-  const allItemIds = Array.from(new Set([
-    ...Array.from(openingByItem.keys()),
-    ...Array.from(receiptsByItem.keys()),
-    ...Array.from(closingByItem.keys()),
-  ]));
-
-  const rows: CogsDrillRow[] = [];
-  for (const itemId of allItemIds) {
-    const price = priceByItem.get(itemId) || 0;
-    const opening = openingByItem.get(itemId) || 0;
-    const receipts = receiptsByItem.get(itemId) || 0;
-    const closing = closingByItem.get(itemId) || 0;
-    const consumption = Math.max(0, opening + receipts - closing);
-    if (consumption === 0 && opening === 0 && receipts === 0) continue;
-
-    rows.push({
-      itemId,
-      itemName: nameByItem.get(itemId) || `Item ${itemId}`,
-      vendor: vendorByItem.get(itemId) ?? null,
-      category: categoryByItem.get(itemId) ?? null,
-      openingQty: Math.round(opening * 10000) / 10000,
-      receiptsQty: Math.round(receipts * 10000) / 10000,
-      closingQty: Math.round(closing * 10000) / 10000,
-      consumptionQty: Math.round(consumption * 10000) / 10000,
-      price,
-      consumptionCost: Math.round(consumption * price * 100) / 100,
-    });
-  }
-
-  return rows.sort((a, b) => b.consumptionCost - a.consumptionCost);
+  return metric.items
+    .filter((item) => item.openingQty !== 0 || item.receiptsQty !== 0 || item.closingQty !== 0)
+    .map((item) => ({
+      itemId: item.itemId,
+      itemName: item.itemName,
+      vendor: item.vendor,
+      category: item.category,
+      openingQty: item.openingQty,
+      receiptsQty: item.receiptsQty,
+      closingQty: item.closingQty,
+      consumptionQty: item.consumptionQty,
+      price: item.price,
+      consumptionCost: item.consumptionCost,
+    }))
+    .sort((left, right) => right.consumptionCost - left.consumptionCost);
 }
 
 // ─── Invoice History Report ───────────────────────────────────────────────────

@@ -251,6 +251,7 @@ export async function getInvoiceWithLines(invoiceId: number) {
       unitPrice: invoiceLines.unitPrice,
       extension: invoiceLines.extension,
       matchStatus: invoiceLines.matchStatus,
+      notReceived: invoiceLines.notReceived,
       itemName: items.name,
     })
     .from(invoiceLines)
