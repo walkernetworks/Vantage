@@ -29,6 +29,8 @@ export interface CogsPeriodRow {
   consumptionCost: number | null;
   invoiceCount: number;
   isComplete: boolean;
+  openingSessionId: number | null;
+  closingSessionId: number | null;
   openingCountedAt: string | null;
   closingCountedAt: string | null;
   topItems: Array<{ name: string; cost: number }>;
@@ -136,6 +138,33 @@ export function formatBusinessDate(d: Date): string {
 
 function isoDate(d: Date): string {
   return formatBusinessDate(d);
+}
+
+export interface CountToCountPeriod {
+  openingSnapshot: CogsCountSnapshot;
+  closingSnapshot: CogsCountSnapshot;
+}
+
+/**
+ * Pair each completed count with the prior completed count. This preserves the
+ * actual operating cadence: former Sunday counts, current Saturday counts, and
+ * any one-off day without imposing calendar-week boundaries.
+ */
+export function buildCountToCountPeriods(
+  snapshots: CogsCountSnapshot[],
+  startDate: Date,
+  endDate: Date
+): CountToCountPeriod[] {
+  const ordered = [...snapshots].sort(
+    (left, right) => left.completedAt.getTime() - right.completedAt.getTime()
+  );
+  const periods: CountToCountPeriod[] = [];
+  for (let index = 1; index < ordered.length; index += 1) {
+    const closingSnapshot = ordered[index];
+    if (closingSnapshot.completedAt < startDate || closingSnapshot.completedAt > endDate) continue;
+    periods.push({ openingSnapshot: ordered[index - 1], closingSnapshot });
+  }
+  return periods;
 }
 
 function weekLabel(start: Date, end: Date): string {
@@ -276,6 +305,7 @@ async function loadCogsSourceData(endDate: Date): Promise<{
     SELECT
       cs.id AS sessionId,
       cs.completedAt,
+      cs.createdAt AS countedAt,
       ce.itemId,
       ce.quantity,
       it.name AS itemName,
@@ -288,16 +318,18 @@ async function loadCogsSourceData(endDate: Date): Promise<{
     JOIN count_entries ce ON ce.sessionId = cs.id
     JOIN items it ON it.id = ce.itemId
     WHERE cs.completedAt IS NOT NULL
-      AND cs.completedAt <= ${endDate}
-    ORDER BY cs.completedAt ASC, cs.id ASC
+      AND cs.createdAt <= ${endDate}
+    ORDER BY cs.createdAt ASC, cs.id ASC
   `);
   const countRows = rowsFromResult<QueryRow>(countResult);
   const snapshotMap = new Map<number, CogsCountSnapshot>();
 
   for (const row of countRows) {
     const sessionId = Number(row.sessionId);
-    const completedAt = asDate(row.completedAt);
-    if (!sessionId || !completedAt) continue;
+    // createdAt is the physical count’s business date. completedAt may be much
+    // later when a manager finalizes a saved count session.
+    const countedAt = asDate(row.countedAt);
+    if (!sessionId || !countedAt) continue;
 
     const rawQuantity = parseNumber(row.quantity);
     const caseQty = parseNumber(row.caseQty);
@@ -306,7 +338,7 @@ async function loadCogsSourceData(endDate: Date): Promise<{
       : rawQuantity;
     const snapshot = snapshotMap.get(sessionId) ?? {
       sessionId,
-      completedAt,
+      completedAt: countedAt,
       lines: [],
     };
     snapshot.lines.push({
@@ -373,40 +405,69 @@ export async function getCogsPeriods(
   grouping: CogsGrouping
 ): Promise<CogsPeriodRow[]> {
   const source = await loadCogsSourceData(endDate);
-  const periods = buildPeriods(startDate, endDate, grouping);
+  // COGS is inherently a count-to-count calculation. Pair every consecutive
+  // physical count, regardless of whether the business counted on Sunday in the
+  // past or Saturday in the current workflow. A range filters by closing count.
+  const snapshots = source.snapshots;
+  const rows: CogsPeriodRow[] = [];
+  for (const { openingSnapshot, closingSnapshot } of buildCountToCountPeriods(snapshots, startDate, endDate)) {
 
-  return periods.map((period) => {
-    const metric = calculateCogsPeriod(period.start, period.end, source.snapshots, source.receiptLines);
+    // Start one millisecond after the opening count so it is selected as the
+    // opening boundary while receipts remain measured from the real count time.
+    const metric = calculateCogsPeriod(
+      new Date(openingSnapshot.completedAt.getTime() + 1),
+      closingSnapshot.completedAt,
+      snapshots,
+      source.receiptLines
+    );
     const isComplete = metric.openingCost !== null && metric.closingCost !== null && metric.consumptionCost !== null;
-    return {
-      periodKey: period.key,
-      periodLabel: period.label,
-      periodStart: isoDate(period.start),
-      periodEnd: isoDate(period.end),
+    rows.push({
+      periodKey: `counts-${openingSnapshot.sessionId}-${closingSnapshot.sessionId}`,
+      periodLabel: `${formatBusinessDate(openingSnapshot.completedAt)} → ${formatBusinessDate(closingSnapshot.completedAt)}`,
+      periodStart: isoDate(openingSnapshot.completedAt),
+      periodEnd: isoDate(closingSnapshot.completedAt),
       openingCost: metric.openingCost,
       receiptsCost: metric.receiptsCost,
       closingCost: metric.closingCost,
       consumptionCost: metric.consumptionCost,
       invoiceCount: metric.receiptInvoiceIds.length,
       isComplete,
-      openingCountedAt: metric.openingSnapshot ? isoDate(metric.openingSnapshot.completedAt) : null,
-      closingCountedAt: metric.closingSnapshot ? isoDate(metric.closingSnapshot.completedAt) : null,
+      openingSessionId: openingSnapshot.sessionId,
+      closingSessionId: closingSnapshot.sessionId,
+      openingCountedAt: isoDate(openingSnapshot.completedAt),
+      closingCountedAt: isoDate(closingSnapshot.completedAt),
       topItems: metric.items
         .filter((item) => item.consumptionCost > 0)
         .sort((left, right) => right.consumptionCost - left.consumptionCost)
         .slice(0, 5)
         .map((item) => ({ name: item.itemName, cost: item.consumptionCost })),
-    };
-  });
+    });
+  }
+  return rows;
 }
 
 /** Drill-down: item-level breakdown for a specific period with valid physical count boundaries. */
 export async function getCogsDrilldown(
   periodStart: Date,
-  periodEnd: Date
+  periodEnd: Date,
+  openingSessionId?: number,
+  closingSessionId?: number
 ): Promise<CogsDrillRow[]> {
   const source = await loadCogsSourceData(periodEnd);
-  const metric = calculateCogsPeriod(periodStart, periodEnd, source.snapshots, source.receiptLines);
+  const openingSnapshot = openingSessionId
+    ? source.snapshots.find((snapshot) => snapshot.sessionId === openingSessionId)
+    : null;
+  const closingSnapshot = closingSessionId
+    ? source.snapshots.find((snapshot) => snapshot.sessionId === closingSessionId)
+    : null;
+  const metric = openingSnapshot && closingSnapshot
+    ? calculateCogsPeriod(
+        new Date(openingSnapshot.completedAt.getTime() + 1),
+        closingSnapshot.completedAt,
+        source.snapshots,
+        source.receiptLines
+      )
+    : calculateCogsPeriod(periodStart, periodEnd, source.snapshots, source.receiptLines);
   if (metric.openingCost === null || metric.closingCost === null) return [];
 
   return metric.items

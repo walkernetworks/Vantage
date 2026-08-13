@@ -156,10 +156,15 @@ function ReportSkeleton() {
 }
 
 // ─── COGS Drill-down ──────────────────────────────────────────────────────────
-function CogsDrilldownView({ periodLabel, periodStart, periodEnd, onBack }: {
-  periodLabel: string; periodStart: string; periodEnd: string; onBack: () => void;
+function CogsDrilldownView({ periodLabel, periodStart, periodEnd, openingSessionId, closingSessionId, onBack }: {
+  periodLabel: string; periodStart: string; periodEnd: string; openingSessionId: number | null; closingSessionId: number | null; onBack: () => void;
 }) {
-  const { data, isLoading } = trpc.reports.cogsDrilldown.useQuery({ periodStart, periodEnd });
+  const { data, isLoading } = trpc.reports.cogsDrilldown.useQuery({
+    periodStart,
+    periodEnd,
+    ...(openingSessionId ? { openingSessionId } : {}),
+    ...(closingSessionId ? { closingSessionId } : {}),
+  });
   type DrillRow = NonNullable<typeof data>[number];
   const byCategory = useMemo(() => {
     if (!data) return {} as Record<string, DrillRow[]>;
@@ -246,12 +251,11 @@ function WeeklyCogsReport() {
   const defaultRange = useMemo(() => getPresetRange(90), []);
   const [startDate, setStartDate] = useState(defaultRange.start);
   const [endDate, setEndDate] = useState(defaultRange.end);
-  const [grouping, setGrouping] = useState<CogsGrouping>("weekly");
   const [activePreset, setActivePreset] = useState<number | null>(90);
-  const [drilldown, setDrilldown] = useState<{ label: string; start: string; end: string } | null>(null);
+  const [drilldown, setDrilldown] = useState<{ label: string; start: string; end: string; openingSessionId: number | null; closingSessionId: number | null } | null>(null);
 
   const { data, isLoading } = trpc.reports.cogsPeriods.useQuery(
-    { startDate, endDate, grouping }, { enabled: !!startDate && !!endDate }
+    { startDate, endDate, grouping: "weekly" }, { enabled: !!startDate && !!endDate }
   );
 
   function handlePreset(days: number) {
@@ -261,13 +265,13 @@ function WeeklyCogsReport() {
 
   const handleExport = () => {
     if (!data) return;
-    downloadCsv(`cogs-${grouping}-${startDate}-to-${endDate}.csv`,
-      data.map(r => [r.periodLabel, r.periodStart, r.periodEnd, r.openingCost?.toFixed(2) ?? "", r.receiptsCost.toFixed(2), r.closingCost?.toFixed(2) ?? "", r.consumptionCost?.toFixed(2) ?? "", String(r.invoiceCount)]),
-      ["Period", "Start Date", "End Date", "Opening Cost", "Receipts Cost", "Closing Cost", "Consumption Cost", "Invoice Count"]);
+    downloadCsv(`cogs-count-to-count-${startDate}-to-${endDate}.csv`,
+      data.map(r => [r.periodLabel, r.openingCountedAt ?? "", r.closingCountedAt ?? "", r.openingCost?.toFixed(2) ?? "", r.receiptsCost.toFixed(2), r.closingCost?.toFixed(2) ?? "", r.consumptionCost?.toFixed(2) ?? "", String(r.invoiceCount)]),
+      ["Count-to-Count Period", "Opening Count", "Closing Count", "Opening Cost", "Receipts Cost", "Closing Cost", "Consumption Cost", "Invoice Count"]);
   };
 
   if (drilldown) {
-    return <CogsDrilldownView periodLabel={drilldown.label} periodStart={drilldown.start} periodEnd={drilldown.end} onBack={() => setDrilldown(null)} />;
+    return <CogsDrilldownView periodLabel={drilldown.label} periodStart={drilldown.start} periodEnd={drilldown.end} openingSessionId={drilldown.openingSessionId} closingSessionId={drilldown.closingSessionId} onBack={() => setDrilldown(null)} />;
   }
 
   const completedPeriods = (data ?? []).filter(
@@ -290,13 +294,8 @@ function WeeklyCogsReport() {
           onEndChange={v => { setEndDate(v); setActivePreset(null); }}
           activePreset={activePreset} onPreset={handlePreset} />
         <div className="flex items-center gap-2">
-          {(["weekly", "monthly", "quarterly"] as CogsGrouping[]).map(g => (
-            <button key={g} onClick={() => setGrouping(g)}
-              className={cn("px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-colors",
-                grouping === g ? "bg-foreground text-background" : "bg-muted text-muted-foreground hover:bg-muted/80")}>
-              {g}
-            </button>
-          ))}
+          <span className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-foreground text-background">Count-to-count</span>
+          <span className="text-xs text-muted-foreground">Works with Saturday or Sunday counts</span>
           <div className="flex-1" />
           {data && data.length > 0 && <ExportButton onClick={handleExport} />}
         </div>
@@ -307,7 +306,7 @@ function WeeklyCogsReport() {
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <SummaryCard label="Total COGS" value={fmt$(totalConsumption)} sub={`${completedPeriods.length} count-to-count periods`} />
-            <SummaryCard label={`Avg / ${grouping === "weekly" ? "Week" : grouping === "monthly" ? "Month" : "Quarter"}`} value={fmt$(avgPeriod)} sub="Active periods only" />
+            <SummaryCard label="Avg / Count Period" value={fmt$(avgPeriod)} sub="Active periods only" />
             {periodOverPeriod !== null && (
               <SummaryCard label="Latest vs Prior" value={fmtPct(periodOverPeriod)} sub="Most recent period" valueClass={periodOverPeriod > 0 ? "text-destructive" : "text-green-600"} />
             )}
@@ -316,7 +315,7 @@ function WeeklyCogsReport() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="bg-muted/50 border-b border-border">
-                  <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Period</th>
+                  <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Count-to-Count Period</th>
                   <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Opening</th>
                   <th className="text-right px-4 py-3 font-semibold text-muted-foreground" title="All applied invoice lines that are matched to a catalog item and not marked Not Received">Invoice Receipts</th>
                   <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Closing</th>
@@ -326,14 +325,13 @@ function WeeklyCogsReport() {
                 <tbody>
                   {[...data].reverse().map((row, i) => (
                     <tr key={i} className={cn("border-b border-border last:border-0 transition-colors group", row.isComplete ? "hover:bg-muted/30 cursor-pointer" : "opacity-75")}
-                      onClick={() => row.isComplete && setDrilldown({ label: row.periodLabel, start: row.periodStart, end: row.periodEnd })}>
+                      onClick={() => row.isComplete && setDrilldown({ label: row.periodLabel, start: row.periodStart, end: row.periodEnd, openingSessionId: row.openingSessionId, closingSessionId: row.closingSessionId })}>
                       <td className="px-4 py-3">
                         <div className="font-medium text-foreground">{row.periodLabel}</div>
-                        <div className="text-xs text-muted-foreground">{fmtDate(row.periodStart)} – {fmtDate(row.periodEnd)}</div>
                         {row.isComplete ? (
-                          <div className="text-xs text-muted-foreground">Counts: {fmtDate(row.openingCountedAt)} → {fmtDate(row.closingCountedAt)}</div>
+                          <div className="text-xs text-muted-foreground">Opening count: {fmtDate(row.openingCountedAt)} · Closing count: {fmtDate(row.closingCountedAt)}</div>
                         ) : (
-                          <div className="text-xs text-amber-600 dark:text-amber-400">Complete a count in this period to finalize COGS</div>
+                          <div className="text-xs text-amber-600 dark:text-amber-400">A completed opening and closing count are required to finalize COGS</div>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right text-muted-foreground">{fmtCogsMetric(row.openingCost)}</td>
@@ -347,7 +345,7 @@ function WeeklyCogsReport() {
               </table>
             </div>
           </div>
-          <p className="text-xs text-muted-foreground">Invoice Receipts include all applied, matched invoice lines that were actually received. COGS is available only after physical counts establish both the opening and closing inventory snapshots.</p>
+          <p className="text-xs text-muted-foreground">Each row uses two consecutive completed counts, so historical Sunday counts and current Saturday counts both form valid COGS periods. Invoice Receipts include all applied, matched lines received between those counts.</p>
         </>
       )}
     </div>

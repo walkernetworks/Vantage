@@ -466,3 +466,11 @@
 - [x] COGS: include the Aug. 8 Saturday completed count as a valid weekly closing snapshot in the production report
 - [x] Dashboard: restore non-zero estimated current stock value from the Aug. 8 count plus applied receipts
 - [x] Add regression tests for Saturday count dates and missing dashboard valuation data
+
+## Round 55 — Live Stock Value & Flexible Count Periods
+- [x] Production: trace and correct the live dashboard endpoint that still renders $0 current stock despite non-zero production count data
+- [x] Dashboard: expose one direct current-stock total from the same backend response used by the displayed card and category chart
+- [x] COGS: replace fixed calendar-week grouping with count-to-count periods that support historical Sunday counts and current Saturday counts
+- [x] Reports: label each COGS period with the actual opening and closing count dates
+- [x] Add tests for Sunday-to-Saturday and Saturday-to-Saturday count periods plus direct stock-total aggregation
+- [x] Reports and dashboard: use a completed session’s business count date (`createdAt`) rather than its later administrative completion timestamp

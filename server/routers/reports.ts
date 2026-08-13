@@ -34,11 +34,13 @@ export const reportsRouter = router({
     .input(z.object({
       periodStart: z.string(),
       periodEnd: z.string(),
+      openingSessionId: z.number().optional(),
+      closingSessionId: z.number().optional(),
     }))
     .query(async ({ input }) => {
       const start = new Date(input.periodStart + "T00:00:00");
       const end = new Date(input.periodEnd + "T23:59:59");
-      return getCogsDrilldown(start, end);
+      return getCogsDrilldown(start, end, input.openingSessionId, input.closingSessionId);
     }),
 
   // Legacy weekly COGS (kept for backward compat)
