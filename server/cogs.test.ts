@@ -49,6 +49,7 @@ describe("calculateCogsPeriod", () => {
 
     expect(result.openingSnapshot?.sessionId).toBe(1);
     expect(result.closingSnapshot?.sessionId).toBe(2);
+    expect(result.closingSnapshot?.completedAt.getDay()).toBe(6); // Saturday
     expect(result.receiptInvoiceIds).toEqual([900001]);
     expect(result.openingCost).toBe(50);
     expect(result.receiptsCost).toBe(12);

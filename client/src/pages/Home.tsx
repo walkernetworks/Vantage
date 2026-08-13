@@ -89,9 +89,9 @@ export default function Home() {
   const unpricedCategories = allCategories.filter((c) => (c.fullParValue ?? c.totalValue) === 0);
   const totalCurrentStockValue = pricedCategories.reduce((sum, c) => sum + (c.currentStockValue ?? 0), 0);
   const totalFullParValue = pricedCategories.reduce((sum, c) => sum + (c.fullParValue ?? c.totalValue), 0);
-  const totalGapToFullPar = Math.max(0, totalFullParValue - totalCurrentStockValue);
   const currentStockEstimate = metrics?.currentStockEstimate;
   const estimatedCurrentStockValue = currentStockEstimate?.estimatedValue ?? totalCurrentStockValue;
+  const totalGapToFullPar = Math.max(0, totalFullParValue - estimatedCurrentStockValue);
   const totalInventoryValue = estimatedCurrentStockValue; // keep for legacy compat
   const totalUnpricedItems = unpricedCategories.reduce((sum, c) => sum + c.itemCount, 0);
   const stockBaselineLabel = currentStockEstimate?.baselineCountedAt
@@ -431,15 +431,15 @@ export default function Home() {
               {/* ── Chart 1: Inventory Value by Category (Donut) ── */}
               <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">
                 <div className="mb-4">
-                  <h3 className="font-semibold text-foreground">Inventory Value by Category</h3>
+                  <h3 className="font-semibold text-foreground">Estimated Inventory Value by Category</h3>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Based on latest count session
+                    Latest completed count plus applied receipts since that count
                   </p>
                   {/* ── Three-figure summary ── */}
                   <div className="grid grid-cols-3 gap-2 mt-3">
                     <div className="bg-muted/40 rounded-xl p-3 text-center">
-                      <p className="text-xs text-muted-foreground mb-0.5">Current Stock</p>
-                      <p className="text-sm font-bold text-foreground">${totalCurrentStockValue.toLocaleString("en-US", { maximumFractionDigits: 0 })}</p>
+                      <p className="text-xs text-muted-foreground mb-0.5">Est. Current Stock</p>
+                      <p className="text-sm font-bold text-foreground">${estimatedCurrentStockValue.toLocaleString("en-US", { maximumFractionDigits: 0 })}</p>
                     </div>
                     <div className="bg-muted/40 rounded-xl p-3 text-center">
                       <p className="text-xs text-muted-foreground mb-0.5">Full Par Value</p>
@@ -460,7 +460,7 @@ export default function Home() {
                         <PieChart>
                           <Pie
                             data={pricedCategories}
-                            dataKey="totalValue"
+                            dataKey="currentStockValue"
                             nameKey="category"
                             cx="50%"
                             cy="50%"
@@ -477,7 +477,7 @@ export default function Home() {
                           </Pie>
                           <Tooltip
                             formatter={(value: number) =>
-                              [`$${value.toLocaleString("en-US", { maximumFractionDigits: 0 })}`, "Value"]
+                              [`$${value.toLocaleString("en-US", { maximumFractionDigits: 0 })}`, "Est. Stock"]
                             }
                           />
                         </PieChart>

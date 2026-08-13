@@ -27,6 +27,15 @@ function fmtDate(d: Date | string | null) {
   // If it's already a short human-readable date string (e.g. "6/23/26", "06/23/2026"),
   // return it as-is rather than re-parsing through Date() which can misinterpret 2-digit years.
   if (typeof d === "string" && /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(d.trim())) return d.trim();
+  // Date-only values represent a business-calendar day, not UTC midnight.
+  // Constructing a local date prevents Saturday counts from displaying as Friday.
+  if (typeof d === "string") {
+    const isoMatch = d.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (isoMatch) {
+      const localDate = new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]));
+      return localDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    }
+  }
   const dt = new Date(d);
   if (isNaN(dt.getTime())) return typeof d === "string" ? d : "—";
   return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });

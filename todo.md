@@ -461,3 +461,8 @@
 - [x] COGS: use successive completed weekly count snapshots as the actual opening and closing boundaries, even when the count falls on Saturday or Sunday
 - [x] COGS: include applied invoice receipts occurring between the two count snapshots, not only within the calendar bucket
 - [x] Add focused tests for current-stock estimation and count-to-count receipt reconciliation
+
+## Round 54 — Aug. 8 Count Capture & Dashboard Value Regression
+- [x] COGS: include the Aug. 8 Saturday completed count as a valid weekly closing snapshot in the production report
+- [x] Dashboard: restore non-zero estimated current stock value from the Aug. 8 count plus applied receipts
+- [x] Add regression tests for Saturday count dates and missing dashboard valuation data

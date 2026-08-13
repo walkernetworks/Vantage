@@ -124,8 +124,18 @@ export interface CountSessionDetail {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+export function formatBusinessDate(d: Date): string {
+  // Report dates represent the business day on which a count was completed.
+  // Avoid UTC serialization, which moves late-evening Saturday counts to Sunday
+  // when a local calendar date is sent to the client.
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function isoDate(d: Date): string {
-  return d.toISOString().split("T")[0];
+  return formatBusinessDate(d);
 }
 
 function weekLabel(start: Date, end: Date): string {
