@@ -90,8 +90,13 @@ export default function Home() {
   const totalCurrentStockValue = pricedCategories.reduce((sum, c) => sum + (c.currentStockValue ?? 0), 0);
   const totalFullParValue = pricedCategories.reduce((sum, c) => sum + (c.fullParValue ?? c.totalValue), 0);
   const totalGapToFullPar = Math.max(0, totalFullParValue - totalCurrentStockValue);
-  const totalInventoryValue = totalCurrentStockValue; // keep for legacy compat
+  const currentStockEstimate = metrics?.currentStockEstimate;
+  const estimatedCurrentStockValue = currentStockEstimate?.estimatedValue ?? totalCurrentStockValue;
+  const totalInventoryValue = estimatedCurrentStockValue; // keep for legacy compat
   const totalUnpricedItems = unpricedCategories.reduce((sum, c) => sum + c.itemCount, 0);
+  const stockBaselineLabel = currentStockEstimate?.baselineCountedAt
+    ? `Count ${new Date(currentStockEstimate.baselineCountedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })} + ${currentStockEstimate.receiptAdjustmentValue.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })} receipts`
+    : "Complete a count to establish stock";
 
   // Price fluctuations: pivot by month, one series per vendor
   const vendors = Array.from(
@@ -185,11 +190,12 @@ export default function Home() {
             color={belowParCount > 0 ? "bg-destructive/10 text-destructive" : "bg-accent/20 text-accent"}
           />
           <StatCard
-            label="Current Stock"
-            value={`$${totalCurrentStockValue.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
+            label="Est. Current Stock"
+            value={`$${estimatedCurrentStockValue.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
             icon={<DollarSign size={18} />}
             color="bg-primary/10 text-primary"
             isText
+            sub={stockBaselineLabel}
           />
         </div>
       )}
@@ -259,9 +265,10 @@ export default function Home() {
                 <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">
                   <div className="flex items-center gap-2 mb-4">
                     <Activity size={16} className="text-primary" />
-                    <h3 className="font-semibold text-foreground">Live Stock Status</h3>
+                    <h3 className="font-semibold text-foreground">Estimated Stock Status</h3>
                     <span className="text-xs text-muted-foreground ml-auto">{stockLevelList.length} items tracked</span>
                   </div>
+                  <p className="text-xs text-muted-foreground mb-4">{stockBaselineLabel}</p>
                   {/* Status bar */}
                   <div className="flex rounded-full overflow-hidden h-3 mb-3">
                     {okItems.length > 0 && (
@@ -711,12 +718,14 @@ function StatCard({
   icon,
   color,
   isText,
+  sub,
 }: {
   label: string;
   value: number | string;
   icon: React.ReactNode;
   color: string;
   isText?: boolean;
+  sub?: string;
 }) {
   return (
     <div className="bg-card rounded-2xl border border-border p-3 shadow-sm text-center">
@@ -725,6 +734,7 @@ function StatCard({
       </div>
       <p className={cn("font-bold text-foreground", isText ? "text-base" : "text-xl")}>{value}</p>
       <p className="text-xs text-muted-foreground font-medium">{label}</p>
+      {sub && <p className="text-[10px] leading-tight text-muted-foreground mt-1">{sub}</p>}
     </div>
   );
 }

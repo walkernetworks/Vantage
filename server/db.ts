@@ -21,6 +21,7 @@ import {
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { invokeLLM } from "./_core/llm";
+import { calculateCurrentStockEstimate } from "./stockEstimate";
 
 // ─── Pack Size Parsing ────────────────────────────────────────────────────────
 // Parses "6/24oz", "12/2 LB", "1/50 LB", "4/1 GA" etc. and returns the case qty
@@ -1511,47 +1512,65 @@ export async function getDashboardMetrics() {
   const db = await getDb();
   if (!db) return { inventoryValueByCategory: [], priceFluctuationsByVendor: [], orderCostTrend: [] };
 
-  // 1. Inventory value by category:
-  //    - fullParValue: sum(price * parLevel) — what stock would be worth at full par
-  //    - currentStockValue: sum(price * latest_count_quantity) — actual counted value
-  //    - gapToFullPar: fullParValue - currentStockValue — cost to restock to full par
-  type CategoryRow = { category: string; fullParValue: string; currentStockValue: string; itemCount: number };
+  // 1. Inventory value by category. The dashboard's current value must match the
+  // live stock timeline: latest physical count + applied receipts after that count.
+  type CategoryRow = {
+    category: string;
+    fullParValue: string;
+    currentStockValue: string;
+    baselineStockValue: string;
+    receiptAdjustmentValue: string;
+    itemCount: number;
+  };
   let categoryRows: CategoryRow[] = [];
+  let currentStockEstimate = {
+    baselineCountedAt: null as Date | null,
+    baselineValue: 0,
+    receiptAdjustmentValue: 0,
+    estimatedValue: 0,
+    trackedItemCount: 0,
+    uncountedItemCount: 0,
+  };
   try {
-    // Get the latest count session ID
-    const latestSessionResult = await db.execute(
-      sql`SELECT id FROM count_sessions ORDER BY createdAt DESC LIMIT 1`
-    );
-    const latestSessionRows = (latestSessionResult[0] as unknown as { id: number }[]) ?? [];
-    const latestSessionId = latestSessionRows[0]?.id ?? null;
+    const stockLevels = await getCurrentStockLevels();
+    const categoryAccumulator = new Map<string, {
+      fullParValue: number;
+      currentStockValue: number;
+      baselineStockValue: number;
+      receiptAdjustmentValue: number;
+      itemCount: number;
+    }>();
+    for (const item of stockLevels) {
+      const category = item.category || "Uncategorized";
+      const bucket = categoryAccumulator.get(category) ?? {
+        fullParValue: 0,
+        currentStockValue: 0,
+        baselineStockValue: 0,
+        receiptAdjustmentValue: 0,
+        itemCount: 0,
+      };
+      const price = item.price || 0;
+      bucket.fullParValue += price * (item.parLevel || 0);
+      bucket.baselineStockValue += price * item.lastCountQty;
+      bucket.receiptAdjustmentValue += price * item.totalReceived;
+      bucket.currentStockValue += price * item.currentStockCases;
+      bucket.itemCount += 1;
+      categoryAccumulator.set(category, bucket);
 
-    if (latestSessionId) {
-      const result = await db.execute(
-        sql`SELECT i.category,
-               ROUND(SUM(COALESCE(i.price, 0) * COALESCE(i.parLevel, 0)), 2) AS fullParValue,
-               ROUND(SUM(COALESCE(i.price, 0) * COALESCE(ce.quantity, 0)), 2) AS currentStockValue,
-               COUNT(DISTINCT i.id) AS itemCount
-            FROM items i
-            LEFT JOIN count_entries ce ON ce.itemId = i.id AND ce.sessionId = ${latestSessionId}
-            WHERE i.isActive = 1
-            GROUP BY i.category
-            ORDER BY fullParValue DESC`
-      );
-      categoryRows = (result[0] as unknown as CategoryRow[]) ?? [];
-    } else {
-      // No sessions yet — just show par values, current = 0
-      const result = await db.execute(
-        sql`SELECT category,
-               ROUND(SUM(COALESCE(price, 0) * COALESCE(parLevel, 0)), 2) AS fullParValue,
-               0 AS currentStockValue,
-               COUNT(*) AS itemCount
-            FROM items
-            WHERE isActive = 1
-            GROUP BY category
-            ORDER BY fullParValue DESC`
-      );
-      categoryRows = (result[0] as unknown as CategoryRow[]) ?? [];
     }
+
+    categoryRows = Array.from(categoryAccumulator.entries())
+      .map(([category, bucket]) => ({
+        category,
+        fullParValue: bucket.fullParValue.toFixed(2),
+        currentStockValue: bucket.currentStockValue.toFixed(2),
+        baselineStockValue: bucket.baselineStockValue.toFixed(2),
+        receiptAdjustmentValue: bucket.receiptAdjustmentValue.toFixed(2),
+        itemCount: bucket.itemCount,
+      }))
+      .sort((left, right) => parseFloat(right.fullParValue) - parseFloat(left.fullParValue));
+
+    currentStockEstimate = calculateCurrentStockEstimate(stockLevels);
   } catch (e) {
     console.warn("[dashboard] inventoryValueByCategory query failed:", e);
   }
@@ -1677,9 +1696,17 @@ export async function getDashboardMetrics() {
       totalValue: parseFloat((r as any).fullParValue ?? "0"),
       fullParValue: parseFloat((r as any).fullParValue ?? "0"),
       currentStockValue: parseFloat((r as any).currentStockValue ?? "0"),
+      baselineStockValue: parseFloat((r as any).baselineStockValue ?? "0"),
+      receiptAdjustmentValue: parseFloat((r as any).receiptAdjustmentValue ?? "0"),
       gapToFullPar: Math.max(0, parseFloat((r as any).fullParValue ?? "0") - parseFloat((r as any).currentStockValue ?? "0")),
       itemCount: r.itemCount,
     })),
+    currentStockEstimate: {
+      ...currentStockEstimate,
+      baselineValue: Math.round(currentStockEstimate.baselineValue * 100) / 100,
+      receiptAdjustmentValue: Math.round(currentStockEstimate.receiptAdjustmentValue * 100) / 100,
+      estimatedValue: Math.round(currentStockEstimate.estimatedValue * 100) / 100,
+    },
     priceFluctuationsByVendor: priceRows.map((r) => ({
       importSource: r.importSource,
       month: r.month,

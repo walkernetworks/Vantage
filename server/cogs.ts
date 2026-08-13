@@ -104,8 +104,13 @@ export function calculateCogsPeriod(
   );
   const openingSnapshot = latestSnapshotBefore(orderedSnapshots, periodStart);
   const closingSnapshot = latestSnapshotWithin(orderedSnapshots, periodStart, periodEnd);
+  // A weekly COGS row is bounded by physical counts, not by a strict Monday–Sunday
+  // invoice window. This accommodates Saturday/Sunday counts that happen just
+  // before Sunday orders and includes every receipt that arrived between counts.
+  const receiptWindowStart = openingSnapshot?.completedAt ?? periodStart;
+  const receiptWindowEnd = closingSnapshot?.completedAt ?? periodEnd;
   const periodReceipts = receiptLines.filter(
-    (receipt) => receipt.receivedAt >= periodStart && receipt.receivedAt <= periodEnd
+    (receipt) => receipt.receivedAt > receiptWindowStart && receipt.receivedAt <= receiptWindowEnd
   );
   const receiptInvoiceIds = Array.from(new Set(periodReceipts.map((receipt) => receipt.invoiceId)));
   const receiptsCost = money(

@@ -93,4 +93,17 @@ describe("calculateCogsPeriod", () => {
     expect(result.receiptsCost).toBe(0);
     expect(result.consumptionCost).toBe(15);
   });
+
+  it("includes receipts between weekly count snapshots even when the invoice date falls just before the calendar bucket", () => {
+    const result = calculateCogsPeriod(
+      new Date("2026-08-03T00:00:00"),
+      new Date("2026-08-09T23:59:59"),
+      [openingSnapshot, closingSnapshot],
+      [{ ...receipts[0], receivedAt: new Date("2026-08-02T20:00:00") }]
+    );
+
+    expect(result.receiptsCost).toBe(12);
+    expect(result.receiptInvoiceIds).toEqual([900001]);
+    expect(result.consumptionCost).toBe(27);
+  });
 });

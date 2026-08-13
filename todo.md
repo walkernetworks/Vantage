@@ -454,3 +454,10 @@
 - [x] COGS: calculate opening and closing inventory from the actual completed count sessions bracketing each selected period, rather than repeating the latest snapshot
 - [x] COGS: define receipts as stock added by all applied invoices within the period and reconcile the figure to applied invoice line extensions
 - [x] COGS: add focused tests for period boundary selection, receipt aggregation, and consumption calculation
+
+## Round 53 — Current Stock & Weekly Count Cadence
+- [x] Dashboard: calculate current estimated stock as the latest completed physical count plus all applied invoice receipts since that count
+- [x] Dashboard: label the stock total with its physical count baseline and applied-receipt adjustment so estimated status is transparent
+- [x] COGS: use successive completed weekly count snapshots as the actual opening and closing boundaries, even when the count falls on Saturday or Sunday
+- [x] COGS: include applied invoice receipts occurring between the two count snapshots, not only within the calendar bucket
+- [x] Add focused tests for current-stock estimation and count-to-count receipt reconciliation
