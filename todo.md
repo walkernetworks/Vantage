@@ -485,7 +485,7 @@
 
 ## Round 57 — Supplied Invoice HTML Fixture
 - [x] Inspect the supplied HTML for invoice 6076192 source content or recoverable image/table data (it contained the live validation error only, not invoice source content)
-- [ ] Add verified supplied source data to the PFG parser regression suite if suitable
+- [x] Add verified supplied source data to the PFG parser regression suite if suitable (not applicable: the supplied HTML contained no invoice source or image data)
 
 ## Round 58 — Missing Extension Recovery
 - [x] Recover a missing PFG line extension from same-row unit price × shipped quantity before rejecting the invoice
