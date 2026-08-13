@@ -482,3 +482,12 @@
 - [x] Validate parsed invoice rows with line arithmetic, subtotal, shipped count, line count, non-null extensions, and recap section totals before review/apply
 - [x] Constrain numeric OCR fields and auto-correct only validated arithmetic OCR errors
 - [x] Add invoice 6076192 regression coverage: 40 lines, $5,551.27 subtotal, $15.43 tax, $5,566.70 total, and 101 shipped
+
+## Round 57 — Supplied Invoice HTML Fixture
+- [x] Inspect the supplied HTML for invoice 6076192 source content or recoverable image/table data (it contained the live validation error only, not invoice source content)
+- [ ] Add verified supplied source data to the PFG parser regression suite if suitable
+
+## Round 58 — Missing Extension Recovery
+- [x] Recover a missing PFG line extension from same-row unit price × shipped quantity before rejecting the invoice
+- [x] Keep rejection behavior for rows that lack either a verifiable same-row unit price or shipped quantity
+- [x] Add regression coverage for the supplied item 519229 missing-extension validation error

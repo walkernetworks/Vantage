@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   estimateDeskewDegrees,
+  parseNumericOcr,
   reconstructPfgRowsFromHtml,
   validateAndNormalizePfgInvoice,
   type InvoiceLineDraft,
@@ -114,5 +115,24 @@ describe("PFG invoice 6076192 regression", () => {
       }
     }
     expect(Math.abs(estimateDeskewDegrees(pixels, width, height))).toBeCloseTo(3, 0);
+  });
+
+  it("normalizes constrained numeric OCR strings before calculating a missing extension", () => {
+    const parsedUnitPrice = parseNumericOcr("$32.08");
+    const parsedShipped = parseNumericOcr("1");
+    const result = validateAndNormalizePfgInvoice([{
+      itemNumber: "519229",
+      description: "PFG ITEM 519229",
+      pack: "1",
+      size: "CS",
+      orderedQty: parsedShipped,
+      shippedQty: parsedShipped,
+      unitPrice: parsedUnitPrice,
+      extension: null,
+      category: null,
+    }], { subtotal: 32.08, tax: null, total: null, shippedCount: 1, sectionTotals: {} }, 1);
+
+    expect(result.errors).toEqual([]);
+    expect(result.lines[0].extension).toBe(32.08);
   });
 });

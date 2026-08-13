@@ -22,6 +22,7 @@ import type { MessageContent } from "../_core/llm";
 import {
   deskewInvoiceForOcr,
   extractInvoiceSummary,
+  parseNumericOcr,
   reconstructPfgRowsFromHtml,
   validateAndNormalizePfgInvoice,
   type InvoiceLineDraft,
@@ -365,10 +366,13 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
       description: typeof line.description === "string" ? line.description.trim() : null,
       pack: line.pack != null ? String(line.pack).trim() : null,
       size: typeof line.size === "string" ? line.size.trim() : null,
-      orderedQty: typeof line.orderedQty === "number" ? line.orderedQty : null,
-      shippedQty: typeof line.shippedQty === "number" ? line.shippedQty : null,
-      unitPrice: typeof line.unitPrice === "number" ? line.unitPrice : null,
-      extension: typeof line.extension === "number" ? line.extension : null,
+      // OCR/LLM JSON may emit money and quantities as strings. Normalize only
+      // numeric characters here; later arithmetic and document totals remain
+      // the acceptance gate.
+      orderedQty: parseNumericOcr(line.orderedQty),
+      shippedQty: parseNumericOcr(line.shippedQty),
+      unitPrice: parseNumericOcr(line.unitPrice),
+      extension: parseNumericOcr(line.extension),
       category: typeof line.category === "string" ? line.category : null,
     };
   });
