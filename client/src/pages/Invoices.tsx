@@ -6,6 +6,7 @@ import { useState, useRef, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { isSupportedInvoiceImage, prepareInvoiceImageForUpload } from "@/lib/invoiceUpload";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -127,7 +128,7 @@ function UploadDialog({ open, onClose, onSuccess }: { open: boolean; onClose: ()
   const addFiles = useCallback((files: FileList | null) => {
     if (!files) return;
     Array.from(files).forEach((file) => {
-      if (!file.type.startsWith("image/")) return;
+      if (!isSupportedInvoiceImage(file)) return;
       const reader = new FileReader();
       reader.onload = (e) => {
         setPages((prev) => [...prev, { file, preview: e.target?.result as string }]);
@@ -152,16 +153,21 @@ function UploadDialog({ open, onClose, onSuccess }: { open: boolean; onClose: ()
       // Convert each file to base64
       const images = await Promise.all(
         pages.map(async ({ file }) => {
+          const preparedFile = await prepareInvoiceImageForUpload(file);
           return new Promise<{ base64: string; mimeType: string; filename: string }>((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = (e) => {
               const dataUrl = e.target?.result as string;
               // Strip the data:image/...;base64, prefix
               const base64 = dataUrl.split(",")[1];
-              resolve({ base64, mimeType: file.type, filename: file.name });
+              if (!base64) {
+                reject(new Error(`Could not prepare ${file.name} for upload.`));
+                return;
+              }
+              resolve({ base64, mimeType: "image/jpeg", filename: preparedFile.name });
             };
             reader.onerror = reject;
-            reader.readAsDataURL(file);
+            reader.readAsDataURL(preparedFile);
           });
         })
       );

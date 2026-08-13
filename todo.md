@@ -491,3 +491,8 @@
 - [x] Recover a missing PFG line extension from same-row unit price × shipped quantity before rejecting the invoice
 - [x] Keep rejection behavior for rows that lack either a verifiable same-row unit price or shipped quantity
 - [x] Add regression coverage for the supplied item 519229 missing-extension validation error
+
+## Round 59 — Production Invoice Upload Failure
+- [x] Trace the production client-to-server upload request that now fails before invoice review
+- [x] Correct the upload-stage failure while retaining image normalization and OCR safeguards
+- [x] Add regression coverage for the affected upload preparation path
