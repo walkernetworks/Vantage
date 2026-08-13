@@ -7,19 +7,26 @@
  *      phone photos with glare/perspective distortion.
  *   2. The clean markdown text is passed to GPT-4o as a text-only prompt to extract
  *      structured JSON. Text → JSON is much more reliable than image → JSON.
- *   3. Every extracted row is validated server-side: item_number must match /^\d{6,7}$/.
+ *   3. Every extracted row is validated server-side: item_number must match /^\d{5,8}$/.
  *      Rows that fail validation are routed to the unmatched queue — never hallucinated.
  *   4. Validated rows are matched against the catalog strictly by item_number via raw SQL.
  *   5. Unmatched rows are saved with matchStatus="unmatched" for manual review.
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import sharp from "sharp";
 import { Mistral } from "@mistralai/mistralai";
 import { router, protectedProcedure } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
 import { ENV } from "../_core/env";
 import type { MessageContent } from "../_core/llm";
+import {
+  deskewInvoiceForOcr,
+  extractInvoiceSummary,
+  reconstructPfgRowsFromHtml,
+  validateAndNormalizePfgInvoice,
+  type InvoiceLineDraft,
+  type InvoiceSummary,
+} from "../invoiceOcr";
 import {
   createInvoice,
   saveInvoiceLines,
@@ -34,15 +41,16 @@ import {
 } from "../invoices";
 
 // ─── Regex validator ──────────────────────────────────────────────────────────
-// PFG item numbers are strictly 6–7 consecutive digits. Nothing else is valid.
-const ITEM_NUMBER_RE = /^\d{6,7}$/;
+// PFG item numbers can be five through eight consecutive digits (for example,
+// legacy item 52522 and current item 1013308).
+const ITEM_NUMBER_RE = /^\d{5,8}$/;
 
 // ─── Stage 2: JSON Extraction Prompt (OCR markdown text → JSON via GPT-4o) ───
 const JSON_EXTRACTION_PROMPT = `You are a precise data entry automation engine. You will receive the text content of a PFG (Performance Food Group) invoice page, already extracted by OCR. Your job is to parse this text and extract EVERY SINGLE product row into structured JSON.
 
 PFG INVOICE ROW STRUCTURE:
 Each product row in a PFG invoice contains ALL of these fields on THE SAME VISUAL ROW:
-  - Item Number: a 6 or 7 digit integer (e.g. 867175, 1013308)
+  - Item Number: a 5 to 8 digit integer (e.g. 52522, 867175, 1013308)
   - Ordered: integer quantity ordered
   - Shipped: integer quantity actually delivered  
   - Pack: pack count (e.g. 1, 4, 10, 20, 80, 100)
@@ -56,7 +64,7 @@ The item number and description for the SAME product ALWAYS appear on the SAME r
 DO NOT shift or offset — NEVER pair an item number from one row with the description from the next row down.
 
 HOW TO CORRECTLY PAIR ITEM NUMBER WITH DESCRIPTION:
-1. Find a 6-7 digit number at the start of a row — that is the item number.
+1. Find a 5-8 digit number at the start of a row — that is the item number.
 2. The description for THAT item number is the ALL-CAPS text on THE SAME ROW, not the row below.
 3. If a row has a 6-7 digit number but no ALL-CAPS description on the same line, look for the description text that immediately follows the numeric columns (Ordered, Shipped, Pack, Size) on that same line.
 4. NEVER take the description from the line below the item number.
@@ -112,24 +120,21 @@ interface PageResult {
   invoiceNumber: string | null;
   invoiceDate: string | null;
   totalAmount: number | null;
-  lines: Array<{
-    itemNumber: string | null;
-    description: string | null;
-    pack: string | null;
-    size: string | null;
-    orderedQty: number | null;
-    shippedQty: number | null;
-    unitPrice: number | null;
-    extension: number | null;
-    category: string | null;
-  }>;
+  lines: InvoiceLineDraft[];
+  summary: InvoiceSummary;
+  sourceItemRowCount: number | null;
+}
+
+interface OcrPage {
+  markdown: string;
+  htmlTables: string[];
 }
 
 /**
  * Stage 1: Run Mistral OCR on a base64 JPEG image.
  * Returns the raw markdown text extracted from the page, or null on failure.
  */
-async function runMistralOcr(base64Jpeg: string, pageIndex: number): Promise<string | null> {
+async function runMistralOcr(base64Jpeg: string, pageIndex: number): Promise<OcrPage | null> {
   const apiKey = ENV.mistralApiKey;
   if (!apiKey) {
     console.error("[Invoice OCR] MISTRAL_API_KEY is not set — cannot run Mistral OCR");
@@ -146,10 +151,19 @@ async function runMistralOcr(base64Jpeg: string, pageIndex: number): Promise<str
         type: "image_url",
         imageUrl: `data:image/jpeg;base64,${base64Jpeg}`,
       },
-    });
+      // PFG is a ruled table. HTML tables retain its row and column geometry,
+      // unlike flattened markdown reading order.
+      tableFormat: "html",
+      includeBlocks: true,
+      confidenceScoresGranularity: "word",
+    } as any);
 
     // Concatenate markdown from all pages (should be just 1 for a single image)
-    const markdown = ocrResponse.pages?.map((p: any) => p.markdown ?? "").join("\n\n") ?? "";
+    const page = ocrResponse.pages?.[0] as any;
+    const markdown = page?.markdown ?? "";
+    const htmlTables = (page?.tables ?? [])
+      .map((table: any) => table?.html ?? table?.content ?? "")
+      .filter((table: unknown): table is string => typeof table === "string" && table.includes("<table"));
     console.log(`[Invoice OCR] page ${pageIndex + 1}: Mistral OCR complete — ${markdown.length} chars of markdown`);
     // Debug: print raw markdown so we can diagnose column alignment issues
     console.log(`[Invoice OCR] page ${pageIndex + 1} RAW MARKDOWN:\n${markdown.substring(0, 3000)}`);
@@ -159,7 +173,7 @@ async function runMistralOcr(base64Jpeg: string, pageIndex: number): Promise<str
       return null;
     }
 
-    return markdown;
+    return { markdown, htmlTables };
   } catch (err) {
     console.error(`[Invoice OCR] page ${pageIndex + 1}: Mistral OCR failed:`, err);
     return null;
@@ -216,23 +230,43 @@ function preprocessMistralMarkdown(markdown: string): string {
  *   Stage 2: GPT-4o text extraction → structured JSON
  *
  * Falls back to GPT-4o vision if Mistral OCR fails or returns no text.
- * After parsing, each line's itemNumber is validated against /^\d{6,7}$/.
+ * After parsing, each line's itemNumber is validated against /^\d{5,8}$/.
  * Lines that fail validation have their itemNumber set to null so they land
  * in the unmatched queue — they are never silently dropped.
  */
 async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<PageResult> {
-  const empty: PageResult = { invoiceNumber: null, invoiceDate: null, totalAmount: null, lines: [] };
+  const empty: PageResult = {
+    invoiceNumber: null,
+    invoiceDate: null,
+    totalAmount: null,
+    lines: [],
+    summary: { subtotal: null, tax: null, total: null, shippedCount: null, sectionTotals: {} },
+    sourceItemRowCount: null,
+  };
 
   // ── Extract base64 from data URL ──────────────────────────────────────────
   const base64Match = dataUrl.match(/^data:[^;]+;base64,(.+)$/);
   const base64Data = base64Match ? base64Match[1] : null;
 
   // ── Stage 1: Mistral OCR ──────────────────────────────────────────────────
-  let ocrMarkdown: string | null = null;
+  let ocrPage: OcrPage | null = null;
   if (base64Data) {
-    ocrMarkdown = await runMistralOcr(base64Data, pageIndex);
+    ocrPage = await runMistralOcr(base64Data, pageIndex);
   } else {
     console.warn(`[Invoice OCR] page ${pageIndex + 1}: could not extract base64 from data URL, skipping Mistral OCR`);
+  }
+  const ocrMarkdown = ocrPage?.markdown ?? null;
+  const tableParse = ocrPage?.htmlTables
+    .map(reconstructPfgRowsFromHtml)
+    .sort((left, right) => right.itemRowCount - left.itemRowCount)[0] ?? null;
+  const tableFallback = (): PageResult => ({
+    ...empty,
+    lines: tableParse?.lines ?? [],
+    summary: extractInvoiceSummary(ocrMarkdown ?? ""),
+    sourceItemRowCount: tableParse && tableParse.itemRowCount > 0 ? tableParse.itemRowCount : null,
+  });
+  if (tableParse && tableParse.itemRowCount > 0) {
+    console.log(`[Invoice OCR] page ${pageIndex + 1}: reconstructed ${tableParse.itemRowCount} PFG rows from HTML table geometry`);
   }
 
   // ── Stage 2: GPT-4o JSON extraction ──────────────────────────────────────
@@ -282,7 +316,7 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
     }
   } catch (err) {
     console.error(`[Invoice OCR] page ${pageIndex + 1} LLM call failed:`, err);
-    return empty;
+    return tableFallback();
   }
 
   const model = (response as any).model ?? "unknown";
@@ -292,7 +326,7 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
   const rawContent = response.choices?.[0]?.message?.content;
   if (!rawContent) {
     console.error(`[Invoice OCR] page ${pageIndex + 1}: empty response`);
-    return empty;
+    return tableFallback();
   }
 
   const content = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
@@ -308,7 +342,7 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
     parsed = JSON.parse(cleaned);
   } catch {
     console.error(`[Invoice OCR] page ${pageIndex + 1} JSON parse failed. Raw: ${content.substring(0, 300)}`);
-    return empty;
+    return tableFallback();
   }
 
   const rawLines: any[] = Array.isArray(parsed.lines) ? parsed.lines : [];
@@ -316,14 +350,14 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
   // ── Regex validation: filter out hallucinated item numbers ─────────────────
   let validCount = 0;
   let invalidCount = 0;
-  const validatedLines = rawLines.map((line) => {
+  const llmLines: InvoiceLineDraft[] = rawLines.map((line) => {
     const num = line.itemNumber != null ? String(line.itemNumber).trim() : null;
     const isValid = num !== null && ITEM_NUMBER_RE.test(num);
     if (num !== null) {
       if (isValid) validCount++;
       else {
         invalidCount++;
-        console.warn(`[Invoice OCR] page ${pageIndex + 1} REJECTED item number "${num}" (failed /^\\d{6,7}$/) — routing to unmatched`);
+        console.warn(`[Invoice OCR] page ${pageIndex + 1} REJECTED item number "${num}" (failed /^\\d{5,8}$/) — routing to unmatched`);
       }
     }
     return {
@@ -339,7 +373,8 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
     };
   });
 
-  console.log(`[Invoice OCR] page ${pageIndex + 1}: ${rawLines.length} rows extracted, ${validCount} valid item numbers, ${invalidCount} rejected`);
+  const validatedLines = tableParse && tableParse.itemRowCount > 0 ? tableParse.lines : llmLines;
+  console.log(`[Invoice OCR] page ${pageIndex + 1}: ${validatedLines.length} rows selected, ${validCount} LLM-valid item numbers, ${invalidCount} rejected`);
   // Per-line debug: print each extracted item number + description for diagnosis
   validatedLines.forEach((l, i) => {
     const num = l.itemNumber ?? '(no number)';
@@ -352,6 +387,8 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
     invoiceDate: typeof parsed.invoiceDate === "string" ? parsed.invoiceDate.trim() : null,
     totalAmount: typeof parsed.totalAmount === "number" ? parsed.totalAmount : null,
     lines: validatedLines,
+    summary: extractInvoiceSummary(ocrMarkdown ?? ""),
+    sourceItemRowCount: tableParse && tableParse.itemRowCount > 0 ? tableParse.itemRowCount : null,
   };
 }
 
@@ -366,6 +403,8 @@ async function parseInvoiceImages(imageDataUrls: string[]): Promise<PageResult> 
     invoiceDate: null,
     totalAmount: null,
     lines: [],
+    summary: { subtotal: null, tax: null, total: null, shippedCount: null, sectionTotals: {} },
+    sourceItemRowCount: 0,
   };
 
   for (let i = 0; i < imageDataUrls.length; i++) {
@@ -382,6 +421,12 @@ async function parseInvoiceImages(imageDataUrls: string[]): Promise<PageResult> 
     if (master.totalAmount === null && pageResult.totalAmount !== null) {
       master.totalAmount = pageResult.totalAmount;
     }
+    if (master.summary.subtotal === null && pageResult.summary.subtotal !== null) master.summary.subtotal = pageResult.summary.subtotal;
+    if (master.summary.tax === null && pageResult.summary.tax !== null) master.summary.tax = pageResult.summary.tax;
+    if (master.summary.total === null && pageResult.summary.total !== null) master.summary.total = pageResult.summary.total;
+    if (master.summary.shippedCount === null && pageResult.summary.shippedCount !== null) master.summary.shippedCount = pageResult.summary.shippedCount;
+    Object.assign(master.summary.sectionTotals, pageResult.summary.sectionTotals);
+    if (pageResult.sourceItemRowCount !== null) master.sourceItemRowCount = (master.sourceItemRowCount ?? 0) + pageResult.sourceItemRowCount;
 
     // Push every line from this page into the master array
     master.lines.push(...pageResult.lines);
@@ -417,6 +462,39 @@ export const invoicesRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      // Normalize EXIF orientation, estimate table-rule skew, and deskew before
+      // OCR. Photos beyond the supported correction range are rejected rather
+      // than producing plausible-but-shifted inventory lines.
+      const imageDataUrls: string[] = [];
+      for (const img of input.images) {
+        try {
+          const prepared = await deskewInvoiceForOcr(Buffer.from(img.base64, "base64"));
+          if (prepared.rejected) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: `Page ${imageDataUrls.length + 1}: ${prepared.reason}` });
+          }
+          console.log(`[Invoice OCR] page ${imageDataUrls.length + 1}: deskew correction ${prepared.correctionDegrees.toFixed(2)}°`);
+          imageDataUrls.push(`data:image/jpeg;base64,${prepared.jpeg.toString("base64")}`);
+        } catch (error) {
+          if (error instanceof TRPCError) throw error;
+          console.error(`[Invoice OCR] failed to prepare page "${img.filename ?? "unknown"}":`, error);
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Could not prepare ${img.filename ?? "an invoice image"} for OCR. Please upload a clear JPEG, PNG, or HEIC photo.` });
+        }
+      }
+
+      console.log(`[Invoice] Starting OCR parse for ${imageDataUrls.length} page(s), vendor: ${input.vendor}`);
+      const parsed = await parseInvoiceImages(imageDataUrls);
+      console.log(`[Invoice] OCR complete: ${parsed.lines.length} lines total`);
+
+      const validation = validateAndNormalizePfgInvoice(parsed.lines, parsed.summary, parsed.sourceItemRowCount);
+      if (validation.errors.length > 0) {
+        console.error(`[Invoice OCR] rejected unsafe PFG parse: ${validation.errors.join(" | ")}`);
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Invoice was not saved because OCR validation failed: ${validation.errors.slice(0, 3).join(" ")}`,
+        });
+      }
+      validation.corrections.forEach((correction) => console.warn(`[Invoice OCR] ${correction}`));
+
       const invoice = await createInvoice({
         vendor: input.vendor,
         imageKeys: [],
@@ -424,35 +502,8 @@ export const invoicesRouter = router({
         notes: input.notes,
       });
 
-      // Convert HEIC/HEIF images to JPEG before sending to Mistral OCR.
-      // Mistral OCR supports JPEG, PNG, AVIF — not HEIC.
-      const imageDataUrls: string[] = [];
-      for (const img of input.images) {
-        const isHeic = img.mimeType === 'image/heic' || img.mimeType === 'image/heif'
-          || (img.filename?.toLowerCase().endsWith('.heic') ?? false)
-          || (img.filename?.toLowerCase().endsWith('.heif') ?? false);
-        if (isHeic) {
-          try {
-            console.log(`[Invoice] Converting HEIC image "${img.filename ?? 'unknown'}" to JPEG...`);
-            const inputBuffer = Buffer.from(img.base64, 'base64');
-            const jpegBuffer = await sharp(inputBuffer).jpeg({ quality: 92 }).toBuffer();
-            imageDataUrls.push(`data:image/jpeg;base64,${jpegBuffer.toString('base64')}`);
-            console.log(`[Invoice] HEIC → JPEG conversion complete (${Math.round(jpegBuffer.length / 1024)}kb)`);
-          } catch (convErr) {
-            console.error(`[Invoice] HEIC conversion failed for "${img.filename}", falling back to original:`, convErr);
-            imageDataUrls.push(`data:${img.mimeType};base64,${img.base64}`);
-          }
-        } else {
-          imageDataUrls.push(`data:${img.mimeType};base64,${img.base64}`);
-        }
-      }
-
-      console.log(`[Invoice] Starting OCR parse for invoice ${invoice.id}, ${imageDataUrls.length} page(s), vendor: ${input.vendor}`);
-      const parsed = await parseInvoiceImages(imageDataUrls);
-      console.log(`[Invoice] OCR complete: ${parsed.lines.length} lines total`);
-
       // Normalize: shippedQty null → 0, pass orderedQty and category through
-      const normalizedLines = parsed.lines.map((l) => ({
+      const normalizedLines = validation.lines.map((l) => ({
         itemNumber: l.itemNumber,
         description: l.description,
         pack: l.pack,
@@ -467,7 +518,7 @@ export const invoicesRouter = router({
       await saveInvoiceLines(invoice.id, normalizedLines, {
         invoiceNumber: parsed.invoiceNumber ?? undefined,
         invoiceDate: parsed.invoiceDate ?? undefined,
-        totalAmount: parsed.totalAmount ?? undefined,
+        totalAmount: parsed.totalAmount ?? parsed.summary.total ?? undefined,
       });
 
       return {
@@ -476,6 +527,7 @@ export const invoicesRouter = router({
         invoiceDate: parsed.invoiceDate,
         totalAmount: parsed.totalAmount,
         lineCount: normalizedLines.length,
+        corrections: validation.corrections,
       };
     }),
 

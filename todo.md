@@ -474,3 +474,11 @@
 - [x] Reports: label each COGS period with the actual opening and closing count dates
 - [x] Add tests for Sunday-to-Saturday and Saturday-to-Saturday count periods plus direct stock-total aggregation
 - [x] Reports and dashboard: use a completed session’s business count date (`createdAt`) rather than its later administrative completion timestamp
+
+## Round 56 — Performance Foodservice OCR Accuracy
+- [x] Add pre-OCR page skew detection and reject/re-prompt photos with more than 5° residual skew
+- [x] Reconstruct PFG invoice rows from OCR table geometry rather than reading order or independently zipped fields
+- [x] Identify PFG category header rows and assign their section to subsequent item rows without treating them as items
+- [x] Validate parsed invoice rows with line arithmetic, subtotal, shipped count, line count, non-null extensions, and recap section totals before review/apply
+- [x] Constrain numeric OCR fields and auto-correct only validated arithmetic OCR errors
+- [x] Add invoice 6076192 regression coverage: 40 lines, $5,551.27 subtotal, $15.43 tax, $5,566.70 total, and 101 shipped
