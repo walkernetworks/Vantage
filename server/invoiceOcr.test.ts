@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   estimateDeskewDegrees,
+  cleanPfgDescription,
+  findSingleDigitItemNumberCandidates,
   parseNumericOcr,
   reconstructPfgRowsFromHtml,
   validateAndNormalizePfgInvoice,
@@ -38,11 +40,12 @@ function invoice6076192Lines(): InvoiceLineDraft[] {
     line("547289", 3, 60.56, 181.48),
     line("441172", 1, 21.51, 21.34),
     line("52522", 2, 81.74),
+    line("981346", 2, 68.85),
   ];
-  // 21 × 3 shipped and 16 × 2 shipped complete the reported 101 shipped.
+  // 21 × 3 shipped and 15 × 2 shipped complete the reported 101 shipped.
   for (let index = 0; index < 20; index += 1) lines.push(line(String(110000 + index), 3, 50));
-  for (let index = 0; index < 15; index += 1) lines.push(line(String(120000 + index), 2, 70));
-  lines.push(line("130000", 3, 5.373333));
+  for (let index = 0; index < 14; index += 1) lines.push(line(String(120000 + index), 2, 70));
+  lines.push(line("130000", 3, 6.14));
   return lines;
 }
 
@@ -58,6 +61,21 @@ describe("PFG invoice 6076192 regression", () => {
     expect(result.lines.find((item) => item.itemNumber === "320834")?.extension).toBe(68.48);
     expect(result.lines.find((item) => item.itemNumber === "547289")?.extension).toBe(181.68);
     expect(result.lines.find((item) => item.itemNumber === "441172")?.extension).toBe(21.51);
+    expect(result.lines.find((item) => item.itemNumber === "981346")?.extension).toBe(137.7);
+  });
+
+  it("uses both document controls to recover item 981346 when one shipped unit is lost", () => {
+    const lines = invoice6076192Lines();
+    const droppedQuantity = lines.find((item) => item.itemNumber === "981346");
+    if (!droppedQuantity) throw new Error("Fixture missing item 981346");
+    droppedQuantity.shippedQty = 1;
+    droppedQuantity.extension = 68.85;
+    const result = validateAndNormalizePfgInvoice(lines, invoice6076192Summary, 40);
+
+    expect(result.errors).toEqual([]);
+    expect(result.lines.find((item) => item.itemNumber === "981346")?.shippedQty).toBe(2);
+    expect(result.lines.find((item) => item.itemNumber === "981346")?.extension).toBe(137.7);
+    expect(result.corrections.join(" ")).toContain("shipped quantity 1 corrected to 2");
   });
 
   it("rejects the legacy drift pattern instead of returning 38 shifted rows", () => {
@@ -83,7 +101,7 @@ describe("PFG invoice 6076192 regression", () => {
     expect(result.itemRowCount).toBe(2);
     expect(result.lines.map((item) => item.itemNumber)).toEqual(["158889", "199408"]);
     expect(result.lines.map((item) => item.description)).toEqual([
-      "WEST CRK CHEESE AMER YLW SLCD",
+      "WEST OAK CHEESE AMER YLW SLCD",
       "NTRSBST CREAM HVY WHIPPING",
     ]);
     expect(result.lines.every((item) => item.category === "BEIGNETS & FOOD-DAIRY")).toBe(true);
@@ -130,9 +148,18 @@ describe("PFG invoice 6076192 regression", () => {
       unitPrice: parsedUnitPrice,
       extension: null,
       category: null,
-    }], { subtotal: 32.08, tax: null, total: null, shippedCount: 1, sectionTotals: {} }, 1);
+    }], { subtotal: 32.08, tax: 0, total: 32.08, shippedCount: 1, sectionTotals: {} }, 1);
 
     expect(result.errors).toEqual([]);
     expect(result.lines[0].extension).toBe(32.08);
+  });
+
+  it("excludes footer text from descriptions and provides cosmetic PFG display corrections", () => {
+    expect(cleanPfgDescription("SSDC CLEANER EXCELLENT LAVENDE EMERGENCY PHONE: 800-424-9300")).toBe("EBDC CLEANER EXCELLENT LAVENDE");
+  });
+
+  it("flags one-digit catalog-key substitutions rather than silently accepting them", () => {
+    expect(findSingleDigitItemNumberCandidates("597152", ["997152", "243641"])).toEqual(["997152"]);
+    expect(findSingleDigitItemNumberCandidates("247641", ["997152", "243641"])).toEqual(["243641"]);
   });
 });

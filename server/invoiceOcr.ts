@@ -52,6 +52,15 @@ const PFG_SECTIONS = [
   "NA BEVERAGES",
   "COFFEE-PRODUCE",
 ];
+const PFG_FOOTER_MARKERS = /\b(?:EMERGENCY\s+PHONE|CUSTOMER\s+SERVICE|THANK\s+YOU\s+FOR\s+YOUR\s+BUSINESS)\b/i;
+const PFG_DESCRIPTION_CORRECTIONS: Array<[RegExp, string]> = [
+  [/\bWEST\s+CRK\b/gi, "WEST OAK"],
+  [/\bLTD23SCT:ESPRESSO\b/gi, "KIRKIN'S EXPRESS"],
+  [/\bCHIQUITA\b/gi, "CRIQUITA"],
+  [/\bWESSON\b/gi, "WESSOM"],
+  [/\bHRML\b/gi, "REML"],
+  [/\bSSDC\b/gi, "EBDC"],
+];
 
 function decodeHtml(value: string): string {
   return value
@@ -80,6 +89,29 @@ export function parseNumericOcr(value: unknown): number | null {
   if (!numeric || numeric === "-" || numeric === ".") return null;
   const parsed = Number(numeric);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** Keeps invoice descriptions readable while never changing the matching key. */
+export function cleanPfgDescription(value: string | null | undefined): string | null {
+  if (!value) return null;
+  let cleaned = value.split(PFG_FOOTER_MARKERS)[0].replace(/\s+/g, " ").trim();
+  for (const [pattern, replacement] of PFG_DESCRIPTION_CORRECTIONS) cleaned = cleaned.replace(pattern, replacement);
+  return cleaned || null;
+}
+
+/** Returns catalog keys that are a single OCR digit substitution from a parsed key. */
+export function findSingleDigitItemNumberCandidates(itemNumber: string, catalogNumbers: string[]): string[] {
+  const candidates: string[] = [];
+  for (const catalogNumber of catalogNumbers) {
+    if (catalogNumber.length !== itemNumber.length) continue;
+    let differences = 0;
+    for (let index = 0; index < itemNumber.length; index += 1) {
+      if (itemNumber[index] !== catalogNumber[index]) differences += 1;
+      if (differences > 1) break;
+    }
+    if (differences === 1) candidates.push(catalogNumber);
+  }
+  return candidates;
 }
 
 function roundMoney(value: number): number {
@@ -142,7 +174,7 @@ export function reconstructPfgRowsFromHtml(html: string): PfgTableParseResult {
     itemRowCount += 1;
     lines.push({
       itemNumber,
-      description: cells[descriptionIndex]?.trim() || null,
+      description: cleanPfgDescription(cells[descriptionIndex]),
       pack: packIndex >= 0 ? cells[packIndex]?.trim() || null : null,
       size: sizeIndex >= 0 ? cells[sizeIndex]?.trim() || null : null,
       orderedQty: orderedIndex >= 0 ? parseNumericOcr(cells[orderedIndex]) : null,
@@ -190,6 +222,7 @@ export function validateAndNormalizePfgInvoice(
   const errors: string[] = [];
   const corrections: string[] = [];
   const lines = inputLines.map((line) => ({ ...line }));
+  if (sourceItemRowCount === null) errors.push("Could not verify the physical PFG item-row count from table geometry.");
   if (sourceItemRowCount !== null && sourceItemRowCount !== lines.length) {
     errors.push(`Row count mismatch: table has ${sourceItemRowCount} item rows but extraction produced ${lines.length}.`);
   }
@@ -198,6 +231,7 @@ export function validateAndNormalizePfgInvoice(
     if (!line.itemNumber || !ITEM_NUMBER.test(line.itemNumber)) errors.push("A row is missing a valid item number.");
     if (!line.description) errors.push(`Item ${line.itemNumber ?? "unknown"} has no same-row description.`);
     if (line.shippedQty === null) errors.push(`Item ${line.itemNumber ?? "unknown"} has no shipped quantity.`);
+    if (line.unitPrice === null) errors.push(`Item ${line.itemNumber ?? "unknown"} has no verifiable unit price.`);
 
     if (line.unitPrice !== null && line.shippedQty !== null) {
       const calculatedExtension = roundMoney(line.unitPrice * line.shippedQty);
@@ -212,15 +246,49 @@ export function validateAndNormalizePfgInvoice(
 
   const extensionSum = roundMoney(lines.reduce((sum, line) => sum + (line.extension ?? 0), 0));
   const shippedSum = lines.reduce((sum, line) => sum + (line.shippedQty ?? 0), 0);
-  if (summary.subtotal !== null && Math.abs(extensionSum - summary.subtotal) > MONEY_TOLERANCE) {
-    errors.push(`Extension sum ${extensionSum.toFixed(2)} does not match printed subtotal ${summary.subtotal.toFixed(2)}.`);
+  const subtotalGap = summary.subtotal === null ? null : roundMoney(summary.subtotal - extensionSum);
+  const shippedGap = summary.shippedCount === null ? null : summary.shippedCount - shippedSum;
+  // Repair only when both independent document controls identify exactly one
+  // price-equals-extension row whose missing quantity explains both gaps.
+  if (subtotalGap !== null && shippedGap !== null && shippedGap > 0) {
+    const quantityCandidates = lines.filter((line) => {
+      if (line.unitPrice === null || line.extension === null || line.shippedQty === null) return false;
+      const proposedQty = line.shippedQty + shippedGap;
+      const proposedExtension = roundMoney(line.unitPrice * proposedQty);
+      return Math.abs(line.unitPrice - line.extension) <= MONEY_TOLERANCE
+        && Math.abs(roundMoney(proposedExtension - line.extension) - subtotalGap) <= MONEY_TOLERANCE;
+    });
+    if (quantityCandidates.length === 1) {
+      const candidate = quantityCandidates[0];
+      const oldQuantity = candidate.shippedQty as number;
+      candidate.shippedQty = oldQuantity + shippedGap;
+      candidate.extension = roundMoney((candidate.unitPrice as number) * candidate.shippedQty);
+      corrections.push(`Item ${candidate.itemNumber ?? "unknown"}: shipped quantity ${oldQuantity} corrected to ${candidate.shippedQty} from document subtotal and ship-count controls.`);
+    } else if (quantityCandidates.length > 1) {
+      errors.push(`Document totals indicate ${shippedGap} missing shipped unit(s), but multiple price-equals-extension rows are possible: ${quantityCandidates.map((line) => line.itemNumber).join(", ")}.`);
+    }
+  }
+
+  const reconciledExtensionSum = roundMoney(lines.reduce((sum, line) => sum + (line.extension ?? 0), 0));
+  const reconciledShippedSum = lines.reduce((sum, line) => sum + (line.shippedQty ?? 0), 0);
+  if (summary.subtotal === null) errors.push("Could not verify the printed PFG subtotal.");
+  if (summary.tax === null) errors.push("Could not verify the printed PFG tax.");
+  if (summary.total === null) errors.push("Could not verify the printed PFG total.");
+  if (summary.shippedCount === null) errors.push("Could not verify the printed PFG ship count.");
+  if (summary.subtotal !== null && Math.abs(reconciledExtensionSum - summary.subtotal) > MONEY_TOLERANCE) {
+    const suspected = lines
+      .filter((line) => line.shippedQty !== null && line.shippedQty > 1 && line.unitPrice !== null && line.extension !== null && Math.abs(line.unitPrice - line.extension) <= MONEY_TOLERANCE)
+      .map((line) => line.itemNumber)
+      .filter(Boolean);
+    const suspectDetail = suspected.length > 0 ? ` Suspect price-equals-extension row(s): ${suspected.join(", ")}.` : "";
+    errors.push(`Extension sum ${reconciledExtensionSum.toFixed(2)} does not match printed subtotal ${summary.subtotal.toFixed(2)}.${suspectDetail}`);
   }
   if (summary.tax !== null && summary.total !== null && summary.subtotal !== null
     && Math.abs(roundMoney(summary.subtotal + summary.tax) - summary.total) > MONEY_TOLERANCE) {
     errors.push("Printed subtotal plus tax does not match printed total.");
   }
-  if (summary.shippedCount !== null && Math.abs(shippedSum - summary.shippedCount) > 0.001) {
-    errors.push(`Shipped quantity sum ${shippedSum} does not match printed ship count ${summary.shippedCount}.`);
+  if (summary.shippedCount !== null && Math.abs(reconciledShippedSum - summary.shippedCount) > 0.001) {
+    errors.push(`Shipped quantity sum ${reconciledShippedSum} does not match printed ship count ${summary.shippedCount}.`);
   }
   for (const [section, printedTotal] of Object.entries(summary.sectionTotals)) {
     const calculatedTotal = roundMoney(lines

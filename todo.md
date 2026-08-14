@@ -496,3 +496,11 @@
 - [x] Trace the production client-to-server upload request that now fails before invoice review
 - [x] Correct the upload-stage failure while retaining image normalization and OCR safeguards
 - [x] Add regression coverage for the affected upload preparation path
+
+## Round 60 — PFG 6076192 Final Reconciliation
+- [x] Detect and reject the `unit price = extension` signature when shipped quantity is greater than one and document totals disagree
+- [x] Enforce all PFG line and document control totals as hard upload/review gates with actionable suspect-line diagnostics
+- [x] Constrain item-number OCR and flag vendor-catalog mismatches rather than silently matching incorrect identifiers
+- [x] Stop PFG descriptions at the final item row and exclude page footer text
+- [x] Add vendor-item display-name correction for known PFG OCR noise without changing matching keys
+- [x] Extend invoice 6076192 regression coverage for item 981346, 40 lines, $5,551.27 subtotal, $15.43 tax, $5,566.70 total, and 101 shipped

@@ -22,6 +22,7 @@ import type { MessageContent } from "../_core/llm";
 import {
   deskewInvoiceForOcr,
   extractInvoiceSummary,
+  findSingleDigitItemNumberCandidates,
   parseNumericOcr,
   reconstructPfgRowsFromHtml,
   validateAndNormalizePfgInvoice,
@@ -39,6 +40,7 @@ import {
   unapplyInvoice,
   toggleInvoiceLineNotReceived,
   deleteInvoice,
+  getCatalogItemNumbers,
 } from "../invoices";
 
 // ─── Regex validator ──────────────────────────────────────────────────────────
@@ -490,6 +492,16 @@ export const invoicesRouter = router({
       console.log(`[Invoice] OCR complete: ${parsed.lines.length} lines total`);
 
       const validation = validateAndNormalizePfgInvoice(parsed.lines, parsed.summary, parsed.sourceItemRowCount);
+      const catalogItemNumbers = await getCatalogItemNumbers();
+      if (catalogItemNumbers.length > 0) {
+        for (const line of validation.lines) {
+          if (!line.itemNumber || catalogItemNumbers.includes(line.itemNumber)) continue;
+          const candidates = findSingleDigitItemNumberCandidates(line.itemNumber, catalogItemNumbers);
+          if (candidates.length > 0) {
+            validation.errors.push(`Item ${line.itemNumber} does not match the vendor catalog and may be an OCR digit substitution; possible catalog key: ${candidates.join(", ")}.`);
+          }
+        }
+      }
       if (validation.errors.length > 0) {
         console.error(`[Invoice OCR] rejected unsafe PFG parse: ${validation.errors.join(" | ")}`);
         throw new TRPCError({

@@ -25,6 +25,14 @@ export interface ParsedInvoice {
   lines: ParsedLine[];
 }
 
+/** Current catalog keys are an OCR integrity reference, not a fuzzy-match source. */
+export async function getCatalogItemNumbers(): Promise<string[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select({ itemNumber: items.itemNumber }).from(items);
+  return rows.map((row) => row.itemNumber).filter((value): value is string => Boolean(value));
+}
+
 /**
  * Parse invoice images. Accepts either:
  * - base64 data URLs (data:image/jpeg;base64,...) for direct client uploads
