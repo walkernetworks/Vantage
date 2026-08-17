@@ -3,6 +3,7 @@ import {
   estimateDeskewDegrees,
   cleanPfgDescription,
   findSingleDigitItemNumberCandidates,
+  mergeInvoiceSummaries,
   parseNumericOcr,
   reconstructPfgRowsFromHtml,
   validateAndNormalizePfgInvoice,
@@ -161,5 +162,14 @@ describe("PFG invoice 6076192 regression", () => {
   it("flags one-digit catalog-key substitutions rather than silently accepting them", () => {
     expect(findSingleDigitItemNumberCandidates("597152", ["997152", "243641"])).toEqual(["997152"]);
     expect(findSingleDigitItemNumberCandidates("247641", ["997152", "243641"])).toEqual(["243641"]);
+  });
+
+  it("uses structured page controls when OCR markdown omits the totals block", () => {
+    const result = mergeInvoiceSummaries(
+      { subtotal: null, tax: null, total: null, shippedCount: null, sectionTotals: {} },
+      invoice6076192Summary,
+    );
+
+    expect(result).toEqual(invoice6076192Summary);
   });
 });

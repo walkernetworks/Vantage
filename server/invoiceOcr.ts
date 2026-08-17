@@ -20,6 +20,17 @@ export interface InvoiceSummary {
   sectionTotals: Record<string, number>;
 }
 
+/** Uses the first verified value for each document control, preserving section recaps. */
+export function mergeInvoiceSummaries(primary: InvoiceSummary, fallback: InvoiceSummary): InvoiceSummary {
+  return {
+    subtotal: primary.subtotal ?? fallback.subtotal,
+    tax: primary.tax ?? fallback.tax,
+    total: primary.total ?? fallback.total,
+    shippedCount: primary.shippedCount ?? fallback.shippedCount,
+    sectionTotals: { ...fallback.sectionTotals, ...primary.sectionTotals },
+  };
+}
+
 export interface PfgTableParseResult {
   lines: InvoiceLineDraft[];
   itemRowCount: number;

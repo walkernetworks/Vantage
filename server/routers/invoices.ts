@@ -23,6 +23,7 @@ import {
   deskewInvoiceForOcr,
   extractInvoiceSummary,
   findSingleDigitItemNumberCandidates,
+  mergeInvoiceSummaries,
   parseNumericOcr,
   reconstructPfgRowsFromHtml,
   validateAndNormalizePfgInvoice,
@@ -96,6 +97,7 @@ CRITICAL RULES:
 - If a value is missing or unclear, set it to null. NEVER hallucinate.
 - itemNumber and pack are OPTIONAL — return null if not present. description and shippedQty are REQUIRED.
 - The invoice header contains invoiceNumber, invoiceDate, and totalAmount — extract if present.
+- Extract control totals from the page when present: subtotal (printed SUB TOTAL), tax, total (printed TOTAL/AMOUNT DUE), and shippedCount (printed SHIP count). Set only fields visible on this page; use null for controls not printed here.
 - DOUBLE-CHECK: for each extracted row, verify the description you assigned matches the ALL-CAPS text on the SAME line as the item number, not the line above or below.
 
 OUTPUT FORMAT — respond with ONLY a raw JSON object, no markdown fences, no explanation:
@@ -103,6 +105,11 @@ OUTPUT FORMAT — respond with ONLY a raw JSON object, no markdown fences, no ex
   "invoiceNumber": "8068106",
   "invoiceDate": "6/23/26",
   "totalAmount": null,
+  "subtotal": null,
+  "tax": null,
+  "total": null,
+  "shippedCount": null,
+  "sectionTotals": {},
   "lines": [
     {
       "itemNumber": "867175",
@@ -216,9 +223,12 @@ function preprocessMistralMarkdown(markdown: string): string {
     // cells[0] is empty (before first |), cells[1] is the item number column
     const itemNumCell = cells[1] ?? '';
 
-    // Keep the row only if the item number cell contains a 6-7 digit number
-    // OR if this is a header row (non-numeric text like "Item#", "ITEM", etc.)
-    if (ITEM_NUMBER_RE.test(itemNumCell) || /^[A-Za-z#]/.test(itemNumCell)) {
+    // Preserve document controls even when their item-number cell is blank.
+    // The controls are an independent acceptance gate after row reconstruction.
+    const containsControl = /\b(?:SUB\s*TOTAL|TOTAL|AMOUNT\s+DUE|TAX|SHIPP?ED(?:\s+(?:COUNT|QTY|QUANTITY))?)\b/i.test(trimmed);
+    // Keep the row only if the item number cell contains a 5-8 digit number,
+    // is a header row, or carries a document control.
+    if (ITEM_NUMBER_RE.test(itemNumCell) || /^[A-Za-z#]/.test(itemNumCell) || containsControl) {
       cleaned.push(line);
     }
     // Otherwise drop the row (empty item# or category header like "BEIGNETS & FOOD")
@@ -388,12 +398,27 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
     console.log(`[Invoice OCR] page ${pageIndex + 1} row ${i + 1}: #${num} — ${desc}`);
   });
 
+  const markdownSummary = extractInvoiceSummary(ocrMarkdown ?? "");
+  const llmSummary: InvoiceSummary = {
+    subtotal: parseNumericOcr(parsed.subtotal),
+    tax: parseNumericOcr(parsed.tax),
+    total: parseNumericOcr(parsed.total) ?? parseNumericOcr(parsed.totalAmount),
+    shippedCount: parseNumericOcr(parsed.shippedCount),
+    sectionTotals: typeof parsed.sectionTotals === "object" && parsed.sectionTotals !== null
+      ? Object.entries(parsed.sectionTotals).reduce<Record<string, number>>((result, [section, value]) => {
+        const parsedValue = parseNumericOcr(value);
+        if (parsedValue !== null) result[section] = parsedValue;
+        return result;
+      }, {})
+      : {},
+  };
+
   return {
     invoiceNumber: typeof parsed.invoiceNumber === "string" ? parsed.invoiceNumber.trim() : null,
     invoiceDate: typeof parsed.invoiceDate === "string" ? parsed.invoiceDate.trim() : null,
-    totalAmount: typeof parsed.totalAmount === "number" ? parsed.totalAmount : null,
+    totalAmount: parseNumericOcr(parsed.totalAmount),
     lines: validatedLines,
-    summary: extractInvoiceSummary(ocrMarkdown ?? ""),
+    summary: mergeInvoiceSummaries(markdownSummary, llmSummary),
     sourceItemRowCount: tableParse && tableParse.itemRowCount > 0 ? tableParse.itemRowCount : null,
   };
 }

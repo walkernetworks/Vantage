@@ -504,3 +504,8 @@
 - [x] Stop PFG descriptions at the final item row and exclude page footer text
 - [x] Add vendor-item display-name correction for known PFG OCR noise without changing matching keys
 - [x] Extend invoice 6076192 regression coverage for item 981346, 40 lines, $5,551.27 subtotal, $15.43 tax, $5,566.70 total, and 101 shipped
+
+## Round 61 — Newly Captured Production Invoice Error
+- [x] Inspect the supplied production HTML capture and identify the remaining live upload or parsing failure
+- [x] Correct the specific production failure while preserving PFG validation controls
+- [x] Add regression coverage for the newly captured failure
