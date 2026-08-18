@@ -129,6 +129,12 @@ export function hasRequiredPfgControls(summary: InvoiceSummary): boolean {
     && summary.shippedCount !== null;
 }
 
+/** A page can contain a category recap with numbers in control-like fields. */
+export function hasConsistentPfgDocumentControls(summary: InvoiceSummary): boolean {
+  if (!hasRequiredPfgControls(summary)) return false;
+  return Math.abs(((summary.subtotal as number) + (summary.tax as number)) - (summary.total as number)) <= 0.02;
+}
+
 /** Keeps invoice descriptions readable while never changing the matching key. */
 export function cleanPfgDescription(value: string | null | undefined): string | null {
   if (!value) return null;

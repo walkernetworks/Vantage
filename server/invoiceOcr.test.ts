@@ -3,6 +3,7 @@ import {
   estimateDeskewDegrees,
   cleanPfgDescription,
   findSingleDigitItemNumberCandidates,
+  hasConsistentPfgDocumentControls,
   hasRequiredPfgControls,
   mergeInvoiceSummaries,
   normalizeInvoiceSummaryPayload,
@@ -205,5 +206,16 @@ describe("PFG invoice 6076192 regression", () => {
     };
 
     expect(mergeInvoiceSummaries(invoice6076192Summary, categoryPageControls)).toEqual(invoice6076192Summary);
+  });
+
+  it("rejects internally inconsistent category recap controls before document selection", () => {
+    expect(hasConsistentPfgDocumentControls(invoice6076192Summary)).toBe(true);
+    expect(hasConsistentPfgDocumentControls({
+      subtotal: 491.63,
+      tax: 15.43,
+      total: 5566.7,
+      shippedCount: 15,
+      sectionTotals: {},
+    })).toBe(false);
   });
 });

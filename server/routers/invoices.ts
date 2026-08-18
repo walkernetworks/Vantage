@@ -23,6 +23,7 @@ import {
   deskewInvoiceForOcr,
   extractInvoiceSummary,
   findSingleDigitItemNumberCandidates,
+  hasConsistentPfgDocumentControls,
   hasRequiredPfgControls,
   mergeInvoiceSummaries,
   normalizeInvoiceSummaryPayload,
@@ -493,7 +494,7 @@ async function parseInvoiceImages(imageDataUrls: string[]): Promise<PageResult> 
   // exactly one complete invoice-level control panel across the original images.
   for (let pageIndex = 0; pageIndex < imageDataUrls.length; pageIndex += 1) {
     const documentSummary = await extractPfgControlTotalsFromImage(imageDataUrls[pageIndex], pageIndex, imageDataUrls.length);
-    if (hasRequiredPfgControls(documentSummary)) {
+    if (hasConsistentPfgDocumentControls(documentSummary)) {
       master.summary = mergeInvoiceSummaries(documentSummary, master.summary);
       console.log(`[Invoice OCR] using complete document controls from page ${pageIndex + 1}`);
       break;

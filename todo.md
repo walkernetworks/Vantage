@@ -525,3 +525,10 @@
 - [x] Correct only the proven live parser failure
 - [x] Add regression coverage for the latest captured failure
 - [x] Replace erroneous page-level PFG controls with one document-level control extraction across all invoice pages
+
+## Round 65 — Newest Production Invoice Capture
+- [x] Extract the exact error from the newest supplied capture
+- [x] Correct only the demonstrated live failure
+- [x] Add regression coverage for the demonstrated failure
+- [x] Verify that the live Render service is running the latest GitHub main deployment before altering parser code again
+- [x] Require candidate invoice-level controls to satisfy subtotal plus tax equals total before selecting that page
