@@ -102,6 +102,33 @@ export function parseNumericOcr(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/** Normalizes compact LLM or vision control-total JSON into the invoice summary contract. */
+export function normalizeInvoiceSummaryPayload(payload: unknown): InvoiceSummary {
+  const source = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+  const rawSections = source.sectionTotals && typeof source.sectionTotals === "object"
+    ? source.sectionTotals as Record<string, unknown>
+    : {};
+  const sectionTotals = Object.entries(rawSections).reduce<Record<string, number>>((result, [section, value]) => {
+    const parsed = parseNumericOcr(value);
+    if (parsed !== null) result[section] = parsed;
+    return result;
+  }, {});
+  return {
+    subtotal: parseNumericOcr(source.subtotal),
+    tax: parseNumericOcr(source.tax),
+    total: parseNumericOcr(source.total) ?? parseNumericOcr(source.totalAmount),
+    shippedCount: parseNumericOcr(source.shippedCount),
+    sectionTotals,
+  };
+}
+
+export function hasRequiredPfgControls(summary: InvoiceSummary): boolean {
+  return summary.subtotal !== null
+    && summary.tax !== null
+    && summary.total !== null
+    && summary.shippedCount !== null;
+}
+
 /** Keeps invoice descriptions readable while never changing the matching key. */
 export function cleanPfgDescription(value: string | null | undefined): string | null {
   if (!value) return null;

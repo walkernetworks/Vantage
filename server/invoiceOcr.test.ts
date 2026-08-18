@@ -3,7 +3,9 @@ import {
   estimateDeskewDegrees,
   cleanPfgDescription,
   findSingleDigitItemNumberCandidates,
+  hasRequiredPfgControls,
   mergeInvoiceSummaries,
+  normalizeInvoiceSummaryPayload,
   parseNumericOcr,
   reconstructPfgRowsFromHtml,
   validateAndNormalizePfgInvoice,
@@ -171,5 +173,25 @@ describe("PFG invoice 6076192 regression", () => {
     );
 
     expect(result).toEqual(invoice6076192Summary);
+  });
+
+  it("normalizes image-control fallback values and requires every PFG document control", () => {
+    const result = normalizeInvoiceSummaryPayload({
+      subtotal: "$5,551.27",
+      tax: "15.43",
+      total: "5,566.70",
+      shippedCount: "101",
+      sectionTotals: { "BEIGNETS & FOOD-PAPER": "$137.70" },
+    });
+
+    expect(result).toEqual({
+      subtotal: 5551.27,
+      tax: 15.43,
+      total: 5566.7,
+      shippedCount: 101,
+      sectionTotals: { "BEIGNETS & FOOD-PAPER": 137.7 },
+    });
+    expect(hasRequiredPfgControls(result)).toBe(true);
+    expect(hasRequiredPfgControls({ ...result, tax: null })).toBe(false);
   });
 });

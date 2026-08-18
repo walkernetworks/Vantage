@@ -509,3 +509,13 @@
 - [x] Inspect the supplied production HTML capture and identify the remaining live upload or parsing failure
 - [x] Correct the specific production failure while preserving PFG validation controls
 - [x] Add regression coverage for the newly captured failure
+
+## Round 62 — Exact Live Invoice Failure Trace
+- [x] Capture the exact production runtime error from the latest failed invoice upload
+- [x] Correct the deployed production branch that produces the captured failure
+- [x] Add regression coverage for the proven live failure path
+
+## Round 63 — Supplied Exact Upload Error
+- [x] Extract the exact failure message and request stage from the supplied production capture
+- [x] Apply the minimal correction for that captured failure only
+- [x] Add a regression test that reproduces the captured failure path

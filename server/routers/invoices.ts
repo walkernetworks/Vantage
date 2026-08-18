@@ -23,7 +23,9 @@ import {
   deskewInvoiceForOcr,
   extractInvoiceSummary,
   findSingleDigitItemNumberCandidates,
+  hasRequiredPfgControls,
   mergeInvoiceSummaries,
+  normalizeInvoiceSummaryPayload,
   parseNumericOcr,
   reconstructPfgRowsFromHtml,
   validateAndNormalizePfgInvoice,
@@ -125,6 +127,8 @@ OUTPUT FORMAT — respond with ONLY a raw JSON object, no markdown fences, no ex
   ]
 }`;
 
+const PFG_CONTROL_TOTALS_VISION_PROMPT = `Read ONLY the printed document controls visible in this PFG invoice image. Return raw JSON with exactly these fields: subtotal, tax, total, shippedCount, sectionTotals. Values must be numeric or null. SUB TOTAL is subtotal; TAX is tax; TOTAL or AMOUNT DUE is total; SHIP count is shippedCount. Do not calculate or infer missing values. If this page contains no control, return null for that field. sectionTotals is an object of visible PFG category recap labels to numeric totals. Do not return product rows or any explanation.`;
+
 // ─── Type for a single parsed page result ─────────────────────────────────────
 interface PageResult {
   invoiceNumber: string | null;
@@ -138,6 +142,36 @@ interface PageResult {
 interface OcrPage {
   markdown: string;
   htmlTables: string[];
+}
+
+async function extractPfgControlTotalsFromImage(dataUrl: string, pageIndex: number): Promise<InvoiceSummary> {
+  const empty: InvoiceSummary = { subtotal: null, tax: null, total: null, shippedCount: null, sectionTotals: {} };
+  try {
+    const response = await invokeLLM({
+      messages: [
+        { role: "system", content: PFG_CONTROL_TOTALS_VISION_PROMPT },
+        {
+          role: "user",
+          content: [
+            { type: "text" as const, text: `Inspect invoice page ${pageIndex + 1} for printed document controls.` },
+            { type: "image_url" as const, image_url: { url: dataUrl, detail: "high" as const } },
+          ] as MessageContent[],
+        },
+      ],
+      response_format: { type: "json_object" },
+      max_tokens: 700,
+    });
+    const rawContent = response.choices?.[0]?.message?.content;
+    if (!rawContent) return empty;
+    const rawJson = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
+    const payload = JSON.parse(rawJson.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim());
+    const summary = normalizeInvoiceSummaryPayload(payload);
+    console.log(`[Invoice OCR] page ${pageIndex + 1}: vision controls subtotal=${summary.subtotal} tax=${summary.tax} total=${summary.total} ship=${summary.shippedCount}`);
+    return summary;
+  } catch (error) {
+    console.warn(`[Invoice OCR] page ${pageIndex + 1}: control-total vision fallback failed`, error);
+    return empty;
+  }
 }
 
 /**
@@ -399,26 +433,22 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
   });
 
   const markdownSummary = extractInvoiceSummary(ocrMarkdown ?? "");
-  const llmSummary: InvoiceSummary = {
-    subtotal: parseNumericOcr(parsed.subtotal),
-    tax: parseNumericOcr(parsed.tax),
-    total: parseNumericOcr(parsed.total) ?? parseNumericOcr(parsed.totalAmount),
-    shippedCount: parseNumericOcr(parsed.shippedCount),
-    sectionTotals: typeof parsed.sectionTotals === "object" && parsed.sectionTotals !== null
-      ? Object.entries(parsed.sectionTotals).reduce<Record<string, number>>((result, [section, value]) => {
-        const parsedValue = parseNumericOcr(value);
-        if (parsedValue !== null) result[section] = parsedValue;
-        return result;
-      }, {})
-      : {},
-  };
+  const llmSummary = normalizeInvoiceSummaryPayload(parsed);
+  let resolvedSummary = mergeInvoiceSummaries(markdownSummary, llmSummary);
+  // PFG totals may sit in a footer/recap block that tabular OCR omits. Query the
+  // source image directly only for missing controls; hard reconciliation remains
+  // enforced below, so absent or inconsistent values still reject the invoice.
+  if (!hasRequiredPfgControls(resolvedSummary)) {
+    const visionSummary = await extractPfgControlTotalsFromImage(dataUrl, pageIndex);
+    resolvedSummary = mergeInvoiceSummaries(resolvedSummary, visionSummary);
+  }
 
   return {
     invoiceNumber: typeof parsed.invoiceNumber === "string" ? parsed.invoiceNumber.trim() : null,
     invoiceDate: typeof parsed.invoiceDate === "string" ? parsed.invoiceDate.trim() : null,
     totalAmount: parseNumericOcr(parsed.totalAmount),
     lines: validatedLines,
-    summary: mergeInvoiceSummaries(markdownSummary, llmSummary),
+    summary: resolvedSummary,
     sourceItemRowCount: tableParse && tableParse.itemRowCount > 0 ? tableParse.itemRowCount : null,
   };
 }
