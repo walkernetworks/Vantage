@@ -519,3 +519,9 @@
 - [x] Extract the exact failure message and request stage from the supplied production capture
 - [x] Apply the minimal correction for that captured failure only
 - [x] Add a regression test that reproduces the captured failure path
+
+## Round 64 — Latest Production Invoice Capture
+- [x] Extract the exact error from the latest supplied capture
+- [x] Correct only the proven live parser failure
+- [x] Add regression coverage for the latest captured failure
+- [x] Replace erroneous page-level PFG controls with one document-level control extraction across all invoice pages

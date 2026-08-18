@@ -194,4 +194,16 @@ describe("PFG invoice 6076192 regression", () => {
     expect(hasRequiredPfgControls(result)).toBe(true);
     expect(hasRequiredPfgControls({ ...result, tax: null })).toBe(false);
   });
+
+  it("prefers complete document controls over a page-level category recap", () => {
+    const categoryPageControls = {
+      subtotal: 491.63,
+      tax: 0,
+      total: 491.63,
+      shippedCount: 15,
+      sectionTotals: {},
+    };
+
+    expect(mergeInvoiceSummaries(invoice6076192Summary, categoryPageControls)).toEqual(invoice6076192Summary);
+  });
 });

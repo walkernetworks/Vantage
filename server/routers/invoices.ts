@@ -127,7 +127,7 @@ OUTPUT FORMAT — respond with ONLY a raw JSON object, no markdown fences, no ex
   ]
 }`;
 
-const PFG_CONTROL_TOTALS_VISION_PROMPT = `Read ONLY the printed document controls visible in this PFG invoice image. Return raw JSON with exactly these fields: subtotal, tax, total, shippedCount, sectionTotals. Values must be numeric or null. SUB TOTAL is subtotal; TAX is tax; TOTAL or AMOUNT DUE is total; SHIP count is shippedCount. Do not calculate or infer missing values. If this page contains no control, return null for that field. sectionTotals is an object of visible PFG category recap labels to numeric totals. Do not return product rows or any explanation.`;
+const PFG_CONTROL_TOTALS_VISION_PROMPT = `This is one page from a multi-page PFG invoice. Read ONLY the invoice-level document control panel, never a category subtotal, page subtotal, item-row extension, or section recap. Return raw JSON with exactly these fields: subtotal, tax, total, shippedCount, sectionTotals. Values must be numeric or null. SUB TOTAL is subtotal; TAX is tax; TOTAL or AMOUNT DUE is total; SHIP count is shippedCount. Return values only when this page visibly contains the complete invoice-level control panel. Otherwise return null for subtotal, tax, total, and shippedCount. Do not calculate or infer values. sectionTotals is an object of visible PFG category recap labels to numeric totals. Do not return product rows or any explanation.`;
 
 // ─── Type for a single parsed page result ─────────────────────────────────────
 interface PageResult {
@@ -144,7 +144,7 @@ interface OcrPage {
   htmlTables: string[];
 }
 
-async function extractPfgControlTotalsFromImage(dataUrl: string, pageIndex: number): Promise<InvoiceSummary> {
+async function extractPfgControlTotalsFromImage(dataUrl: string, pageIndex: number, pageCount: number): Promise<InvoiceSummary> {
   const empty: InvoiceSummary = { subtotal: null, tax: null, total: null, shippedCount: null, sectionTotals: {} };
   try {
     const response = await invokeLLM({
@@ -153,7 +153,7 @@ async function extractPfgControlTotalsFromImage(dataUrl: string, pageIndex: numb
         {
           role: "user",
           content: [
-            { type: "text" as const, text: `Inspect invoice page ${pageIndex + 1} for printed document controls.` },
+            { type: "text" as const, text: `Inspect page ${pageIndex + 1} of ${pageCount} for the complete printed invoice-level control panel.` },
             { type: "image_url" as const, image_url: { url: dataUrl, detail: "high" as const } },
           ] as MessageContent[],
         },
@@ -434,14 +434,7 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
 
   const markdownSummary = extractInvoiceSummary(ocrMarkdown ?? "");
   const llmSummary = normalizeInvoiceSummaryPayload(parsed);
-  let resolvedSummary = mergeInvoiceSummaries(markdownSummary, llmSummary);
-  // PFG totals may sit in a footer/recap block that tabular OCR omits. Query the
-  // source image directly only for missing controls; hard reconciliation remains
-  // enforced below, so absent or inconsistent values still reject the invoice.
-  if (!hasRequiredPfgControls(resolvedSummary)) {
-    const visionSummary = await extractPfgControlTotalsFromImage(dataUrl, pageIndex);
-    resolvedSummary = mergeInvoiceSummaries(resolvedSummary, visionSummary);
-  }
+  const resolvedSummary = mergeInvoiceSummaries(markdownSummary, llmSummary);
 
   return {
     invoiceNumber: typeof parsed.invoiceNumber === "string" ? parsed.invoiceNumber.trim() : null,
@@ -492,6 +485,19 @@ async function parseInvoiceImages(imageDataUrls: string[]): Promise<PageResult> 
     // Push every line from this page into the master array
     master.lines.push(...pageResult.lines);
     console.log(`[Invoice OCR] page ${i + 1} complete: ${pageResult.lines.length} lines extracted, master total: ${master.lines.length}`);
+  }
+
+  // Never use the first page-level total as the invoice total: PFG pages can
+  // contain category recaps (for example $491.63 and 15 shipped) that look like
+  // controls but are not the document's $5,551.27 / 101 shipment summary. Find
+  // exactly one complete invoice-level control panel across the original images.
+  for (let pageIndex = 0; pageIndex < imageDataUrls.length; pageIndex += 1) {
+    const documentSummary = await extractPfgControlTotalsFromImage(imageDataUrls[pageIndex], pageIndex, imageDataUrls.length);
+    if (hasRequiredPfgControls(documentSummary)) {
+      master.summary = mergeInvoiceSummaries(documentSummary, master.summary);
+      console.log(`[Invoice OCR] using complete document controls from page ${pageIndex + 1}`);
+      break;
+    }
   }
 
   const validLines = master.lines.filter((l) => l.itemNumber !== null).length;
