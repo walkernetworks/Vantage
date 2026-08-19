@@ -539,3 +539,9 @@
 - [x] Add regression coverage for count-only dashboard inventory items
 - [x] Present count-only items using their selected count unit so one each is not hidden as 0.1667 cases
 - [x] Normalize legacy `0.50` order thresholds as 50% of par so low stock items correctly appear on the order dashboard
+
+## Round 67 — All-Item Order Trigger Audit
+- [x] Trace Chocolate Torani’s latest count, par, threshold, receipts, and order-dashboard eligibility in production
+- [x] Audit all active items with a positive par level for incorrect order-trigger exclusions
+- [x] Add an application-level safeguard and regression coverage for count-only low-stock items
+- [x] Use only completed count sessions when deriving every order-dashboard stock level

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, sql, aliasedTable } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, isNotNull, sql, aliasedTable } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2";
 import {
@@ -585,10 +585,11 @@ export async function getSessionWithEntries(sessionId: number) {
 export async function getBelowParItems(vendor?: string) {
   const db = await getDb();
   if (!db) return { session: null, items: [] };
-  // Get latest count session
+  // An in-progress count is not a stock baseline. Use the latest completed snapshot.
   const sessions = await db
     .select()
     .from(countSessions)
+    .where(isNotNull(countSessions.completedAt))
     .orderBy(desc(countSessions.createdAt))
     .limit(1);
   const latestSession = sessions[0] ?? null;
