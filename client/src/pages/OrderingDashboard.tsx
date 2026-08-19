@@ -24,6 +24,9 @@ type BelowParItem = {
   price: string | null;
   parLevel: string | null;
   orderThreshold: string | null;
+  orderThresholdPercent: number;
+  orderTriggerCases: number;
+  usesDefaultThreshold: boolean;
   itemNumber: string | null;
   currentStock: string;
   casesNeeded: number;
@@ -401,14 +404,15 @@ export default function OrderingDashboard() {
                         </button>
                       )}
                     </div>
-                    {item.orderThreshold && (
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-muted-foreground">Order at:</span>
-                        <span className="font-semibold text-foreground">
-                          ≤{parseFloat(item.orderThreshold).toFixed(0)} cs
-                        </span>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-muted-foreground">Order at:</span>
+                      <span className="font-semibold text-foreground">
+                        ≤{item.orderTriggerCases.toFixed(2)} cs
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        ({item.orderThresholdPercent}% of par{item.usesDefaultThreshold ? " · default" : " · custom"})
+                      </span>
+                    </div>
                     {price > 0 && (
                       <div className="ml-auto flex items-center gap-1.5">
                         <span className="text-muted-foreground">Est.:</span>
@@ -426,20 +430,16 @@ export default function OrderingDashboard() {
                           width: `${Math.min(100, (parseFloat(item.currentStock) / Math.max(0.01, parseFloat(item.parLevel ?? "1"))) * 100)}%`,
                         }}
                       />
-                      {item.orderThreshold && (
-                        <div
-                          className="absolute top-0 h-full w-0.5 bg-foreground/40"
-                          style={{
-                            left: `${Math.min(100, (parseFloat(item.orderThreshold) / Math.max(0.01, parseFloat(item.parLevel ?? "1"))) * 100)}%`,
-                          }}
-                        />
-                      )}
+                      <div
+                        className="absolute top-0 h-full w-0.5 bg-foreground/40"
+                        style={{
+                          left: `${Math.min(100, (item.orderTriggerCases / Math.max(0.01, parseFloat(item.parLevel ?? "1"))) * 100)}%`,
+                        }}
+                      />
                     </div>
                     <div className="flex justify-between text-xs text-muted-foreground mt-1">
                       <span>0</span>
-                      {item.orderThreshold && (
-                        <span className="text-muted-foreground">≤{parseFloat(item.orderThreshold).toFixed(0)}</span>
-                      )}
+                      <span className="text-muted-foreground">≤{item.orderTriggerCases.toFixed(2)}</span>
                       <span>Par {Math.round(parseFloat(item.parLevel ?? "0"))}</span>
                     </div>
                   </div>

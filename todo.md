@@ -545,3 +545,9 @@
 - [x] Audit all active items with a positive par level for incorrect order-trigger exclusions
 - [x] Add an application-level safeguard and regression coverage for count-only low-stock items
 - [x] Use only completed count sessions when deriving every order-dashboard stock level
+
+## Round 68 — Order Trigger Label Consistency
+- [x] Show a clear order trigger on every Order Dashboard item, including items using the default 50% of par
+- [x] Distinguish default 50% triggers from custom threshold overrides in the order data and interface
+- [x] Add regression coverage for default and custom order-trigger labels
+- [x] Return calculated trigger cases and trigger percentage from the order backend instead of exposing raw threshold storage values

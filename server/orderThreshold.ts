@@ -9,3 +9,12 @@ export function normalizeOrderThresholdPercent(value: string | null | undefined)
   if (parsed > 0 && parsed <= 1) return parsed * 100;
   return Math.min(100, parsed);
 }
+
+export function getOrderTrigger(parLevel: number, storedThreshold: string | null | undefined) {
+  const orderThresholdPercent = normalizeOrderThresholdPercent(storedThreshold);
+  return {
+    orderThresholdPercent,
+    orderTriggerCases: parLevel * (orderThresholdPercent / 100),
+    usesDefaultThreshold: !storedThreshold || parseFloat(storedThreshold) <= 0,
+  };
+}

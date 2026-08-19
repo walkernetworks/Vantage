@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeOrderThresholdPercent } from "./orderThreshold";
+import { getOrderTrigger, normalizeOrderThresholdPercent } from "./orderThreshold";
 
 describe("normalizeOrderThresholdPercent", () => {
   it("treats legacy fractional 0.50 values as 50% of par", () => {
@@ -16,5 +16,18 @@ describe("normalizeOrderThresholdPercent", () => {
     const parCases = 1;
     const triggerCases = parCases * normalizeOrderThresholdPercent("0.50") / 100;
     expect(currentCases).toBeLessThanOrEqual(triggerCases);
+  });
+
+  it("returns a visible trigger for both default and custom threshold settings", () => {
+    expect(getOrderTrigger(4, null)).toEqual({
+      orderThresholdPercent: 50,
+      orderTriggerCases: 2,
+      usesDefaultThreshold: true,
+    });
+    expect(getOrderTrigger(8, "70")).toEqual({
+      orderThresholdPercent: 70,
+      orderTriggerCases: 5.6,
+      usesDefaultThreshold: false,
+    });
   });
 });

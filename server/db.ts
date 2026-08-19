@@ -21,7 +21,7 @@ import {
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { invokeLLM } from "./_core/llm";
-import { normalizeOrderThresholdPercent } from "./orderThreshold";
+import { getOrderTrigger, normalizeOrderThresholdPercent } from "./orderThreshold";
 
 // ─── Pack Size Parsing ────────────────────────────────────────────────────────
 // Parses "6/24oz", "12/2 LB", "1/50 LB", "4/1 GA" etc. and returns the case qty
@@ -600,12 +600,17 @@ export async function getBelowParItems(vendor?: string) {
     // No count session yet — show all items with par > 0 as needing a full order
     const orderItems = allItems
       .filter((item) => parseFloat(item.parLevel ?? "0") > 0)
-      .map((item) => ({
-        ...item,
-        currentStock: "0",
-        casesNeeded: Math.ceil(parseFloat(item.parLevel ?? "0")),
-        needsOrder: true,
-      }));
+      .map((item) => {
+        const parLevel = parseFloat(item.parLevel ?? "0");
+        const trigger = getOrderTrigger(parLevel, item.orderThreshold);
+        return {
+          ...item,
+          currentStock: "0",
+          casesNeeded: Math.ceil(parLevel),
+          needsOrder: true,
+          ...trigger,
+        };
+      });
     return { session: null, items: orderItems };
   }
   const itemIds = allItems.map((i) => i.id);
@@ -629,8 +634,9 @@ export async function getBelowParItems(vendor?: string) {
       const currentStock = isEachMode && caseQty ? rawQty / caseQty : rawQty;
       const parLevel = parseFloat(item.parLevel ?? "0");
       // orderThreshold is stored as a percentage (0–100); legacy 0.50 means 50%.
-      const thresholdPct = normalizeOrderThresholdPercent(item.orderThreshold);
-      const triggerLevel = parLevel * (thresholdPct / 100);
+      const trigger = getOrderTrigger(parLevel, item.orderThreshold);
+      const thresholdPct = trigger.orderThresholdPercent;
+      const triggerLevel = trigger.orderTriggerCases;
       const casesNeededRaw = Math.max(0, parLevel - currentStock);
       const casesNeeded = Math.ceil(casesNeededRaw);
       // Debug: log raw values for 500CC10
@@ -647,7 +653,7 @@ export async function getBelowParItems(vendor?: string) {
       } else {
         needsOrder = parLevel > 0 && currentStock <= triggerLevel;
       }
-      return { ...item, currentStock: String(currentStock), casesNeeded, needsOrder };
+      return { ...item, currentStock: String(currentStock), casesNeeded, needsOrder, ...trigger };
     })
     .filter((item) => item.needsOrder);
   return { session: latestSession, items: orderItems };
