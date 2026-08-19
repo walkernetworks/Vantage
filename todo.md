@@ -532,3 +532,10 @@
 - [x] Add regression coverage for the demonstrated failure
 - [x] Verify that the live Render service is running the latest GitHub main deployment before altering parser code again
 - [x] Require candidate invoice-level controls to satisfy subtotal plus tax equals total before selecting that page
+
+## Round 66 — Missing Counted Dashboard Item
+- [x] Trace the Aug. 15 Peach Mango Concentrate count entry through the production dashboard calculation
+- [x] Ensure items counted at a positive quantity remain in estimated stock when no later invoice receipt exists
+- [x] Add regression coverage for count-only dashboard inventory items
+- [x] Present count-only items using their selected count unit so one each is not hidden as 0.1667 cases
+- [x] Normalize legacy `0.50` order thresholds as 50% of par so low stock items correctly appear on the order dashboard

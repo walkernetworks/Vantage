@@ -21,6 +21,7 @@ import {
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { invokeLLM } from "./_core/llm";
+import { normalizeOrderThresholdPercent } from "./orderThreshold";
 
 // ─── Pack Size Parsing ────────────────────────────────────────────────────────
 // Parses "6/24oz", "12/2 LB", "1/50 LB", "4/1 GA" etc. and returns the case qty
@@ -626,8 +627,8 @@ export async function getBelowParItems(vendor?: string) {
       // Convert eaches to cases when caseQty is known; otherwise keep as-is
       const currentStock = isEachMode && caseQty ? rawQty / caseQty : rawQty;
       const parLevel = parseFloat(item.parLevel ?? "0");
-      // orderThreshold is stored as a percentage (0–100); default is 50%
-      const thresholdPct = item.orderThreshold ? parseFloat(item.orderThreshold) : 50;
+      // orderThreshold is stored as a percentage (0–100); legacy 0.50 means 50%.
+      const thresholdPct = normalizeOrderThresholdPercent(item.orderThreshold);
       const triggerLevel = parLevel * (thresholdPct / 100);
       const casesNeededRaw = Math.max(0, parLevel - currentStock);
       const casesNeeded = Math.ceil(casesNeededRaw);
@@ -1829,7 +1830,7 @@ export async function getCurrentStockLevels() {
     const rows = (result[0] as unknown as StockRow[]) ?? [];
     return rows.map((r) => {
       const parLevel = parseFloat(r.parLevel ?? "0");
-      const threshold = parseFloat(r.orderThreshold ?? "50");
+      const threshold = normalizeOrderThresholdPercent(r.orderThreshold);
       const currentStock = parseFloat(r.currentStockCases ?? "0");
       const triggerLevel = parLevel * (threshold / 100);
       const stockPct = parLevel > 0 ? Math.round((currentStock / parLevel) * 100) : null;
