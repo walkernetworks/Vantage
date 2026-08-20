@@ -293,14 +293,16 @@ export function validateAndNormalizePfgInvoice(
   const subtotalGap = summary.subtotal === null ? null : roundMoney(summary.subtotal - extensionSum);
   const shippedGap = summary.shippedCount === null ? null : summary.shippedCount - shippedSum;
   // Repair only when both independent document controls identify exactly one
-  // price-equals-extension row whose missing quantity explains both gaps.
-  if (subtotalGap !== null && shippedGap !== null && shippedGap > 0) {
+  // row whose quantity error explains both gaps. This supports an omitted
+  // quantity and an overstated quantity without trusting a document-level
+  // total by itself.
+  if (subtotalGap !== null && shippedGap !== null && shippedGap !== 0) {
     const quantityCandidates = lines.filter((line) => {
       if (line.unitPrice === null || line.extension === null || line.shippedQty === null) return false;
       const proposedQty = line.shippedQty + shippedGap;
+      if (proposedQty < 0) return false;
       const proposedExtension = roundMoney(line.unitPrice * proposedQty);
-      return Math.abs(line.unitPrice - line.extension) <= MONEY_TOLERANCE
-        && Math.abs(roundMoney(proposedExtension - line.extension) - subtotalGap) <= MONEY_TOLERANCE;
+      return Math.abs(roundMoney(proposedExtension - line.extension) - subtotalGap) <= MONEY_TOLERANCE;
     });
     if (quantityCandidates.length === 1) {
       const candidate = quantityCandidates[0];
@@ -309,7 +311,7 @@ export function validateAndNormalizePfgInvoice(
       candidate.extension = roundMoney((candidate.unitPrice as number) * candidate.shippedQty);
       corrections.push(`Item ${candidate.itemNumber ?? "unknown"}: shipped quantity ${oldQuantity} corrected to ${candidate.shippedQty} from document subtotal and ship-count controls.`);
     } else if (quantityCandidates.length > 1) {
-      errors.push(`Document totals indicate ${shippedGap} missing shipped unit(s), but multiple price-equals-extension rows are possible: ${quantityCandidates.map((line) => line.itemNumber).join(", ")}.`);
+      errors.push(`Document totals indicate a ${shippedGap} shipped-unit discrepancy, but multiple row corrections are possible: ${quantityCandidates.map((line) => line.itemNumber).join(", ")}.`);
     }
   }
 

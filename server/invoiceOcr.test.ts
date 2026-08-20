@@ -22,6 +22,14 @@ const invoice6076192Summary: InvoiceSummary = {
   sectionTotals: {},
 };
 
+const invoice6084988Summary: InvoiceSummary = {
+  subtotal: 4934.03,
+  tax: 21.04,
+  total: 4955.07,
+  shippedCount: 91,
+  sectionTotals: {},
+};
+
 function line(itemNumber: string, shippedQty: number, unitPrice: number, extension = unitPrice * shippedQty): InvoiceLineDraft {
   return {
     itemNumber,
@@ -80,6 +88,21 @@ describe("PFG invoice 6076192 regression", () => {
     expect(result.lines.find((item) => item.itemNumber === "981346")?.shippedQty).toBe(2);
     expect(result.lines.find((item) => item.itemNumber === "981346")?.extension).toBe(137.7);
     expect(result.corrections.join(" ")).toContain("shipped quantity 1 corrected to 2");
+  });
+
+  it("corrects the uniquely provable two-unit overstatement from invoice 6084988", () => {
+    const lines = [
+      line("615388", 90, 54.3595555556, 4892.36),
+      line("1031689", 3, 41.67, 125.01),
+    ];
+    const result = validateAndNormalizePfgInvoice(lines, invoice6084988Summary, 2);
+
+    expect(result.errors).toEqual([]);
+    expect(result.lines.find((item) => item.itemNumber === "1031689")?.shippedQty).toBe(1);
+    expect(result.lines.find((item) => item.itemNumber === "1031689")?.extension).toBe(41.67);
+    expect(result.lines.reduce((sum, item) => sum + (item.shippedQty ?? 0), 0)).toBe(91);
+    expect(result.lines.reduce((sum, item) => sum + (item.extension ?? 0), 0)).toBeCloseTo(4934.03, 2);
+    expect(findSingleDigitItemNumberCandidates("1031689", ["1035689"])).toEqual(["1035689"]);
   });
 
   it("rejects the legacy drift pattern instead of returning 38 shifted rows", () => {

@@ -551,3 +551,10 @@
 - [x] Distinguish default 50% triggers from custom threshold overrides in the order data and interface
 - [x] Add regression coverage for default and custom order-trigger labels
 - [x] Return calculated trigger cases and trigger percentage from the order backend instead of exposing raw threshold storage values
+
+## Round 69 — PFG Invoice 6084988 Failure
+- [x] Extract the exact invoice 6084988 failure from the supplied production error capture
+- [x] Correct the proven multi-page PFG parsing or validation failure
+- [x] Add regression coverage for invoice 6084988 controls: $4,934.03 subtotal, $21.04 tax, $4,955.07 total, and 91 shipped
+- [x] Correct the $83.34 / two-unit row discrepancy and surface a blocked single-digit vendor catalog key instead of passing it through
+- [x] Preserve printed extensions while document controls determine whether a quantity is overstated or an extension is incorrect
