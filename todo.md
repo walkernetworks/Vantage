@@ -558,3 +558,10 @@
 - [x] Add regression coverage for invoice 6084988 controls: $4,934.03 subtotal, $21.04 tax, $4,955.07 total, and 91 shipped
 - [x] Correct the $83.34 / two-unit row discrepancy and surface a blocked single-digit vendor catalog key instead of passing it through
 - [x] Preserve printed extensions while document controls determine whether a quantity is overstated or an extension is incorrect
+
+## Round 70 — Latest Live Invoice Error Capture
+- [x] Extract the exact validation or upload error from the newest supplied production capture
+- [x] Trace that exact error to the deployed parsing implementation before changing behavior
+- [x] Add regression coverage only for the proven failure path
+- [x] Identify why the document-control quantity-correction branch receives no unique candidate for invoice 6084988
+- [x] Derive a candidate unit extension from the printed row extension and quantity when the OCR unit-price field prevents a document-control correction

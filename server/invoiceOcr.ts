@@ -266,6 +266,13 @@ export function validateAndNormalizePfgInvoice(
   const errors: string[] = [];
   const corrections: string[] = [];
   const lines = inputLines.map((line) => ({ ...line }));
+  // Preserve the printed extension extracted from each physical table row.
+  // A shifted unit-price field can trigger a temporary line-level correction;
+  // document controls must still be able to compare against what the invoice
+  // actually printed when deciding whether quantity is overstated.
+  const printedExtensions = new Map<InvoiceLineDraft, number | null>(
+    lines.map((line) => [line, line.extension])
+  );
   if (sourceItemRowCount === null) errors.push("Could not verify the physical PFG item-row count from table geometry.");
   if (sourceItemRowCount !== null && sourceItemRowCount !== lines.length) {
     errors.push(`Row count mismatch: table has ${sourceItemRowCount} item rows but extraction produced ${lines.length}.`);
@@ -288,30 +295,49 @@ export function validateAndNormalizePfgInvoice(
     if (line.extension === null) errors.push(`Item ${line.itemNumber ?? "unknown"} has no verifiable extension.`);
   }
 
-  const extensionSum = roundMoney(lines.reduce((sum, line) => sum + (line.extension ?? 0), 0));
+  const normalizedExtensionSum = roundMoney(lines.reduce((sum, line) => sum + (line.extension ?? 0), 0));
+  const printedExtensionSum = roundMoney(lines.reduce((sum, line) => sum + (printedExtensions.get(line) ?? line.extension ?? 0), 0));
   const shippedSum = lines.reduce((sum, line) => sum + (line.shippedQty ?? 0), 0);
-  const subtotalGap = summary.subtotal === null ? null : roundMoney(summary.subtotal - extensionSum);
+  const normalizedSubtotalGap = summary.subtotal === null ? null : roundMoney(summary.subtotal - normalizedExtensionSum);
+  const printedSubtotalGap = summary.subtotal === null ? null : roundMoney(summary.subtotal - printedExtensionSum);
   const shippedGap = summary.shippedCount === null ? null : summary.shippedCount - shippedSum;
   // Repair only when both independent document controls identify exactly one
   // row whose quantity error explains both gaps. This supports an omitted
   // quantity and an overstated quantity without trusting a document-level
   // total by itself.
-  if (subtotalGap !== null && shippedGap !== null && shippedGap !== 0) {
-    const quantityCandidates = lines.filter((line) => {
-      if (line.unitPrice === null || line.extension === null || line.shippedQty === null) return false;
-      const proposedQty = line.shippedQty + shippedGap;
-      if (proposedQty < 0) return false;
-      const proposedExtension = roundMoney(line.unitPrice * proposedQty);
-      return Math.abs(roundMoney(proposedExtension - line.extension) - subtotalGap) <= MONEY_TOLERANCE;
-    });
-    if (quantityCandidates.length === 1) {
-      const candidate = quantityCandidates[0];
+  if (shippedGap !== null && shippedGap !== 0) {
+    const quantityCandidates = new Map<InvoiceLineDraft, number>();
+    const passes = [
+      { subtotalGap: normalizedSubtotalGap, getExtension: (line: InvoiceLineDraft) => line.extension },
+      { subtotalGap: printedSubtotalGap, getExtension: (line: InvoiceLineDraft) => printedExtensions.get(line) ?? line.extension },
+    ];
+    for (const pass of passes) {
+      if (pass.subtotalGap === null) continue;
+      for (const line of lines) {
+        const baselineExtension = pass.getExtension(line);
+        if (baselineExtension === null || line.shippedQty === null || line.shippedQty <= 0) continue;
+        const proposedQty = line.shippedQty + shippedGap;
+        if (proposedQty < 1) continue;
+        // The selected baseline is either an already-normalized extension or
+        // the physical printed extension, so the same document controls can
+        // resolve an incorrect price cell independently of a quantity error.
+        const impliedUnitValue = baselineExtension / line.shippedQty;
+        const proposedExtension = roundMoney(impliedUnitValue * proposedQty);
+        if (Math.abs(roundMoney(proposedExtension - baselineExtension) - pass.subtotalGap) <= MONEY_TOLERANCE) {
+          quantityCandidates.set(line, baselineExtension);
+        }
+      }
+    }
+    if (quantityCandidates.size === 1) {
+      const [candidate, baselineExtension] = Array.from(quantityCandidates.entries())[0];
       const oldQuantity = candidate.shippedQty as number;
+      const impliedUnitValue = baselineExtension / oldQuantity;
       candidate.shippedQty = oldQuantity + shippedGap;
-      candidate.extension = roundMoney((candidate.unitPrice as number) * candidate.shippedQty);
+      candidate.unitPrice = roundMoney(impliedUnitValue);
+      candidate.extension = roundMoney(impliedUnitValue * candidate.shippedQty);
       corrections.push(`Item ${candidate.itemNumber ?? "unknown"}: shipped quantity ${oldQuantity} corrected to ${candidate.shippedQty} from document subtotal and ship-count controls.`);
-    } else if (quantityCandidates.length > 1) {
-      errors.push(`Document totals indicate a ${shippedGap} shipped-unit discrepancy, but multiple row corrections are possible: ${quantityCandidates.map((line) => line.itemNumber).join(", ")}.`);
+    } else if (quantityCandidates.size > 1) {
+      errors.push(`Document totals indicate a ${shippedGap} shipped-unit discrepancy, but multiple row corrections are possible: ${Array.from(quantityCandidates.keys()).map((line) => line.itemNumber).join(", ")}.`);
     }
   }
 

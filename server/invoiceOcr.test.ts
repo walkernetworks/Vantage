@@ -93,12 +93,15 @@ describe("PFG invoice 6076192 regression", () => {
   it("corrects the uniquely provable two-unit overstatement from invoice 6084988", () => {
     const lines = [
       line("615388", 90, 54.3595555556, 4892.36),
-      line("1031689", 3, 41.67, 125.01),
+      // The price OCR field is deliberately wrong. The correction must use
+      // the printed extension ÷ extracted quantity, not trust this value.
+      line("1031689", 3, 13.89, 125.01),
     ];
     const result = validateAndNormalizePfgInvoice(lines, invoice6084988Summary, 2);
 
     expect(result.errors).toEqual([]);
     expect(result.lines.find((item) => item.itemNumber === "1031689")?.shippedQty).toBe(1);
+    expect(result.lines.find((item) => item.itemNumber === "1031689")?.unitPrice).toBe(41.67);
     expect(result.lines.find((item) => item.itemNumber === "1031689")?.extension).toBe(41.67);
     expect(result.lines.reduce((sum, item) => sum + (item.shippedQty ?? 0), 0)).toBe(91);
     expect(result.lines.reduce((sum, item) => sum + (item.extension ?? 0), 0)).toBeCloseTo(4934.03, 2);
