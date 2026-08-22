@@ -583,3 +583,15 @@
 - [x] Recover missing shipped quantities only when the row and document controls establish a unique value
 - [x] Improve review diagnostics for rows that still require manual correction
 - [x] Add regression coverage for missing PFG shipped quantities and subtotal/ship-count reconciliation
+
+## Round 74 — Final Zero-Shipped PFG Review Row
+- [x] Confirm item 1035686 as zero shipped from its printed zero extension
+- [x] Preserve locked review status for unresolved subtotal and catalog-key discrepancies
+- [x] Add regression coverage for deferred zero-shipped quantity confirmation
+- [x] Identify the one-unit overage among recovered nonzero rows before inferring any zero-shipped row
+
+## Round 75 — Accurate Held-Draft Diagnostics
+- [x] Remove stale missing-quantity messages after a value is successfully recovered
+- [x] Keep unresolved subtotal, ship-count, and catalog-key discrepancies visible in locked review drafts
+- [x] Localize unresolved discrepancy candidates without guessing an inventory-affecting correction
+- [x] Add regression coverage for held-draft diagnostic accuracy

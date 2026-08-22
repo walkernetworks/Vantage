@@ -296,17 +296,14 @@ export function validateAndNormalizePfgInvoice(
     }
   }
 
-  // If the nonzero rows now exactly satisfy the printed ship count, any remaining
-  // missing shipped fields with a zero extension are proven to be not shipped.
-  if (summary.shippedCount !== null) {
-    const knownShippedSum = lines.reduce((sum, line) => sum + (line.shippedQty ?? 0), 0);
-    if (Math.abs(knownShippedSum - summary.shippedCount) <= 0.001) {
-      for (const line of lines) {
-        if (line.shippedQty === null && line.extension !== null && Math.abs(line.extension) <= MONEY_TOLERANCE) {
-          line.shippedQty = 0;
-          corrections.push(`Item ${line.itemNumber ?? "unknown"}: zero shipped quantity confirmed from zero extension and the document ship count.`);
-        }
-      }
+  // A physically printed $0.00 extension proves the item was not shipped even
+  // when another row still leaves the document ship count unresolved. Record the
+  // zero now; the later document-level validation remains responsible for any
+  // remaining quantity or subtotal discrepancy.
+  for (const line of lines) {
+    if (line.shippedQty === null && line.extension !== null && Math.abs(line.extension) <= MONEY_TOLERANCE) {
+      line.shippedQty = 0;
+      corrections.push(`Item ${line.itemNumber ?? "unknown"}: zero shipped quantity confirmed from its printed zero extension.`);
     }
   }
 

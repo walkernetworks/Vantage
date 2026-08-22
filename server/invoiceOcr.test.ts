@@ -97,7 +97,7 @@ describe("PFG invoice 6076192 regression", () => {
     expect(result.corrections.join(" ")).toContain("shipped quantity 1 corrected to 2");
   });
 
-  it("recovers missing shipped fields from printed extensions and confirms zero-shipped rows from the document total", () => {
+  it("recovers zero-extension rows without hiding an independent document ship-count discrepancy", () => {
     const lines: InvoiceLineDraft[] = [
       line("615388", 87, 10, 870),
       { ...line("1034474", 0, 19.54, 58.61), shippedQty: null },
@@ -109,16 +109,17 @@ describe("PFG invoice 6076192 regression", () => {
       subtotal: 1025.95,
       tax: 0,
       total: 1025.95,
-      shippedCount: 92,
+      shippedCount: 91,
       sectionTotals: {},
     }, 5);
 
-    expect(result.errors).toEqual([]);
     expect(result.lines.find((item) => item.itemNumber === "1034474")?.shippedQty).toBe(3);
     expect(result.lines.find((item) => item.itemNumber === "1035686")?.shippedQty).toBe(0);
     expect(result.lines.reduce((sum, item) => sum + (item.shippedQty ?? 0), 0)).toBe(92);
     expect(result.corrections.join(" ")).toContain("1034474: shipped quantity 3 recovered");
-    expect(result.corrections.join(" ")).toContain("1035686: zero shipped quantity confirmed");
+    expect(result.corrections.join(" ")).toContain("1035686: zero shipped quantity confirmed from its printed zero extension");
+    expect(result.errors.join(" ")).toContain("Shipped quantity sum 92 does not match printed ship count 91");
+    expect(result.errors.join(" ")).not.toContain("1035686 has no shipped quantity");
   });
 
   it("corrects the uniquely provable two-unit overstatement from invoice 6084988", () => {
