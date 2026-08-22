@@ -97,6 +97,30 @@ describe("PFG invoice 6076192 regression", () => {
     expect(result.corrections.join(" ")).toContain("shipped quantity 1 corrected to 2");
   });
 
+  it("recovers missing shipped fields from printed extensions and confirms zero-shipped rows from the document total", () => {
+    const lines: InvoiceLineDraft[] = [
+      line("615388", 87, 10, 870),
+      { ...line("1034474", 0, 19.54, 58.61), shippedQty: null },
+      { ...line("1035686", 0, 48.67, 0), shippedQty: null },
+      { ...line("1035689", 0, 48.67, 48.67), shippedQty: null },
+      { ...line("1037514", 0, 48.67, 48.67), shippedQty: null },
+    ];
+    const result = validateAndNormalizePfgInvoice(lines, {
+      subtotal: 1025.95,
+      tax: 0,
+      total: 1025.95,
+      shippedCount: 92,
+      sectionTotals: {},
+    }, 5);
+
+    expect(result.errors).toEqual([]);
+    expect(result.lines.find((item) => item.itemNumber === "1034474")?.shippedQty).toBe(3);
+    expect(result.lines.find((item) => item.itemNumber === "1035686")?.shippedQty).toBe(0);
+    expect(result.lines.reduce((sum, item) => sum + (item.shippedQty ?? 0), 0)).toBe(92);
+    expect(result.corrections.join(" ")).toContain("1034474: shipped quantity 3 recovered");
+    expect(result.corrections.join(" ")).toContain("1035686: zero shipped quantity confirmed");
+  });
+
   it("corrects the uniquely provable two-unit overstatement from invoice 6084988", () => {
     const lines = [
       line("615388", 90, 54.3595555556, 4892.36),

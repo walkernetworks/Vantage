@@ -283,6 +283,33 @@ export function validateAndNormalizePfgInvoice(
     errors.push(`Row count mismatch: table has ${sourceItemRowCount} item rows but extraction produced ${lines.length}.`);
   }
 
+  // When the table geometry retains a same-row price and extension but loses the
+  // shipped cell, the extension ÷ price ratio is a safe recovery only when it is
+  // effectively a positive whole quantity. This preserves the printed extension.
+  for (const line of lines) {
+    if (line.shippedQty !== null || line.unitPrice === null || line.unitPrice <= 0 || line.extension === null || line.extension <= 0) continue;
+    const inferredQuantity = line.extension / line.unitPrice;
+    const roundedQuantity = Math.round(inferredQuantity);
+    if (roundedQuantity > 0 && Math.abs(inferredQuantity - roundedQuantity) <= 0.01) {
+      line.shippedQty = roundedQuantity;
+      corrections.push(`Item ${line.itemNumber ?? "unknown"}: shipped quantity ${roundedQuantity} recovered from printed extension ÷ unit price.`);
+    }
+  }
+
+  // If the nonzero rows now exactly satisfy the printed ship count, any remaining
+  // missing shipped fields with a zero extension are proven to be not shipped.
+  if (summary.shippedCount !== null) {
+    const knownShippedSum = lines.reduce((sum, line) => sum + (line.shippedQty ?? 0), 0);
+    if (Math.abs(knownShippedSum - summary.shippedCount) <= 0.001) {
+      for (const line of lines) {
+        if (line.shippedQty === null && line.extension !== null && Math.abs(line.extension) <= MONEY_TOLERANCE) {
+          line.shippedQty = 0;
+          corrections.push(`Item ${line.itemNumber ?? "unknown"}: zero shipped quantity confirmed from zero extension and the document ship count.`);
+        }
+      }
+    }
+  }
+
   for (const line of lines) {
     if (!line.itemNumber || !ITEM_NUMBER.test(line.itemNumber)) errors.push("A row is missing a valid item number.");
     if (!line.description) errors.push(`Item ${line.itemNumber ?? "unknown"} has no same-row description.`);

@@ -577,3 +577,9 @@
 - [x] Flag material decreases, including a 24-to-2 example, before count completion
 - [x] Require explicit confirmation to complete a count containing flagged decreases
 - [x] Add count-anomaly detection and confirmation regression coverage
+
+## Round 73 — PFG Review-Draft Quantity Recovery
+- [x] Inspect the held invoice rows for items 1034474, 1035686, 1035689, and 1037514
+- [x] Recover missing shipped quantities only when the row and document controls establish a unique value
+- [x] Improve review diagnostics for rows that still require manual correction
+- [x] Add regression coverage for missing PFG shipped quantities and subtotal/ship-count reconciliation
