@@ -37,6 +37,7 @@ import {
   getCateringRecipe,
   getCategories,
   getCountEntries,
+  getCountSessionAnomalies,
   getCountSession,
   getItemById,
   getPriceHistory,
@@ -606,6 +607,10 @@ const countsRouter = router({
     .input(z.object({ id: z.number() }))
     .query(({ input }) => getSessionWithEntries(input.id)),
 
+  getAnomalies: protectedProcedure
+    .input(z.object({ sessionId: z.number() }))
+    .query(({ input }) => getCountSessionAnomalies(input.sessionId)),
+
   createSession: protectedProcedure
     .input(z.object({ name: z.string().optional(), notes: z.string().optional() }))
     .mutation(({ input, ctx }) =>
@@ -627,8 +632,19 @@ const countsRouter = router({
     ),
 
   completeSession: protectedProcedure
-    .input(z.object({ id: z.number() }))
-    .mutation(({ input }) => completeCountSession(input.id)),
+    .input(z.object({ id: z.number(), confirmedAnomalyItemIds: z.array(z.number()).default([]) }))
+    .mutation(async ({ input }) => {
+      const anomalies = await getCountSessionAnomalies(input.id);
+      const confirmed = new Set(input.confirmedAnomalyItemIds);
+      const unresolved = anomalies.filter((anomaly) => !confirmed.has(anomaly.itemId));
+      if (unresolved.length > 0) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `${unresolved.length} significant count decrease${unresolved.length === 1 ? " requires" : "s require"} confirmation before completing.`,
+        });
+      }
+      return completeCountSession(input.id);
+    }),
   reopenSession: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(({ input }) => reopenCountSession(input.id)),

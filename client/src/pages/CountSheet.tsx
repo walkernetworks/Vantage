@@ -114,12 +114,17 @@ export default function CountSheet() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showFillAll, setShowFillAll] = useState(false);
   const [fillAllValue, setFillAllValue] = useState("");
+  const [showAnomalyConfirm, setShowAnomalyConfirm] = useState(false);
 
   const { data: sessions = [], refetch: refetchSessions } = trpc.counts.listSessions.useQuery();
   const { data: allItems = [] } = trpc.items.list.useQuery(undefined);
   const { data: sessionData, refetch: refetchSession } = trpc.counts.getSessionWithEntries.useQuery(
     { id: activeSessionId! },
     { enabled: activeSessionId !== null }
+  );
+  const { data: countAnomalies = [], isLoading: anomaliesLoading } = trpc.counts.getAnomalies.useQuery(
+    { sessionId: activeSessionId! },
+    { enabled: activeSessionId !== null && sessionData?.session?.completedAt == null }
   );
 
   const createSessionMutation = trpc.counts.createSession.useMutation({
@@ -138,6 +143,7 @@ export default function CountSheet() {
       setSaving((prev) => ({ ...prev, [vars.itemId]: false }));
       setSaveError((prev) => ({ ...prev, [vars.itemId]: false }));
       utils.counts.getSessionWithEntries.invalidate({ id: activeSessionId! });
+      utils.counts.getAnomalies.invalidate({ sessionId: activeSessionId! });
       // Collapse happens on scroll-out (IntersectionObserver), not here
     },
     onError: (e, vars) => {
@@ -164,6 +170,22 @@ export default function CountSheet() {
     },
     onError: (e) => toast.error(e.message),
   });
+
+  function requestCompletion() {
+    if (countAnomalies.length > 0) {
+      setShowAnomalyConfirm(true);
+      return;
+    }
+    completeMutation.mutate({ id: activeSessionId!, confirmedAnomalyItemIds: [] });
+  }
+
+  function confirmAnomaliesAndComplete() {
+    setShowAnomalyConfirm(false);
+    completeMutation.mutate({
+      id: activeSessionId!,
+      confirmedAnomalyItemIds: countAnomalies.map((anomaly) => anomaly.itemId),
+    });
+  }
 
   const setCountModeMutation = trpc.items.setCountMode.useMutation({
     onSuccess: () => { utils.items.list.invalidate(); },
@@ -732,13 +754,13 @@ export default function CountSheet() {
             </button>
             {!isCompleted ? (
               <button
-                onClick={() => completeMutation.mutate({ id: activeSessionId })}
-                disabled={completeMutation.isPending || Object.values(saving).some(Boolean)}
-                title={Object.values(saving).some(Boolean) ? "Waiting for saves to finish…" : undefined}
+                onClick={requestCompletion}
+                disabled={completeMutation.isPending || anomaliesLoading || Object.values(saving).some(Boolean)}
+                title={Object.values(saving).some(Boolean) ? "Waiting for saves to finish…" : anomaliesLoading ? "Checking count changes…" : undefined}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-accent text-accent-foreground text-sm font-semibold hover:opacity-90 transition-colors active:scale-95 disabled:opacity-60"
               >
                 <CheckCircle size={15} />
-                {completeMutation.isPending ? "Completing…" : Object.values(saving).some(Boolean) ? "Saving…" : "Complete"}
+                {completeMutation.isPending ? "Completing…" : Object.values(saving).some(Boolean) ? "Saving…" : anomaliesLoading ? "Checking…" : "Complete"}
               </button>
             ) : (
               <button
@@ -793,6 +815,35 @@ export default function CountSheet() {
           )}
         </div>
       )}
+
+      <AlertDialog open={showAnomalyConfirm} onOpenChange={setShowAnomalyConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm significant count decreases</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm">
+                <p>These items are at least 50% lower than the most recent completed count. Please confirm they are correct before completing this count.</p>
+                <div className="max-h-56 overflow-y-auto rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
+                  {countAnomalies.map((anomaly) => (
+                    <div key={anomaly.itemId} className="flex items-center justify-between gap-3 py-1.5 border-b border-amber-200/70 last:border-0 dark:border-amber-800/70">
+                      <span className="font-medium text-foreground">{anomaly.itemName}</span>
+                      <span className="shrink-0 text-amber-800 dark:text-amber-200">
+                        {anomaly.previousQuantity} → {anomaly.currentQuantity} {anomaly.unitLabel} ({anomaly.decreasePercent}% lower)
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Go back and edit</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmAnomaliesAndComplete} className="bg-amber-600 hover:bg-amber-700 text-white">
+              Yes, complete this count
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Count Groups */}
       {activeSessionId && allItems.length > 0 && (

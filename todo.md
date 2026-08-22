@@ -571,3 +571,9 @@
 - [x] Trace the captured error through the deployed parser without changing unrelated behavior
 - [x] Add regression coverage only after proving the live failure condition
 - [x] Save failed OCR validations as locked review drafts so lines can be corrected without inventory being applied
+
+## Round 72 — Count-to-Count Anomaly Review
+- [x] Compare each current count entry with its value in the most recent completed count
+- [x] Flag material decreases, including a 24-to-2 example, before count completion
+- [x] Require explicit confirmation to complete a count containing flagged decreases
+- [x] Add count-anomaly detection and confirmation regression coverage

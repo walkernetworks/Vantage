@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, isNotNull, sql, aliasedTable } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, isNotNull, lt, sql, aliasedTable } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2";
 import {
@@ -22,6 +22,7 @@ import {
 import { ENV } from "./_core/env";
 import { invokeLLM } from "./_core/llm";
 import { getOrderTrigger, normalizeOrderThresholdPercent } from "./orderThreshold";
+import { detectCountAnomalies } from "./countAnomalies";
 
 // ─── Pack Size Parsing ────────────────────────────────────────────────────────
 // Parses "6/24oz", "12/2 LB", "1/50 LB", "4/1 GA" etc. and returns the case qty
@@ -502,6 +503,59 @@ export async function getCountEntries(sessionId: number) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(countEntries).where(eq(countEntries.sessionId, sessionId));
+}
+
+/** Compares an open count to the immediately preceding completed physical count. */
+export async function getCountSessionAnomalies(sessionId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const [session] = await db
+    .select({ id: countSessions.id, createdAt: countSessions.createdAt })
+    .from(countSessions)
+    .where(eq(countSessions.id, sessionId))
+    .limit(1);
+  if (!session) return [];
+
+  const [priorSession] = await db
+    .select({ id: countSessions.id })
+    .from(countSessions)
+    .where(and(isNotNull(countSessions.completedAt), lt(countSessions.createdAt, session.createdAt)))
+    .orderBy(desc(countSessions.createdAt))
+    .limit(1);
+  if (!priorSession) return [];
+
+  const [currentEntries, priorEntries] = await Promise.all([
+    db
+      .select({
+        itemId: countEntries.itemId,
+        quantity: countEntries.quantity,
+        itemName: items.name,
+        countMode: items.countMode,
+      })
+      .from(countEntries)
+      .innerJoin(items, eq(countEntries.itemId, items.id))
+      .where(eq(countEntries.sessionId, sessionId)),
+    db
+      .select({ itemId: countEntries.itemId, quantity: countEntries.quantity })
+      .from(countEntries)
+      .where(eq(countEntries.sessionId, priorSession.id)),
+  ]);
+
+  const priorQuantityByItem = new Map(
+    priorEntries.map((entry) => [entry.itemId, parseFloat(String(entry.quantity)) || 0])
+  );
+  return detectCountAnomalies(
+    currentEntries
+      .filter((entry) => priorQuantityByItem.has(entry.itemId))
+      .map((entry) => ({
+        itemId: entry.itemId,
+        itemName: entry.itemName,
+        previousQuantity: priorQuantityByItem.get(entry.itemId) ?? 0,
+        currentQuantity: parseFloat(String(entry.quantity)) || 0,
+        unitLabel: entry.countMode === "each" ? "each" : "cases",
+      }))
+  );
 }
 
 export async function upsertCountEntry(
