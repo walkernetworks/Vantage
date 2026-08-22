@@ -565,3 +565,9 @@
 - [x] Add regression coverage only for the proven failure path
 - [x] Identify why the document-control quantity-correction branch receives no unique candidate for invoice 6084988
 - [x] Derive a candidate unit extension from the printed row extension and quantity when the OCR unit-price field prevents a document-control correction
+
+## Round 71 — Recurring Live Invoice Rejection
+- [x] Extract the exact error from the newest supplied failed-upload capture
+- [x] Trace the captured error through the deployed parser without changing unrelated behavior
+- [x] Add regression coverage only after proving the live failure condition
+- [x] Save failed OCR validations as locked review drafts so lines can be corrected without inventory being applied

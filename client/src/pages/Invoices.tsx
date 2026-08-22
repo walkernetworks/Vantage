@@ -178,7 +178,12 @@ function UploadDialog({ open, onClose, onSuccess }: { open: boolean; onClose: ()
       // Upload images and parse with AI in a single step (no S3)
       const result = await uploadAndParseMutation.mutateAsync({ vendor, images });
       await utils.invoices.list.invalidate();
-      toast.success("Invoice uploaded and parsed successfully");
+      const reviewDraft = result as typeof result & { reviewRequired?: boolean; validationErrors?: string[] };
+      if (reviewDraft.reviewRequired) {
+        toast.warning("Invoice saved for review. OCR validation found issues; inventory has not been updated.");
+      } else {
+        toast.success("Invoice uploaded and parsed successfully");
+      }
       onSuccess(result.invoiceId);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Upload failed";
@@ -380,7 +385,9 @@ function ReviewDialog({
     updateLineMutation.mutate({ lineId, matchStatus: "unmatched" });
   };
 
-  const canApply = invoice?.status === "reviewed" || invoice?.status === "pending";
+  // A pending invoice is an OCR validation hold. It must be explicitly marked
+  // reviewed before inventory can be changed.
+  const canApply = invoice?.status === "reviewed";
 
   return (
     <>
@@ -405,6 +412,14 @@ function ReviewDialog({
           ) : (
             <div className="flex-1 overflow-y-auto min-h-0 px-6 py-4 space-y-4">
               {/* Summary bar */}
+              {invoice?.status === "pending" && invoice.notes?.includes("[OCR validation hold]") && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
+                  <p className="font-semibold">OCR validation hold — inventory is protected</p>
+                  <p className="mt-1 text-xs whitespace-pre-line">{invoice.notes.replace("[OCR validation hold]\n", "")}</p>
+                  <p className="mt-2 text-xs">Correct or skip the affected lines, then select <strong>Mark Reviewed</strong> before applying.</p>
+                </div>
+              )}
+
               <div className="grid grid-cols-3 gap-3">
                 <div className="bg-green-50 dark:bg-green-950/30 rounded-xl p-3 text-center">
                   <p className="text-2xl font-bold text-green-700 dark:text-green-400">{matchedLines.length}</p>

@@ -29,6 +29,7 @@ import {
   normalizeInvoiceSummaryPayload,
   parseNumericOcr,
   reconstructPfgRowsFromHtml,
+  shouldSaveValidationDraft,
   validateAndNormalizePfgInvoice,
   type InvoiceLineDraft,
   type InvoiceSummary,
@@ -566,6 +567,44 @@ export const invoicesRouter = router({
       }
       if (validation.errors.length > 0) {
         console.error(`[Invoice OCR] rejected unsafe PFG parse: ${validation.errors.join(" | ")}`);
+        // Preserve the parsed rows for manual correction rather than making a
+        // user re-upload the invoice. The new invoice remains pending, so
+        // stock cannot be applied until a reviewer explicitly marks it ready.
+        if (shouldSaveValidationDraft(validation.lines.length, validation.errors)) {
+          const holdNote = `[OCR validation hold]\n${validation.errors.join("\n")}`;
+          const invoice = await createInvoice({
+            vendor: input.vendor,
+            imageKeys: [],
+            createdBy: ctx.user.id,
+            notes: input.notes ? `${input.notes}\n\n${holdNote}` : holdNote,
+          });
+          const draftLines = validation.lines.map((line) => ({
+            itemNumber: line.itemNumber,
+            description: line.description,
+            pack: line.pack,
+            size: line.size,
+            orderedQty: line.orderedQty,
+            shippedQty: line.shippedQty ?? 0,
+            unitPrice: line.unitPrice,
+            extension: line.extension,
+            category: line.category,
+          }));
+          await saveInvoiceLines(invoice.id, draftLines, {
+            invoiceNumber: parsed.invoiceNumber ?? undefined,
+            invoiceDate: parsed.invoiceDate ?? undefined,
+            totalAmount: parsed.totalAmount ?? parsed.summary.total ?? undefined,
+          });
+          return {
+            invoiceId: invoice.id,
+            invoiceNumber: parsed.invoiceNumber,
+            invoiceDate: parsed.invoiceDate,
+            totalAmount: parsed.totalAmount,
+            lineCount: draftLines.length,
+            corrections: validation.corrections,
+            reviewRequired: true,
+            validationErrors: validation.errors,
+          };
+        }
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: `Invoice was not saved because OCR validation failed: ${validation.errors.slice(0, 3).join(" ")}`,
@@ -606,6 +645,8 @@ export const invoicesRouter = router({
         totalAmount: parsed.totalAmount,
         lineCount: normalizedLines.length,
         corrections: validation.corrections,
+        reviewRequired: false,
+        validationErrors: [],
       };
     }),
 

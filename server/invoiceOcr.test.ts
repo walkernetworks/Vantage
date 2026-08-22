@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  shouldSaveValidationDraft,
   estimateDeskewDegrees,
   cleanPfgDescription,
   findSingleDigitItemNumberCandidates,
@@ -62,6 +63,12 @@ function invoice6076192Lines(): InvoiceLineDraft[] {
 }
 
 describe("PFG invoice 6076192 regression", () => {
+  it("saves a parse with validation errors as a review draft, but not an empty parse", () => {
+    expect(shouldSaveValidationDraft(1, ["subtotal mismatch"])).toBe(true);
+    expect(shouldSaveValidationDraft(0, ["subtotal mismatch"])).toBe(false);
+    expect(shouldSaveValidationDraft(3, [])).toBe(false);
+  });
+
   it("corrects validated digit-level arithmetic OCR errors and accepts the expected 40-line control totals", () => {
     const result = validateAndNormalizePfgInvoice(invoice6076192Lines(), invoice6076192Summary, 40);
 

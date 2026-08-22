@@ -42,6 +42,11 @@ export interface ValidationResult {
   corrections: string[];
 }
 
+/** A non-empty unsafe parse can be reviewed manually but must not be auto-applied. */
+export function shouldSaveValidationDraft(lineCount: number, errors: string[]): boolean {
+  return lineCount > 0 && errors.length > 0;
+}
+
 export interface DeskewResult {
   jpeg: Buffer;
   correctionDegrees: number;
