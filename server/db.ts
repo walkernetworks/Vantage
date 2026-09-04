@@ -23,6 +23,11 @@ import { ENV } from "./_core/env";
 import { invokeLLM } from "./_core/llm";
 import { getOrderTrigger, normalizeOrderThresholdPercent } from "./orderThreshold";
 import { detectCountAnomalies } from "./countAnomalies";
+import type { PfgOrderGuideRow } from "../shared/pfgOrderGuide";
+import {
+  buildPfgImportPreview,
+  type PfgApplyDecision,
+} from "./pfgReconciliation";
 
 // ─── Pack Size Parsing ────────────────────────────────────────────────────────
 // Parses "6/24oz", "12/2 LB", "1/50 LB", "4/1 GA" etc. and returns the case qty
@@ -785,24 +790,15 @@ export async function removeRecipeItem(id: number) {
 
 // ─── PFG Import & Price History ─────────────────────────────────────────────────────
 
-export type PfgImportRow = {
-  itemNumber: string;
-  name: string;
-  brand: string;
-  category: string;
-  vendor: string;
-  packSize: string;
-  unitOfMeasure: string;
-  price: string;
-  isAlcohol: boolean;
-  alcoholCategory?: string;
-  storageArea?: string;
-};
+export type PfgImportRow = PfgOrderGuideRow;
+export type PfgImportPreviewRow = ReturnType<typeof buildPfgImportPreview>[number];
 
 export type PfgImportResult = {
   created: number;
   updated: number;
   unchanged: number;
+  replaced: number;
+  skipped: number;
   priceChanges: Array<{
     itemId: number;
     name: string;
@@ -814,143 +810,203 @@ export type PfgImportResult = {
   }>;
 };
 
-export async function importPfgItems(rows: PfgImportRow[], importedBy?: number, fileName?: string): Promise<PfgImportResult> {
+export async function previewPfgImport(rows: PfgImportRow[]): Promise<PfgImportPreviewRow[]> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  let created = 0;
-  let updated = 0;
-  let unchanged = 0;
-  const priceChanges: PfgImportResult["priceChanges"] = [];
-  const priceSnapshot: Array<{ itemId: number; itemNumber: string; name: string; oldPrice: string | null; newPrice: string }> = [];
+  const existing = await db
+    .select({
+      id: items.id,
+      itemNumber: items.itemNumber,
+      name: items.name,
+      brand: items.brand,
+      packSize: items.packSize,
+      price: items.price,
+      parLevel: items.parLevel,
+      vendor: items.vendor,
+      isActive: items.isActive,
+    })
+    .from(items)
+    .where(eq(items.vendor, "PFG"));
 
-  for (const row of rows) {
-    // Look up by PFG product number (including soft-deleted rows)
-    const existing = await db
-      .select()
-      .from(items)
-      .where(and(eq(items.vendor, "PFG"), eq(items.itemNumber, row.itemNumber)))
-      .limit(1);
+  return buildPfgImportPreview(rows, existing, "keep_existing");
+}
 
-    const caseQty = parsePackSizeQty(row.packSize);
-    const eachPrice = computeEachPrice(row.price, caseQty);
+export async function importPfgItems(
+  rows: PfgImportRow[],
+  importedBy?: number,
+  fileName?: string,
+  decisions?: PfgApplyDecision[],
+): Promise<PfgImportResult> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
 
-    if (existing.length === 0) {
-      // Truly new item — create it
-      await db.insert(items).values({
-        name: row.name,
-        brand: row.brand,
-        category: row.category,
-        vendor: "PFG",
-        packSize: row.packSize,
-        unitOfMeasure: "Case",
-        price: row.price,
-        caseQty,
-        eachPrice,
-        parLevel: "0",
-        storageArea: row.storageArea ?? "Dry Storage",
-        isAlcohol: row.isAlcohol,
-        alcoholCategory: row.alcoholCategory ?? null,
-        itemNumber: row.itemNumber,
-        isActive: true,
-      });
-      created++;
-    } else {
-      const item = existing[0];
+  const uniqueNumbers = new Set(rows.map((row) => row.itemNumber));
+  if (uniqueNumbers.size !== rows.length) throw new Error("PFG file contains duplicate product numbers");
+  if (rows.some((row) => !/^\d+$/.test(row.itemNumber))) throw new Error("PFG rows must have numeric product numbers");
 
-      // If the item was soft-deleted, reactivate it and treat as a fresh insert
-      if (!item.isActive) {
-        await db
-          .update(items)
-          .set({
-            name: row.name,
-            brand: row.brand,
-            category: row.category,
-            vendor: "PFG",
-            packSize: row.packSize,
-            unitOfMeasure: "Case",
-            price: row.price,
-            caseQty,
-            eachPrice,
-            storageArea: row.storageArea ?? item.storageArea ?? "Dry Storage",
-            isAlcohol: row.isAlcohol,
-            alcoholCategory: row.alcoholCategory ?? null,
-            isActive: true,
-            updatedAt: new Date(),
-          })
-          .where(eq(items.id, item.id));
+  const resolvedDecisions = decisions ?? (await previewPfgImport(rows)).map((entry) => entry.defaultDecision);
+  const decisionByNumber = new Map(resolvedDecisions.map((decision) => [decision.itemNumber, decision]));
+  if (decisionByNumber.size !== rows.length || rows.some((row) => !decisionByNumber.has(row.itemNumber))) {
+    throw new Error("Every PFG row must have exactly one reviewed import decision");
+  }
+  const mergeTargets = resolvedDecisions
+    .filter((decision) => decision.action === "merge")
+    .map((decision) => decision.existingItemId)
+    .filter((id): id is number => typeof id === "number");
+  if (new Set(mergeTargets).size !== mergeTargets.length) {
+    throw new Error("Each existing item can be selected as a replacement target only once per import");
+  }
+
+  return db.transaction(async (tx) => {
+    let created = 0;
+    let updated = 0;
+    let unchanged = 0;
+    let replaced = 0;
+    let skipped = 0;
+    const priceChanges: PfgImportResult["priceChanges"] = [];
+    const priceSnapshot: Array<{ itemId: number; itemNumber: string; name: string; oldPrice: string | null; newPrice: string }> = [];
+
+    for (const row of rows) {
+      const decision = decisionByNumber.get(row.itemNumber)!;
+      if (decision.action === "skip") {
+        skipped++;
+        continue;
+      }
+
+      const caseQty = parsePackSizeQty(row.packSize);
+      const eachPrice = computeEachPrice(row.price, caseQty);
+
+      if (decision.action === "create") {
+        const duplicate = await tx
+          .select({ id: items.id })
+          .from(items)
+          .where(and(eq(items.vendor, "PFG"), eq(items.itemNumber, row.itemNumber)))
+          .limit(1);
+        if (duplicate.length > 0) throw new Error(`PFG #${row.itemNumber} already exists and cannot be created again`);
+
+        await tx.insert(items).values({
+          name: row.name,
+          brand: row.brand,
+          category: row.category,
+          vendor: "PFG",
+          packSize: row.packSize,
+          unitOfMeasure: "Case",
+          price: row.price,
+          caseQty,
+          eachPrice,
+          parLevel: "0",
+          storageArea: row.storageArea ?? "Dry Storage",
+          isAlcohol: row.isAlcohol,
+          alcoholCategory: row.alcoholCategory ?? null,
+          itemNumber: row.itemNumber,
+          isActive: true,
+        });
         created++;
         continue;
       }
 
-      const oldPriceRaw = item.price; // null if never set
+      let existing;
+      if (decision.action === "exact") {
+        const matches = await tx
+          .select()
+          .from(items)
+          .where(and(eq(items.vendor, "PFG"), eq(items.itemNumber, row.itemNumber)))
+          .limit(1);
+        existing = matches[0];
+        if (!existing) throw new Error(`PFG #${row.itemNumber} no longer has an exact catalog match`);
+        if (decision.existingItemId && decision.existingItemId !== existing.id) {
+          throw new Error(`PFG #${row.itemNumber} review is stale; refresh the preview`);
+        }
+      } else {
+        if (!decision.existingItemId) throw new Error(`Replacement decision for PFG #${row.itemNumber} requires an existing item`);
+        const matches = await tx.select().from(items).where(eq(items.id, decision.existingItemId)).limit(1);
+        existing = matches[0];
+        if (!existing || existing.vendor !== "PFG" || !existing.isActive) {
+          throw new Error(`Replacement target for PFG #${row.itemNumber} is invalid`);
+        }
+
+        const numberConflict = await tx
+          .select({ id: items.id })
+          .from(items)
+          .where(and(eq(items.vendor, "PFG"), eq(items.itemNumber, row.itemNumber)))
+          .limit(1);
+        if (numberConflict.length > 0 && numberConflict[0].id !== existing.id) {
+          throw new Error(`PFG #${row.itemNumber} is already assigned to another item`);
+        }
+        replaced++;
+      }
+
+      const oldPriceRaw = existing.price;
       const oldPrice = oldPriceRaw ?? "0";
       const newPrice = row.price;
-      const oldF = parseFloat(oldPrice);
-      const newF = parseFloat(newPrice);
-      const priceActuallyChanged = oldPriceRaw !== null && oldF > 0 && newF > 0 && Math.abs(oldF - newF) >= 0.005;
+      const oldValue = Number.parseFloat(oldPrice);
+      const newValue = Number.parseFloat(newPrice);
+      const priceActuallyChanged = oldPriceRaw !== null && oldValue > 0 && newValue > 0 && Math.abs(oldValue - newValue) >= 0.005;
+      const name = decision.namePolicy === "use_uploaded" ? row.name : existing.name;
 
-      // Always snapshot the before/after for this item so we can revert
       priceSnapshot.push({
-        itemId: item.id,
+        itemId: existing.id,
         itemNumber: row.itemNumber,
-        name: item.name,
+        name,
         oldPrice: oldPriceRaw,
         newPrice,
       });
 
       if (priceActuallyChanged) {
-        // Real price change — record history and update
-        await db.insert(priceHistory).values({
-          itemId: item.id,
+        await tx.insert(priceHistory).values({
+          itemId: existing.id,
           oldPrice,
           newPrice,
           importSource: "PFG",
         });
-        const diff = newF - oldF;
-        const pct = oldF !== 0 ? (diff / oldF) * 100 : 0;
+        const diff = newValue - oldValue;
+        const pct = oldValue !== 0 ? (diff / oldValue) * 100 : 0;
         priceChanges.push({
-          itemId: item.id,
-          name: item.name,
-          brand: item.brand ?? row.brand,
+          itemId: existing.id,
+          name,
+          brand: existing.brand ?? row.brand,
           oldPrice,
           newPrice,
           diff: diff.toFixed(2),
           pctChange: pct.toFixed(1),
         });
-        await db
-          .update(items)
-          .set({ price: newPrice, brand: row.brand, packSize: row.packSize, caseQty, eachPrice, updatedAt: new Date() })
-          .where(eq(items.id, item.id));
         updated++;
       } else {
-        // Price unchanged (or first-time price set) — update price + metadata silently
-        await db
-          .update(items)
-          .set({ price: newPrice, brand: row.brand, packSize: row.packSize, caseQty, eachPrice, updatedAt: new Date() })
-          .where(eq(items.id, item.id));
         unchanged++;
       }
-    }
-  }
 
-  // Save import batch log
-  try {
-    await createImportBatch({
+      await tx
+        .update(items)
+        .set({
+          name,
+          vendor: "PFG",
+          itemNumber: row.itemNumber,
+          price: newPrice,
+          brand: row.brand,
+          packSize: row.packSize,
+          unitOfMeasure: "Case",
+          caseQty,
+          eachPrice,
+          isActive: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(items.id, existing.id));
+    }
+
+    await tx.insert(importBatches).values({
       importSource: "PFG",
-      fileName,
+      fileName: fileName ?? null,
       itemsCreated: created,
       itemsUpdated: updated,
       itemsUnchanged: unchanged,
       priceChangesCount: priceChanges.length,
-      priceSnapshot,
-      importedBy,
+      priceSnapshot: priceSnapshot as unknown as null,
+      importedBy: importedBy ?? null,
     });
-  } catch (e) {
-    console.error("[importPfgItems] Failed to save import batch:", (e as Error).message, (e as Error).stack);
-  }
 
-  return { created, updated, unchanged, priceChanges };
+    return { created, updated, unchanged, replaced, skipped, priceChanges };
+  });
 }
 
 export async function getPriceHistory(itemId: number) {

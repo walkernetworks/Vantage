@@ -3,6 +3,12 @@ import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { CATEGORY_ICONS, UNITS, VENDOR_COLORS } from "../../../shared/constants";
 import {
+  isPfgOrderGuideCsv,
+  parsePfgCsv as parsePfgCsvDocument,
+  parsePfgRows,
+  type PfgOrderGuideRow,
+} from "../../../shared/pfgOrderGuide";
+import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
@@ -62,57 +68,7 @@ const emptyForm: ItemForm = {
   itemNumber: "",
 };
 
-// ── PFG Category → Internal Category mapping ──────────────────────────────────
-const PFG_CATEGORY_MAP: Record<string, string> = {
-  "ALCOHOL-BEVERAGES": "Alcohol - 100",
-  "ALCOHOL-DRY FOODS": "Alcohol - 130",
-  "BEIGNETS & FOOD-DRY FOODS": "Bakery",
-  "BEIGNETS & FOOD-FROZEN": "Bakery",
-  "BEIGNETS & FOOD-REFRIG": "Bakery",
-  "BEIGNETS & FOOD-DAIRY": "Dairy",
-  "BEIGNETS & FOOD-PRODUCE": "Produce",
-  "BEIGNETS & FOOD-CHICKEN": "Protein",
-  "BEIGNETS & FOOD-STEAK/POR": "Protein",
-  "BEIGNETS & FOOD-PAPER": "Paper Goods",
-  "COFFEE-BEVERAGES": "Coffee",
-  "COFFEE-DRY FOODS": "Coffee",
-  "COFFEE-DAIRY": "Dairy",
-  "COFFEE-PRODUCE": "Produce",
-  "COFFEE-PAPER": "Paper Goods",
-  "NA BEVERAGES": "Coffee",
-  "NA BEVERAGES-FROZEN": "Coffee",
-  "NA BEVERAGES-PRODUCE": "Produce",
-  "CHEMICALS": "Supplies",
-  "CHEMICALS-PAPER": "Supplies",
-};
-
-const PFG_STORAGE_MAP: Record<string, string> = {
-  "ALCOHOL-BEVERAGES": "Bar",
-  "ALCOHOL-DRY FOODS": "Bar",
-  "BEIGNETS & FOOD-FROZEN": "Freezer",
-  "BEIGNETS & FOOD-REFRIG": "Walk-In",
-  "BEIGNETS & FOOD-DAIRY": "Walk-In",
-  "COFFEE-DAIRY": "Walk-In",
-  "BEIGNETS & FOOD-PRODUCE": "Walk-In",
-  "COFFEE-PRODUCE": "Walk-In",
-  "NA BEVERAGES-FROZEN": "Freezer",
-  "NA BEVERAGES-PRODUCE": "Walk-In",
-};
-
-type PfgRow = {
-  itemNumber: string;
-  name: string;
-  brand: string;
-  category: string;
-  vendor: string;
-  packSize: string;
-  unitOfMeasure: string;
-  price: string;
-  isAlcohol: boolean;
-  alcoholCategory?: string;
-  storageArea?: string;
-  pfgCategory: string; // raw PFG category for display
-};
+type PfgRow = PfgOrderGuideRow;
 
 type PriceChange = {
   itemId: number;
@@ -128,111 +84,49 @@ type ImportResult = {
   created: number;
   updated: number;
   unchanged: number;
+  replaced?: number;
+  skipped?: number;
   priceChanges: PriceChange[];
 };
 
-// ── Parse PFG CSV ──────────────────────────────────────────────────────────────
-function parsePfgCsv(text: string): PfgRow[] {
-  // Strip BOM
-  const cleaned = text.replace(/^\uFEFF/, "").trim();
-  const lines = cleaned.split(/\r?\n/);
-  if (lines.length < 2) return [];
+type PfgNamePolicy = "keep_existing" | "use_uploaded";
+type PfgDecision = {
+  itemNumber: string;
+  action: "exact" | "merge" | "create" | "skip";
+  existingItemId?: number;
+  namePolicy?: PfgNamePolicy;
+};
 
-  // Parse header (handle quoted fields)
-  function parseLine(line: string): string[] {
-    const result: string[] = [];
-    let current = "";
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '"') {
-        inQuotes = !inQuotes;
-      } else if (ch === "," && !inQuotes) {
-        result.push(current.trim());
-        current = "";
-      } else {
-        current += ch;
-      }
-    }
-    result.push(current.trim());
-    return result;
-  }
+type PfgPreviewCandidate = {
+  existingItemId: number;
+  itemNumber: string | null;
+  name: string;
+  brand: string | null;
+  packSize: string | null;
+  price: string | null;
+  parLevel: string | null;
+  score: number;
+  sameBrand: boolean;
+  samePackSize: boolean;
+};
 
-  const headers = parseLine(lines[0]).map((h) => h.toLowerCase().replace(/\s+/g, " ").trim());
-
-  // Find column indices
-  const idx = {
-    categoryName: headers.indexOf("category name"),
-    customDesc: headers.indexOf("custom product description"),
-    productDesc: headers.indexOf("product description"),
-    brand: headers.indexOf("brand"),
-    productNumber: headers.indexOf("product number"),
-    packSize: headers.indexOf("pack size"),
-    uom: headers.indexOf("uom"),
-    price: headers.indexOf("price"),
+type PfgPreviewRow = {
+  row: PfgRow;
+  classification: "exact" | "review" | "new";
+  existingItem?: {
+    id: number;
+    itemNumber: string | null;
+    name: string;
+    brand: string | null;
+    packSize: string | null;
+    price: string | null;
+    parLevel: string | null;
+    vendor: string;
+    isActive: boolean;
   };
-
-  const rows: PfgRow[] = [];
-
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    const cols = parseLine(line);
-
-    const pfgCategory = (cols[idx.categoryName] ?? "").trim().toUpperCase();
-    // Use Custom Product Description if available, otherwise Product Description
-    const customDesc = (cols[idx.customDesc] ?? "").trim();
-    const productDesc = (cols[idx.productDesc] ?? "").trim();
-    const rawName = customDesc || productDesc;
-    if (!rawName) continue;
-
-    // Clean up the name: title-case and strip excessive noise
-    const name = rawName
-      .replace(/\b0 GRAMS TRANS FAT PER SERVING\b/gi, "")
-      .replace(/\bUNITED_STATES_DEPT_AGRICULTURE SHIELD\b/gi, "")
-      .replace(/\bULTRA-HIGH-TEMPERATURE STABILIZED\b/gi, "")
-      .replace(/\bULTRA PASTEURIZED\b/gi, "")
-      .replace(/\s+/g, " ")
-      .trim()
-      // Convert ALL_CAPS to Title Case
-      .split(" ")
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-      .join(" ");
-
-    const brand = (cols[idx.brand] ?? "").trim();
-    const itemNumber = (cols[idx.productNumber] ?? "").trim();
-    const packSize = (cols[idx.packSize] ?? "").trim();
-    const unitOfMeasure = (cols[idx.uom] ?? "CS").trim();
-    const rawPrice = (cols[idx.price] ?? "").trim().replace(/[$,]/g, "");
-    const price = rawPrice ? parseFloat(rawPrice).toFixed(2) : "0.00";
-
-    const internalCategory = PFG_CATEGORY_MAP[pfgCategory] ?? "Other";
-    const storageArea = PFG_STORAGE_MAP[pfgCategory] ?? "Dry Storage";
-    const isAlcohol = internalCategory.startsWith("Alcohol");
-    const alcoholCategory = internalCategory === "Alcohol - 100"
-      ? "100"
-      : internalCategory === "Alcohol - 130"
-        ? "130"
-        : undefined;
-
-    rows.push({
-      itemNumber,
-      name,
-      brand,
-      category: internalCategory,
-      vendor: "PFG",
-      packSize,
-      unitOfMeasure,
-      price,
-      isAlcohol,
-      alcoholCategory,
-      storageArea,
-      pfgCategory,
-    });
-  }
-
-  return rows;
-}
+  candidates: PfgPreviewCandidate[];
+  defaultDecision: PfgDecision;
+};
 
 // ── Parse PFG XLSX (actual order guide format) ───────────────────────────────
 // The real PFG order guide is an Excel file with 8 metadata rows before the
@@ -241,78 +135,10 @@ function parsePfgCsv(text: string): PfgRow[] {
 async function parsePfgXlsx(file: File): Promise<PfgRow[]> {
   const XLSX = await import("xlsx");
   const buffer = await file.arrayBuffer();
-  const wb = XLSX.read(buffer, { type: "array" });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  // Convert to array of arrays
-  const raw: (string | number | null)[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
-
-  // Find the header row — look for a row containing "Product Description" and "Product Number"
-  let headerRowIdx = -1;
-  for (let i = 0; i < Math.min(raw.length, 15); i++) {
-    const row = raw[i].map((c) => String(c ?? "").toLowerCase().trim());
-    if (row.includes("product description") && row.includes("product number")) {
-      headerRowIdx = i;
-      break;
-    }
-  }
-  if (headerRowIdx === -1) return [];
-
-  const headers = raw[headerRowIdx].map((c) => String(c ?? "").toLowerCase().trim());
-  const col = (name: string) => headers.indexOf(name);
-
-  const colProductDesc = col("product description");
-  const colCustomDesc = col("custom product description");
-  const colBrand = col("brand");
-  const colProductNumber = col("product number");
-  const colPackSize = col("pack size");
-  const colUom = col("uom");
-  const colPrice = col("price");
-  const colCategory = col("category name") !== -1 ? col("category name") : col("category");
-
-  const rows: PfgRow[] = [];
-  for (let i = headerRowIdx + 1; i < raw.length; i++) {
-    const r = raw[i];
-    if (!r || r.every((c) => c === null || c === "")) continue;
-
-    const customDesc = colCustomDesc !== -1 ? String(r[colCustomDesc] ?? "").trim() : "";
-    const productDesc = colProductDesc !== -1 ? String(r[colProductDesc] ?? "").trim() : "";
-    const rawName = customDesc || productDesc;
-    if (!rawName) continue;
-
-    const itemNumber = colProductNumber !== -1 ? String(r[colProductNumber] ?? "").trim() : "";
-    if (!itemNumber) continue;
-
-    // Keep the original vendor name (ALL_CAPS abbreviation style) — do NOT title-case
-    const name = rawName.trim();
-    const brand = colBrand !== -1 ? String(r[colBrand] ?? "").trim() : "";
-    const packSize = colPackSize !== -1 ? String(r[colPackSize] ?? "").trim() : "";
-    const unitOfMeasure = colUom !== -1 ? String(r[colUom] ?? "CS").trim() : "CS";
-    const rawPrice = colPrice !== -1 ? String(r[colPrice] ?? "0").replace(/[$,]/g, "").trim() : "0";
-    const price = rawPrice ? (parseFloat(rawPrice) || 0).toFixed(2) : "0.00";
-    const pfgCategory = colCategory !== -1 ? String(r[colCategory] ?? "").trim().toUpperCase() : "";
-
-    const internalCategory = PFG_CATEGORY_MAP[pfgCategory] ?? "Other";
-    const storageArea = PFG_STORAGE_MAP[pfgCategory] ?? "Dry Storage";
-    const isAlcohol = internalCategory.startsWith("Alcohol");
-    const alcoholCategory = internalCategory === "Alcohol - 100" ? "100"
-      : internalCategory === "Alcohol - 130" ? "130" : undefined;
-
-    rows.push({
-      itemNumber,
-      name,
-      brand,
-      category: internalCategory,
-      vendor: "PFG",
-      packSize,
-      unitOfMeasure,
-      price,
-      isAlcohol,
-      alcoholCategory,
-      storageArea,
-      pfgCategory,
-    });
-  }
-  return rows;
+  const workbook = XLSX.read(buffer, { type: "array" });
+  const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+  const raw: (string | number | null)[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
+  return parsePfgRows(raw).rows;
 }
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
@@ -1245,7 +1071,7 @@ function PfgImportModal({ onClose }: { onClose: () => void }) {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const text = ev.target?.result as string ?? "";
-      const parsed = parsePfgCsv(text);
+      const parsed = parsePfgCsvDocument(text).rows;
       if (parsed.length === 0) {
         toast.error("No valid rows found. Make sure this is a PFG Order Guide (.xlsx or .csv).");
         return;
@@ -1977,11 +1803,8 @@ type AiMappedRow = {
 
 function detectFormat(text: string): DetectedFormat {
   const cleaned = text.replace(/^\uFEFF/, "").trim();
-  const firstLines = cleaned.split(/\r?\n/).slice(0, 5).join("\n").toLowerCase();
-  // PFG files have a unique "Custom Product Description" column
-  if (firstLines.includes("custom product description") && firstLines.includes("product number")) {
-    return "pfg";
-  }
+  const firstLines = cleaned.split(/\r?\n/).slice(0, 8).join("\n").toLowerCase();
+  if (isPfgOrderGuideCsv(text)) return "pfg";
   if (firstLines.includes("item number") && (firstLines.includes("base price") || firstLines.includes("vendor"))) {
     return "webstaurant";
   }
@@ -1994,10 +1817,15 @@ function detectFormat(text: string): DetectedFormat {
 }
 
 function UniversalImportModal({ onClose }: { onClose: () => void }) {
-  type Step = "upload" | "pfg-preview" | "web-preview" | "web-generating" | "ai-analyzing" | "ai-preview" | "ai-enriching" | "result";
+  type Step = "upload" | "pfg-analyzing" | "pfg-preview" | "web-preview" | "web-generating" | "ai-analyzing" | "ai-preview" | "ai-enriching" | "result";
   const [step, setStep] = useState<Step>("upload");
   const [format, setFormat] = useState<DetectedFormat>("ai");
   const [pfgRows, setPfgRows] = useState<PfgRow[]>([]);
+  const [pfgPreview, setPfgPreview] = useState<PfgPreviewRow[]>([]);
+  const [pfgDecisions, setPfgDecisions] = useState<Record<string, PfgDecision>>({});
+  const [pfgReviewedNumbers, setPfgReviewedNumbers] = useState<Set<string>>(new Set());
+  const [pfgApprovalConfirmed, setPfgApprovalConfirmed] = useState(false);
+  const [pfgNamePolicy, setPfgNamePolicy] = useState<PfgNamePolicy>("keep_existing");
   const [webRows, setWebRows] = useState<WebstaurantRow[]>([]);
   const [aiRows, setAiRows] = useState<AiMappedRow[]>([]);
   const [aiSource, setAiSource] = useState("Universal");
@@ -2009,6 +1837,21 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
 
   const generateCleanName = trpc.items.generateCleanName.useMutation();
   const enrichImportRows = trpc.items.enrichImportRows.useMutation();
+
+  const previewPfgMutation = trpc.items.previewPfgImport.useMutation({
+    onSuccess: (preview) => {
+      const typedPreview = preview as PfgPreviewRow[];
+      setPfgPreview(typedPreview);
+      setPfgDecisions(Object.fromEntries(typedPreview.map((entry) => [entry.row.itemNumber, entry.defaultDecision])));
+      setPfgReviewedNumbers(new Set());
+      setPfgApprovalConfirmed(false);
+      setStep("pfg-preview");
+    },
+    onError: (error) => {
+      toast.error("Could not preview PFG import: " + error.message);
+      setStep("upload");
+    },
+  });
 
   const importPfgMutation = trpc.items.importPfg.useMutation({
     onSuccess: (res) => { setResult(res as ImportResult); setStep("result"); },
@@ -2057,6 +1900,57 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
     onError: (e) => toast.error(e.message),
   });
 
+  function preparePfgPreview(rows: PfgRow[]) {
+    setPfgRows(rows);
+    setPfgNamePolicy("keep_existing");
+    setPfgReviewedNumbers(new Set());
+    setPfgApprovalConfirmed(false);
+    setStep("pfg-analyzing");
+    previewPfgMutation.mutate({ rows });
+  }
+
+  function updatePfgDecision(itemNumber: string, value: string) {
+    setPfgReviewedNumbers((current) => new Set(current).add(itemNumber));
+    setPfgApprovalConfirmed(false);
+    if (value === "create" || value === "skip") {
+      setPfgDecisions((current) => ({
+        ...current,
+        [itemNumber]: { itemNumber, action: value, namePolicy: value === "create" ? "use_uploaded" : undefined },
+      }));
+      return;
+    }
+    if (value.startsWith("merge:")) {
+      const existingItemId = Number.parseInt(value.slice("merge:".length), 10);
+      if (!Number.isFinite(existingItemId)) return;
+      setPfgDecisions((current) => ({
+        ...current,
+        [itemNumber]: { itemNumber, action: "merge", existingItemId, namePolicy: pfgNamePolicy },
+      }));
+    }
+  }
+
+  function applyPfgImport() {
+    const pendingReviews = pfgPreview.filter(
+      (entry) => entry.classification === "review" && !pfgReviewedNumbers.has(entry.row.itemNumber),
+    );
+    if (pendingReviews.length > 0) {
+      toast.error(`Review ${pendingReviews.length} suggested match${pendingReviews.length === 1 ? "" : "es"} before applying.`);
+      return;
+    }
+    if (!pfgApprovalConfirmed) {
+      toast.error("Confirm the reviewed PFG import before applying changes.");
+      return;
+    }
+    const decisions = pfgPreview.map((entry) => {
+      const decision = pfgDecisions[entry.row.itemNumber] ?? entry.defaultDecision;
+      if (decision.action === "exact" || decision.action === "merge") {
+        return { ...decision, namePolicy: pfgNamePolicy };
+      }
+      return decision;
+    });
+    importPfgMutation.mutate({ rows: pfgRows, decisions, fileName });
+  }
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -2072,8 +1966,7 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
           toast.error("No valid rows found in this Excel file. Make sure it's a PFG order guide.");
           return;
         }
-        setPfgRows(rows);
-        setStep("pfg-preview");
+        preparePfgPreview(rows);
       }).catch(() => {
         toast.error("Failed to read Excel file. Please check the file and try again.");
       });
@@ -2087,15 +1980,15 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
       setFormat(detected);
 
       if (detected === "pfg") {
-        const rows = parsePfgCsv(text);
+        const parsed = parsePfgCsvDocument(text);
+        const rows = parsed.rows;
         if (rows.length === 0) {
           toast.error("No valid rows found in this file.");
           return;
         }
         // PFG CSVs have reliable, accurate data — skip AI enrichment to prevent hallucination.
         setAiSource("PFG");
-        setPfgRows(rows);
-        setStep("pfg-preview");
+        preparePfgPreview(rows);
       } else if (detected === "webstaurant") {
         const rows = parseWebstaurantCsv(text);
         if (rows.length === 0) {
@@ -2317,76 +2210,155 @@ function UniversalImportModal({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      {/* PFG Preview */}
-      {step === "pfg-preview" && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-semibold text-foreground">{pfgRows.length} items found <span className="text-xs font-normal text-muted-foreground">(PFG format)</span></p>
-              <p className="text-sm text-muted-foreground">
-                New items will be created. Existing items (matched by Product #) will have pricing updated.
-              </p>
-            </div>
+      {step === "pfg-analyzing" && (
+        <div className="space-y-5 py-6 text-center">
+          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+            <Search size={28} className="text-primary animate-pulse" />
           </div>
-
-          {/* Category filter chips */}
-          {(() => {
-            const uniqueCats = Array.from(new Set(pfgRows.map((r) => r.pfgCategory))).sort();
-            const displayRows = filterCat ? pfgRows.filter((r) => r.pfgCategory === filterCat) : pfgRows;
-            return (
-              <>
-                <div className="flex gap-2 flex-wrap">
-                  <button
-                    onClick={() => setFilterCat("")}
-                    className={cn("px-3 py-1 rounded-lg text-xs font-semibold transition-colors",
-                      !filterCat ? "bg-primary text-primary-foreground" : "bg-muted text-foreground")}
-                  >
-                    All ({pfgRows.length})
-                  </button>
-                  {uniqueCats.map((cat) => (
-                    <button
-                      key={cat}
-                      onClick={() => setFilterCat(filterCat === cat ? "" : cat)}
-                      className={cn("px-3 py-1 rounded-lg text-xs font-semibold transition-colors",
-                        filterCat === cat ? "bg-primary text-primary-foreground" : "bg-muted text-foreground")}
-                    >
-                      {cat.split("-")[0]} ({pfgRows.filter((r) => r.pfgCategory === cat).length})
-                    </button>
-                  ))}
-                </div>
-                <div className="max-h-72 overflow-y-auto rounded-xl border border-border divide-y divide-border">
-                  {displayRows.map((row, i) => (
-                    <div key={i} className="flex items-center justify-between px-3 py-2.5 text-sm bg-card">
-                      <div className="flex-1 min-w-0 mr-3">
-                        <p className="font-semibold text-foreground truncate">{row.name}</p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {row.brand} · #{(row as any).itemNumber} · {row.packSize}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          → <span className="font-medium text-foreground">{row.category}</span>
-                          {row.storageArea && <span> · {row.storageArea}</span>}
-                        </p>
-                      </div>
-                      <span className="font-bold text-foreground shrink-0">${row.price}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            );
-          })()}
-
-          <div className="flex gap-3">
-            <button onClick={() => setStep("upload")} className="flex-1 btn-big bg-muted text-foreground">Back</button>
-            <button
-               onClick={() => importPfgMutation.mutate({ rows: pfgRows, fileName })}
-              disabled={importPfgMutation.isPending}
-              className="flex-1 btn-big bg-primary text-primary-foreground disabled:opacity-60"
-            >
-              {importPfgMutation.isPending ? "Importing…" : `Import ${pfgRows.length} Items`}
-            </button>
+          <div>
+            <p className="font-semibold text-foreground">Checking PFG catalog matches…</p>
+            <p className="text-sm text-muted-foreground mt-1">Matching product numbers and preparing replacement candidates. No inventory has been changed.</p>
           </div>
         </div>
       )}
+
+      {/* PFG reviewed preview */}
+      {step === "pfg-preview" && (() => {
+        const exactCount = pfgPreview.filter((entry) => entry.classification === "exact").length;
+        const reviewCount = pfgPreview.filter((entry) => entry.classification === "review").length;
+        const newCount = pfgPreview.filter((entry) => entry.classification === "new").length;
+        const pendingReviewCount = pfgPreview.filter(
+          (entry) => entry.classification === "review" && !pfgReviewedNumbers.has(entry.row.itemNumber),
+        ).length;
+        const canApply = pendingReviewCount === 0 && pfgApprovalConfirmed;
+        return (
+          <div className="space-y-4">
+            <div>
+              <p className="font-semibold text-foreground">{pfgRows.length} valid PFG products found</p>
+              <p className="text-sm text-muted-foreground">Exact product numbers update the established item. Unmatched rows require a create, merge, or skip decision.</p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded-xl border border-accent/30 bg-accent/10 p-3 text-center">
+                <p className="text-xl font-bold text-accent">{exactCount}</p>
+                <p className="text-[11px] font-semibold text-accent">Exact item #</p>
+              </div>
+              <div className="rounded-xl border border-primary/30 bg-primary/10 p-3 text-center">
+                <p className="text-xl font-bold text-primary">{reviewCount}</p>
+                <p className="text-[11px] font-semibold text-primary">Review match</p>
+              </div>
+              <div className="rounded-xl border border-border bg-muted p-3 text-center">
+                <p className="text-xl font-bold text-foreground">{newCount}</p>
+                <p className="text-[11px] font-semibold text-muted-foreground">No candidate</p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border bg-secondary/40 p-3 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Matched item names</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setPfgNamePolicy("keep_existing")}
+                  className={cn("rounded-lg px-3 py-2 text-xs font-semibold border transition-colors",
+                    pfgNamePolicy === "keep_existing" ? "bg-primary text-primary-foreground border-primary" : "bg-card text-foreground border-border")}
+                >
+                  Keep existing names
+                </button>
+                <button
+                  onClick={() => setPfgNamePolicy("use_uploaded")}
+                  className={cn("rounded-lg px-3 py-2 text-xs font-semibold border transition-colors",
+                    pfgNamePolicy === "use_uploaded" ? "bg-primary text-primary-foreground border-primary" : "bg-card text-foreground border-border")}
+                >
+                  Use uploaded names
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground">Par levels, thresholds, count mode, history, and the canonical item ID are preserved either way.</p>
+            </div>
+
+            <div className="max-h-96 overflow-y-auto rounded-xl border border-border divide-y divide-border">
+              {pfgPreview.map((entry) => {
+                const decision = pfgDecisions[entry.row.itemNumber] ?? entry.defaultDecision;
+                const requiresReview = entry.classification === "review" && !pfgReviewedNumbers.has(entry.row.itemNumber);
+                const selectValue = requiresReview
+                  ? ""
+                  : decision.action === "merge" ? `merge:${decision.existingItemId}` : decision.action;
+                return (
+                  <div key={entry.row.itemNumber} className="p-3 text-sm bg-card space-y-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-foreground truncate">{entry.row.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">{entry.row.brand} · #{entry.row.itemNumber} · {entry.row.packSize}</p>
+                      </div>
+                      <span className="font-bold text-foreground shrink-0">${entry.row.price}</span>
+                    </div>
+
+                    {entry.classification === "exact" && entry.existingItem ? (
+                      <div className="rounded-lg bg-accent/10 border border-accent/20 px-2.5 py-2 text-xs">
+                        <p className="font-semibold text-accent">Exact product-number match</p>
+                        <p className="text-muted-foreground mt-0.5">{entry.existingItem.name} · par {entry.existingItem.parLevel ?? "0"} · ${entry.existingItem.price ?? "0.00"} → ${entry.row.price}</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-muted-foreground">
+                          {entry.classification === "review" ? "Suggested name matches — approval required" : "No match found — new item entry"}
+                        </label>
+                        <select
+                          value={selectValue}
+                          onChange={(event) => updatePfgDecision(entry.row.itemNumber, event.target.value)}
+                          className="w-full rounded-lg border border-border bg-background px-2.5 py-2 text-xs text-foreground"
+                        >
+                          {entry.classification === "review" && <option value="" disabled>Review required — choose an action</option>}
+                          <option value="create">Create as new PFG item</option>
+                          <option value="skip">Skip this product</option>
+                          {entry.candidates.map((candidate) => (
+                            <option key={candidate.existingItemId} value={`merge:${candidate.existingItemId}`}>
+                              Replace #{candidate.itemNumber ?? "—"} {candidate.name} · par {candidate.parLevel ?? "0"} · {candidate.score}%
+                            </option>
+                          ))}
+                        </select>
+                        {entry.candidates.length > 0 ? (
+                          <p className="text-[11px] text-muted-foreground">Candidates are assumed matches only. Choose the correct existing item, create a new item, or skip; no fuzzy match is applied automatically.</p>
+                        ) : (
+                          <p className="text-[11px] text-muted-foreground">No sufficiently similar active PFG item was found. A new item will be created if this reviewed import is approved.</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <label className={cn("flex items-start gap-3 rounded-xl border p-3 text-sm",
+              pendingReviewCount > 0 ? "border-border bg-muted/50 text-muted-foreground" : "border-primary/30 bg-primary/5 text-foreground")}>
+              <input
+                type="checkbox"
+                checked={pfgApprovalConfirmed}
+                disabled={pendingReviewCount > 0}
+                onChange={(event) => setPfgApprovalConfirmed(event.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-primary"
+              />
+              <span>
+                <span className="font-semibold">Approve this reviewed PFG import</span>
+                <span className="block text-xs mt-0.5">
+                  {pendingReviewCount > 0
+                    ? `Choose an action for ${pendingReviewCount} suggested match${pendingReviewCount === 1 ? "" : "es"} first.`
+                    : "I reviewed the assumed matches and new items. Apply the selected updates, merges, creations, and skips."}
+                </span>
+              </span>
+            </label>
+
+            <div className="flex gap-3">
+              <button onClick={() => setStep("upload")} className="flex-1 btn-big bg-muted text-foreground">Back</button>
+              <button
+                onClick={applyPfgImport}
+                disabled={importPfgMutation.isPending || !canApply}
+                className="flex-1 btn-big bg-primary text-primary-foreground disabled:opacity-60"
+              >
+                {importPfgMutation.isPending ? "Applying…" : "Apply reviewed import"}
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Webstaurant Preview */}
       {step === "web-preview" && (

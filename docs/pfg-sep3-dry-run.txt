@@ -1,0 +1,44 @@
+{
+  "file": "BEIGNETSNBREW-OrderGuide4735_PerformanceFoodservicePowell-56293820_09-03-2026.csv",
+  "headerRowIndex": 7,
+  "validProductRows": 141,
+  "rejectedMetadataRows": 2,
+  "exactItemNumberMatches": 139,
+  "exactPriceChanges": 24,
+  "replacementReviewRows": 1,
+  "newRowsWithoutCandidates": 1,
+  "defaultNamePolicy": "keep_existing"
+}
+
+UNMATCHED ROW REVIEW
+PFG #605163 | Milk Almond Unsweetened Barista Blend | CALIFIA FARMS | 6/32 OZ | $20.00
+  candidate ID 52 #330275 | Milk Oat Barista Blend | par 2.00 | score 56.2
+  default: skip
+PFG #821771 | Banana | DEL MONTE | 1/40 LB | $25.54
+  default: create
+
+EXACT PRICE CHANGES
+#850028 | ID 70 | Natalies Lemon Juice Jugs | $59.83 -> $58.12
+#997152 | ID 80 | Cream Heavy Whipping 40% | $45.53 -> $44.37
+#199408 | ID 81 | Creamer Half And Half | $32.08 -> $30.67
+#157189 | ID 75 | Butter Solids Unsalted Aa | $89.92 -> $85.33
+#981694 | ID 79 | Creamer Half And Half Piece Cup Shelf-stable | $21.70 -> $21.14
+#515324 | ID 78 | Milk Whole Homogenized_vitamin_d Plastic Jug Fresh | $30.67 -> $29.50
+#651548 | ID 114 | Paper Towel | $43.89 -> $43.90
+#869846 | ID 92 | 2 OZ Portion Cups | $34.63 -> $35.49
+#972236 | ID 95 | 12 Count Beignet Box 12x8x2.25 | $106.09 -> $114.28
+#870410 | ID 124 | 20 OZ Cold Lids | $40.50 -> $38.48
+#918289 | ID 104 | 20 OZ Cold Dome Lids | $72.23 -> $71.73
+#648526 | ID 122 | 12 OZ Hot Lid | $85.26 -> $85.60
+#870041 | ID 93 | 2 OZ Portion Lids | $34.20 -> $34.82
+#810605 | ID 131 | Large Straws | $24.51 -> $27.29
+#858588 | ID 98 | 32 OZ Cold Dome Lids | $88.41 -> $87.87
+#1041033 | ID 210002 | NAPKIN DISPENSER 6.5X8.4" 2PLY WHITE | $47.75 -> $47.79
+#375906 | ID 118 | Four Cup Drink Carrier | $77.19 -> $69.92
+#899594 | ID 99 | Plastic Wrap | $23.35 -> $24.89
+#336232 | ID 129 | Stirrer Black 5.25 | $7.89 -> $35.10
+#174817 | ID 100 | Plastic Spoons | $26.95 -> $29.27
+#457653 | ID 72 | Blueberry Whole Cultivated Individually Frozen | $57.49 -> $58.49
+#615880 | ID 33 | Cinnamon Ground | $10.96 -> $41.01
+#628207 | ID 47 | Cinnamon Ground | $10.83 -> $10.96
+#381341 | ID 84 | Sausage Patty Fully-cooked Wide 3.5 Frozen Sliced Patty | $34.24 -> $34.37

@@ -46,6 +46,7 @@ import {
   getStorageAreas,
   getVendors,
   importPfgItems,
+  previewPfgImport,
   importWebstaurantItems,
   generateCleanItemName,
   importUniversalItems,
@@ -82,6 +83,28 @@ import {
 import { sendWelcomeEmail, sendPasswordResetEmail, sendPasswordResetRequestEmail } from "./email";
 
 // ─── Shared Zod Schemas ───────────────────────────────────────────────────────
+
+const pfgRowSchema = z.object({
+  itemNumber: z.string().regex(/^\d+$/, "PFG product number must be numeric"),
+  name: z.string().min(1),
+  brand: z.string(),
+  category: z.string(),
+  vendor: z.literal("PFG"),
+  packSize: z.string(),
+  unitOfMeasure: z.string(),
+  price: z.string().regex(/^\d+(?:\.\d{1,2})?$/, "Invalid PFG price"),
+  isAlcohol: z.boolean(),
+  alcoholCategory: z.string().optional(),
+  storageArea: z.string().optional(),
+  pfgCategory: z.string(),
+});
+
+const pfgDecisionSchema = z.object({
+  itemNumber: z.string().regex(/^\d+$/),
+  action: z.enum(["exact", "merge", "create", "skip"]),
+  existingItemId: z.number().int().positive().optional(),
+  namePolicy: z.enum(["keep_existing", "use_uploaded"]).optional(),
+});
 
 const itemInputSchema = z.object({
   name: z.string().min(1),
@@ -176,28 +199,21 @@ const itemsRouter = router({
       return { imported: input.items.length };
     }),
 
+  previewPfgImport: adminProcedure
+    .input(z.object({ rows: z.array(pfgRowSchema).min(1).max(5_000) }))
+    .mutation(({ input }) => previewPfgImport(input.rows as PfgImportRow[])),
+
   importPfg: adminProcedure
     .input(
       z.object({
-        rows: z.array(
-          z.object({
-            itemNumber: z.string(),
-            name: z.string(),
-            brand: z.string(),
-            category: z.string(),
-            vendor: z.string(),
-            packSize: z.string(),
-            unitOfMeasure: z.string(),
-            price: z.string(),
-            isAlcohol: z.boolean(),
-            alcoholCategory: z.string().optional(),
-            storageArea: z.string().optional(),
-          })
-        ),
+        rows: z.array(pfgRowSchema).min(1).max(5_000),
+        decisions: z.array(pfgDecisionSchema).optional(),
         fileName: z.string().optional(),
       })
     )
-    .mutation(async ({ input, ctx }) => importPfgItems(input.rows as PfgImportRow[], ctx.user.id, input.fileName)),
+    .mutation(({ input, ctx }) =>
+      importPfgItems(input.rows as PfgImportRow[], ctx.user.id, input.fileName, input.decisions)
+    ),
 
   getPriceHistory: protectedProcedure
     .input(z.object({ itemId: z.number() }))
