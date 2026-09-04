@@ -5,17 +5,18 @@
   "rejectedMetadataRows": 2,
   "exactItemNumberMatches": 139,
   "exactPriceChanges": 24,
-  "replacementReviewRows": 1,
-  "newRowsWithoutCandidates": 1,
+  "replacementReviewRows": 2,
+  "newRowsWithoutCandidates": 0,
   "defaultNamePolicy": "keep_existing"
 }
 
 UNMATCHED ROW REVIEW
 PFG #605163 | Milk Almond Unsweetened Barista Blend | CALIFIA FARMS | 6/32 OZ | $20.00
-  candidate ID 52 #330275 | Milk Oat Barista Blend | par 2.00 | score 56.2
+  candidate ID 2 #593174 | Milk Almond Barista Unsweetened Original | par 2.00 | score 58.6
   default: skip
 PFG #821771 | Banana | DEL MONTE | 1/40 LB | $25.54
-  default: create
+  candidate ID 73 #960982 | Banana More Green | par 1.00 | score 51.1
+  default: skip
 
 EXACT PRICE CHANGES
 #850028 | ID 70 | Natalies Lemon Juice Jugs | $59.83 -> $58.12

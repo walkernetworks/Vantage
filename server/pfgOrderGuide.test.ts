@@ -45,12 +45,34 @@ const existingItems: PfgExistingItem[] = [
   },
   {
     id: 2,
-    itemNumber: "593174",
+    itemNumber: "330275",
     name: "Milk Oat Barista Blend",
     brand: "CALIFIA FARMS",
-    packSize: "6/32 OZ",
+    packSize: "12/32 OZ",
+    price: "36.25",
+    parLevel: "2.00",
+    vendor: "PFG",
+    isActive: true,
+  },
+  {
+    id: 3,
+    itemNumber: "593174",
+    name: "Milk Almond Barista Unsweetened Original",
+    brand: "ALMOND BREEZE",
+    packSize: "12/32 OZ",
     price: "35.72",
     parLevel: "2.00",
+    vendor: "PFG",
+    isActive: true,
+  },
+  {
+    id: 4,
+    itemNumber: "960982",
+    name: "Banana More Green",
+    brand: "CHIQUITA",
+    packSize: "1/40 LB",
+    price: "32.25",
+    parLevel: "1.00",
     vendor: "PFG",
     isActive: true,
   },
@@ -107,12 +129,13 @@ describe("PFG import preview", () => {
     ], existingItems);
 
     expect(preview.classification).toBe("review");
-    expect(preview.candidates.length).toBeGreaterThan(0);
+    expect(preview.candidates[0]?.existingItemId).toBe(3);
+    expect(preview.candidates.map((candidate) => candidate.existingItemId)).not.toContain(2);
     expect(preview.defaultDecision.action).toBe("skip");
     expect(preview.defaultDecision.existingItemId).toBeUndefined();
   });
 
-  it("labels a product with no soft candidate as new", () => {
+  it("surfaces a manufacturer-changed banana as a review candidate", () => {
     const [preview] = buildPfgImportPreview([
       row({
         itemNumber: "821771",
@@ -120,6 +143,22 @@ describe("PFG import preview", () => {
         brand: "DEL MONTE",
         packSize: "1/40 LB",
         price: "25.54",
+      }),
+    ], existingItems);
+
+    expect(preview.classification).toBe("review");
+    expect(preview.candidates[0]?.existingItemId).toBe(4);
+    expect(preview.defaultDecision.action).toBe("skip");
+  });
+
+  it("labels a product with no soft candidate as new", () => {
+    const [preview] = buildPfgImportPreview([
+      row({
+        itemNumber: "900001",
+        name: "Lychee Puree",
+        brand: "NEW BRAND",
+        packSize: "6/1 LT",
+        price: "30.00",
       }),
     ], existingItems);
 

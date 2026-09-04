@@ -56,6 +56,18 @@ function tokens(value: string | null | undefined): Set<string> {
   return new Set(normalize(value).split(/\s+/).filter(Boolean));
 }
 
+const PRODUCT_VARIANT_TOKENS = new Set([
+  "almond", "oat", "soy", "coconut", "whole", "skim", "chocolate", "white",
+  "strawberry", "raspberry", "blueberry", "peach", "mango", "hazelnut", "vanilla",
+  "caramel", "salted", "decaf", "decaffeinated", "unsweetened", "sweetened", "orange",
+  "lemon", "lime", "banana", "chicken", "beef", "pork", "ham", "turkey", "sausage",
+  "bacon",
+]);
+
+function variantTokens(value: string | null | undefined): Set<string> {
+  return new Set(Array.from(tokens(value)).filter((token) => PRODUCT_VARIANT_TOKENS.has(token)));
+}
+
 function tokenOverlap(left: string, right: string): number {
   const a = tokens(left);
   const b = tokens(right);
@@ -97,7 +109,12 @@ export function scorePfgReplacement(row: PfgOrderGuideRow, item: PfgExistingItem
   const samePackSize = Boolean(normalize(row.packSize)) && normalize(row.packSize) === normalize(item.packSize);
   const ordered = orderedSimilarity(row.name, item.name);
   const overlap = tokenOverlap(row.name, item.name);
-  const score = ordered * 55 + overlap * 20 + (sameBrand ? 15 : 0) + (samePackSize ? 10 : 0);
+  const rowVariants = variantTokens(row.name);
+  const itemVariants = variantTokens(item.name);
+  const sharedVariants = Array.from(rowVariants).filter((token) => itemVariants.has(token));
+  const hasVariantConflict = rowVariants.size > 0 && itemVariants.size > 0 && sharedVariants.length === 0;
+  const variantEvidence = sharedVariants.length > 0 ? 15 : hasVariantConflict ? -15 : 0;
+  const score = ordered * 55 + overlap * 20 + (sameBrand ? 15 : 0) + (samePackSize ? 10 : 0) + variantEvidence;
 
   return {
     existingItemId: item.id,
@@ -144,7 +161,10 @@ export function buildPfgImportPreview(
     const candidates = existingItems
       .filter((item) => item.vendor === "PFG" && item.isActive)
       .map((item) => scorePfgReplacement(row, item))
-      .filter((candidate) => candidate.score >= 48)
+      // Suggestions down to 44 are shown for human review only. Product-variant
+      // evidence promotes likely manufacturer substitutions (almond→almond,
+      // banana→banana) and penalizes incompatible variants (almond→oat).
+      .filter((candidate) => candidate.score >= 44)
       .sort((left, right) => right.score - left.score)
       .slice(0, 5);
 
