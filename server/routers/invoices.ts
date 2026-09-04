@@ -21,11 +21,13 @@ import { ENV } from "../_core/env";
 import type { MessageContent } from "../_core/llm";
 import {
   deskewInvoiceForOcr,
+  extractPfgInvoiceHeader,
   extractInvoiceSummary,
   findSingleDigitItemNumberCandidates,
   hasConsistentPfgDocumentControls,
   hasRequiredPfgControls,
   mergeInvoiceSummaries,
+  normalizeInvoiceDate,
   normalizeInvoiceSummaryPayload,
   parseNumericOcr,
   reconstructPfgRowsFromHtml,
@@ -40,6 +42,7 @@ import {
   listInvoices,
   getInvoiceWithLines,
   updateInvoiceLine,
+  updateInvoiceHeader,
   markInvoiceReviewed,
   applyInvoiceToInventory,
   unapplyInvoice,
@@ -308,8 +311,11 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
   const tableParse = ocrPage?.htmlTables
     .map(reconstructPfgRowsFromHtml)
     .sort((left, right) => right.itemRowCount - left.itemRowCount)[0] ?? null;
+  const markdownHeader = extractPfgInvoiceHeader(ocrMarkdown ?? "");
   const tableFallback = (): PageResult => ({
     ...empty,
+    invoiceNumber: markdownHeader.invoiceNumber,
+    invoiceDate: markdownHeader.invoiceDate,
     lines: tableParse?.lines ?? [],
     summary: extractInvoiceSummary(ocrMarkdown ?? ""),
     sourceItemRowCount: tableParse && tableParse.itemRowCount > 0 ? tableParse.itemRowCount : null,
@@ -438,9 +444,11 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
   const llmSummary = normalizeInvoiceSummaryPayload(parsed);
   const resolvedSummary = mergeInvoiceSummaries(markdownSummary, llmSummary);
 
+  const modelInvoiceNumber = typeof parsed.invoiceNumber === "string" ? parsed.invoiceNumber.trim() : null;
+  const modelInvoiceDate = typeof parsed.invoiceDate === "string" ? normalizeInvoiceDate(parsed.invoiceDate) : null;
   return {
-    invoiceNumber: typeof parsed.invoiceNumber === "string" ? parsed.invoiceNumber.trim() : null,
-    invoiceDate: typeof parsed.invoiceDate === "string" ? parsed.invoiceDate.trim() : null,
+    invoiceNumber: modelInvoiceNumber || markdownHeader.invoiceNumber,
+    invoiceDate: modelInvoiceDate || markdownHeader.invoiceDate,
     totalAmount: parseNumericOcr(parsed.totalAmount),
     lines: validatedLines,
     summary: resolvedSummary,
@@ -658,6 +666,26 @@ export const invoicesRouter = router({
       const result = await getInvoiceWithLines(input.invoiceId);
       if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Invoice not found" });
       return result;
+    }),
+
+  updateHeader: protectedProcedure
+    .input(z.object({
+      invoiceId: z.number(),
+      invoiceNumber: z.string().trim().min(1).max(64),
+      invoiceDate: z.string().trim().min(1).max(32),
+    }))
+    .mutation(async ({ input }) => {
+      try {
+        return await updateInvoiceHeader(input.invoiceId, {
+          invoiceNumber: input.invoiceNumber,
+          invoiceDate: input.invoiceDate,
+        });
+      } catch (error) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: error instanceof Error ? error.message : "Could not update invoice details",
+        });
+      }
     }),
 
   updateLine: protectedProcedure

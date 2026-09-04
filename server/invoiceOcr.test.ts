@@ -3,11 +3,14 @@ import {
   shouldSaveValidationDraft,
   estimateDeskewDegrees,
   cleanPfgDescription,
+  extractPfgInvoiceHeader,
   findSingleDigitItemNumberCandidates,
   hasConsistentPfgDocumentControls,
   hasRequiredPfgControls,
   mergeInvoiceSummaries,
   normalizeInvoiceSummaryPayload,
+  normalizeInvoiceDate,
+  parseInvoiceDate,
   parseNumericOcr,
   reconstructPfgRowsFromHtml,
   validateAndNormalizePfgInvoice,
@@ -223,6 +226,26 @@ describe("PFG invoice 6076192 regression", () => {
   it("flags one-digit catalog-key substitutions rather than silently accepting them", () => {
     expect(findSingleDigitItemNumberCandidates("597152", ["997152", "243641"])).toEqual(["997152"]);
     expect(findSingleDigitItemNumberCandidates("247641", ["997152", "243641"])).toEqual(["243641"]);
+  });
+
+  it("recovers a PFG invoice number and canonical invoice date directly from OCR markdown", () => {
+    const header = extractPfgInvoiceHeader(`
+      PERFORMANCE FOODSERVICE
+      INVOICE NO. 6084988
+      INVOICE DATE: 08/17/26
+      CUSTOMER: BEIGNETS & BREW
+    `);
+    expect(header).toEqual({ invoiceNumber: "6084988", invoiceDate: "2026-08-17" });
+  });
+
+  it("accepts ISO dates from manual review and rejects impossible invoice dates", () => {
+    expect(normalizeInvoiceDate("2026-08-17")).toBe("2026-08-17");
+    expect(parseInvoiceDate("08/17/26")?.toISOString()).toBe("2026-08-17T12:00:00.000Z");
+    expect(normalizeInvoiceDate("02/30/26")).toBeNull();
+    expect(extractPfgInvoiceHeader("INVOICE 6084988\nINVOICE DATE: 02/30/26")).toEqual({
+      invoiceNumber: "6084988",
+      invoiceDate: null,
+    });
   });
 
   it("uses structured page controls when OCR markdown omits the totals block", () => {

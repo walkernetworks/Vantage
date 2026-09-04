@@ -595,3 +595,11 @@
 - [x] Keep unresolved subtotal, ship-count, and catalog-key discrepancies visible in locked review drafts
 - [x] Localize unresolved discrepancy candidates without guessing an inventory-affecting correction
 - [x] Add regression coverage for held-draft diagnostic accuracy
+
+## Round 75 — Invoice Header and Receipt-Date Integrity
+- [x] Trace missing production invoice headers to a parser path that retained validated table rows while losing structured OCR header fields
+- [x] Add deterministic PFG invoice-number and invoice-date extraction from OCR markdown, with canonical `YYYY-MM-DD` storage
+- [x] Add reviewer-editable invoice number/date controls and prevent delivery application until both fields are valid
+- [x] Date receipt stock events from the printed invoice date rather than the time of application or upload
+- [x] Re-date receipt stock events transactionally when an applied invoice header is corrected
+- [x] Preserve unknown historical values for manual review rather than inferring invoice dates without retained source media

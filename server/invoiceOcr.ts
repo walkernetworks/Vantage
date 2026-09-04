@@ -20,6 +20,11 @@ export interface InvoiceSummary {
   sectionTotals: Record<string, number>;
 }
 
+export interface InvoiceHeader {
+  invoiceNumber: string | null;
+  invoiceDate: string | null;
+}
+
 /** Uses the first verified value for each document control, preserving section recaps. */
 export function mergeInvoiceSummaries(primary: InvoiceSummary, fallback: InvoiceSummary): InvoiceSummary {
   return {
@@ -92,6 +97,54 @@ function decodeHtml(value: string): string {
 
 function headerKey(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * Returns a calendar date from a printed invoice date, or null when the value
+ * is incomplete or invalid. Noon UTC avoids shifting the business date in EDT.
+ */
+export function parseInvoiceDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  const isoMatch = trimmed.match(/^([12]\d{3})-(\d{1,2})-(\d{1,2})$/);
+  const slashMatch = trimmed.match(/\b(\d{1,2})\s*[\/-]\s*(\d{1,2})\s*[\/-]\s*(\d{2}|\d{4})\b/);
+  const year = isoMatch ? Number(isoMatch[1]) : slashMatch ? (slashMatch[3].length === 2 ? 2000 + Number(slashMatch[3]) : Number(slashMatch[3])) : NaN;
+  const month = isoMatch ? Number(isoMatch[2]) : slashMatch ? Number(slashMatch[1]) : NaN;
+  const day = isoMatch ? Number(isoMatch[3]) : slashMatch ? Number(slashMatch[2]) : NaN;
+  if (year < 2000 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const parsed = new Date(Date.UTC(year, month - 1, day, 12));
+  if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) return null;
+  return parsed;
+}
+
+export function normalizeInvoiceDate(value: string | null | undefined): string | null {
+  const parsed = parseInvoiceDate(value);
+  if (!parsed) return null;
+  return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, "0")}-${String(parsed.getUTCDate()).padStart(2, "0")}`;
+}
+
+/**
+ * Reads the printed PFG document controls from OCR markdown. This is an
+ * independent fallback because table reconstruction may bypass malformed LLM
+ * JSON while still having a reliable OCR header.
+ */
+export function extractPfgInvoiceHeader(markdown: string): InvoiceHeader {
+  const source = markdown.replace(/\r/g, " ");
+  const invoiceNumberPatterns = [
+    /\b(?:invoice|inv)\s*(?:number|no\.?|#)?\s*[:#-]*\s*(\d{6,10})\b/i,
+    /\binvoice\s*[:#-]\s*(\d{6,10})\b/i,
+  ];
+  const invoiceDatePatterns = [
+    /\b(?:invoice|inv)\s*date\s*[:#-]*\s*(\d{1,2}\s*[\/-]\s*\d{1,2}\s*[\/-]\s*\d{2,4})\b/i,
+    /\bdate\s*[:#-]*\s*(\d{1,2}\s*[\/-]\s*\d{1,2}\s*[\/-]\s*\d{2,4})\b/i,
+  ];
+  const invoiceNumber = invoiceNumberPatterns
+    .map((pattern) => source.match(pattern)?.[1] ?? null)
+    .find((value): value is string => Boolean(value)) ?? null;
+  const rawDate = invoiceDatePatterns
+    .map((pattern) => source.match(pattern)?.[1] ?? null)
+    .find((value): value is string => Boolean(value)) ?? null;
+  return { invoiceNumber, invoiceDate: normalizeInvoiceDate(rawDate) };
 }
 
 function columnIndex(headers: string[], candidates: string[]): number {

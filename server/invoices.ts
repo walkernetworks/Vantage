@@ -5,6 +5,7 @@ import { eq, and, desc, gt, isNull } from "drizzle-orm";
 import { getDb, getRawPool } from "./db";
 import { invoices, invoiceLines, items, stockEvents, countEntries, countSessions } from "../drizzle/schema";
 import { invokeLLM } from "./_core/llm";
+import { normalizeInvoiceDate, parseInvoiceDate } from "./invoiceOcr";
 
 export interface ParsedLine {
   itemNumber: string | null;
@@ -129,12 +130,14 @@ export async function saveInvoiceLines(
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+  const invoiceNumber = header.invoiceNumber?.trim() || null;
+  const invoiceDate = normalizeInvoiceDate(header.invoiceDate);
 
   await db
     .update(invoices)
     .set({
-      invoiceNumber: header.invoiceNumber ?? null,
-      invoiceDate: header.invoiceDate ?? null,
+      invoiceNumber,
+      invoiceDate,
       totalAmount: header.totalAmount ? String(header.totalAmount) : null,
     })
     .where(eq(invoices.id, invoiceId));
@@ -222,6 +225,45 @@ export async function saveInvoiceLines(
   }
 }
 
+export async function updateInvoiceHeader(
+  invoiceId: number,
+  input: { invoiceNumber: string; invoiceDate: string }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const invoiceNumber = input.invoiceNumber.trim();
+  const invoiceDate = normalizeInvoiceDate(input.invoiceDate);
+  const receiptDate = parseInvoiceDate(input.invoiceDate);
+  if (!invoiceNumber) throw new Error("Invoice number is required");
+  if (!invoiceDate || !receiptDate) throw new Error("Enter a valid invoice date in MM/DD/YY or YYYY-MM-DD format");
+
+  await db.transaction(async (tx) => {
+    const current = await tx
+      .select({ id: invoices.id, status: invoices.status })
+      .from(invoices)
+      .where(eq(invoices.id, invoiceId))
+      .limit(1);
+    if (current.length === 0) throw new Error("Invoice not found");
+
+    await tx
+      .update(invoices)
+      .set({ invoiceNumber, invoiceDate })
+      .where(eq(invoices.id, invoiceId));
+
+    // Applied invoices already have receipt events. Correct their business date
+    // immediately so reporting and stock history remain consistent with the
+    // printed invoice, without recreating the delivery.
+    if (current[0].status === "applied") {
+      await tx
+        .update(stockEvents)
+        .set({ eventDate: receiptDate })
+        .where(eq(stockEvents.invoiceId, invoiceId));
+    }
+  });
+
+  return { invoiceNumber, invoiceDate };
+}
+
 export async function listInvoices() {
   const db = await getDb();
   if (!db) return [];
@@ -303,6 +345,15 @@ export async function applyInvoiceToInventory(invoiceId: number, appliedBy?: num
   const db = await getDb();
   if (!db) return [];
 
+  const [invoice] = await db
+    .select({ invoiceNumber: invoices.invoiceNumber, invoiceDate: invoices.invoiceDate })
+    .from(invoices)
+    .where(eq(invoices.id, invoiceId));
+  const receiptDate = parseInvoiceDate(invoice?.invoiceDate);
+  if (!invoice?.invoiceNumber?.trim() || !receiptDate) {
+    throw new Error("Invoice number and a valid invoice date are required before applying a delivery.");
+  }
+
   // Only apply matched lines that were actually received
   const lines = await db
     .select()
@@ -334,7 +385,7 @@ export async function applyInvoiceToInventory(invoiceId: number, appliedBy?: num
       invoiceId,
       invoiceLineId: line.id,
       createdBy: appliedBy ?? null,
-      eventDate: new Date(),
+      eventDate: receiptDate,
     });
   }
 

@@ -2,7 +2,7 @@
  * Invoices page — upload PFG invoice photos, AI-parse them, review line items,
  * and apply deliveries to inventory.
  */
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -104,6 +104,22 @@ function statusBadge(status: InvoiceStatus) {
 
 function formatDate(ts: Date | number) {
   return new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function invoiceDateForInput(value: string | null | undefined) {
+  if (!value) return "";
+  const iso = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return value;
+  const slash = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  if (!slash) return "";
+  const year = slash[3].length === 2 ? `20${slash[3]}` : slash[3];
+  return `${year}-${slash[1].padStart(2, "0")}-${slash[2].padStart(2, "0")}`;
+}
+
+function formatInvoiceDate(value: string | null | undefined) {
+  const normalized = invoiceDateForInput(value);
+  if (!normalized) return value ?? "—";
+  return new Date(`${normalized}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
 
 function formatCurrency(n: number | string | null | undefined) {
@@ -317,6 +333,23 @@ function ReviewDialog({
   );
   const { data: allItems } = trpc.items.list.useQuery(undefined, { enabled: open });
   const [confirmApply, setConfirmApply] = useState(false);
+  const [headerNumber, setHeaderNumber] = useState("");
+  const [headerDate, setHeaderDate] = useState("");
+
+  useEffect(() => {
+    if (!data?.invoice) return;
+    setHeaderNumber(data.invoice.invoiceNumber ?? "");
+    setHeaderDate(invoiceDateForInput(data.invoice.invoiceDate));
+  }, [data?.invoice?.id, data?.invoice?.invoiceNumber, data?.invoice?.invoiceDate]);
+
+  const updateHeaderMutation = trpc.invoices.updateHeader.useMutation({
+    onSuccess: () => {
+      utils.invoices.list.invalidate();
+      utils.invoices.getWithLines.invalidate({ invoiceId });
+      toast.success("Invoice number and delivery date saved");
+    },
+    onError: (err) => toast.error(err.message ?? "Could not save invoice details"),
+  });
 
   const updateLineMutation = trpc.invoices.updateLine.useMutation({
     onSuccess: () => utils.invoices.getWithLines.invalidate({ invoiceId }),
@@ -411,6 +444,40 @@ function ReviewDialog({
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto min-h-0 px-6 py-4 space-y-4">
+              {invoice && (
+                <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">Invoice details</p>
+                      <p className="text-xs text-muted-foreground">Use the printed invoice number and invoice date. Applied receipt history is re-dated when these details are corrected.</p>
+                    </div>
+                    {(!invoice.invoiceNumber || !invoice.invoiceDate) && (
+                      <Badge variant="outline" className="border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-300">Required before apply</Badge>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="space-y-1">
+                      <span className="text-xs font-medium text-muted-foreground">Invoice number</span>
+                      <Input value={headerNumber} onChange={(event) => setHeaderNumber(event.target.value)} placeholder="e.g. 6084988" />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-xs font-medium text-muted-foreground">Invoice date</span>
+                      <Input type="date" value={headerDate} onChange={(event) => setHeaderDate(event.target.value)} />
+                    </label>
+                  </div>
+                  <div className="flex justify-end">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!headerNumber.trim() || !headerDate || updateHeaderMutation.isPending}
+                      onClick={() => updateHeaderMutation.mutate({ invoiceId, invoiceNumber: headerNumber, invoiceDate: headerDate })}
+                    >
+                      {updateHeaderMutation.isPending ? "Saving…" : "Save invoice details"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {/* Summary bar */}
               {invoice?.status === "pending" && invoice.notes?.includes("[OCR validation hold]") && (
                 <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
@@ -768,7 +835,7 @@ export default function Invoices() {
                       Invoice #{invoice.invoiceNumber ?? "—"}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {invoice.invoiceDate ?? formatDate(invoice.createdAt)}
+                      {invoice.invoiceDate ? formatInvoiceDate(invoice.invoiceDate) : "Invoice date required"}
                       {invoice.totalAmount != null && ` · ${formatCurrency(invoice.totalAmount)}`}
                     </p>
                     {invoice.lineCount != null && (
