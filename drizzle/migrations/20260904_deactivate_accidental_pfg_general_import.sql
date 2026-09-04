@@ -2,8 +2,9 @@
 --
 -- The Sep. 3, 2026 PFG order guide was incorrectly routed through the General
 -- importer, creating item IDs 300001-300060 as vendor `Other` with no item
--- numbers. Run the corrected PFG import first. It will update 139 canonical PFG
--- records and create the two genuinely new PFG products with their item numbers.
+-- numbers. Run the corrected PFG reconciliation first. It updates 139 exact
+-- item-number matches and replaces the item numbers/details on two approved
+-- canonical records while preserving their IDs, names, pars, and history.
 --
 -- This cleanup is intentionally guarded. It updates zero rows unless exactly 60
 -- matching accidental rows still exist and none has acquired historical links.
