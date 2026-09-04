@@ -22,6 +22,7 @@ import type { MessageContent } from "../_core/llm";
 import {
   deskewInvoiceForOcr,
   extractPfgInvoiceHeader,
+  extractPfgPageIndicator,
   extractInvoiceSummary,
   findSingleDigitItemNumberCandidates,
   hasConsistentPfgDocumentControls,
@@ -142,6 +143,7 @@ interface PageResult {
   lines: InvoiceLineDraft[];
   summary: InvoiceSummary;
   sourceItemRowCount: number | null;
+  expectedPageCount: number | null;
 }
 
 interface OcrPage {
@@ -294,6 +296,7 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
     lines: [],
     summary: { subtotal: null, tax: null, total: null, shippedCount: null, sectionTotals: {} },
     sourceItemRowCount: null,
+    expectedPageCount: null,
   };
 
   // ── Extract base64 from data URL ──────────────────────────────────────────
@@ -310,10 +313,12 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
   const ocrMarkdown = ocrPage?.markdown ?? null;
   const tableParse = selectPfgItemTable(ocrPage?.htmlTables ?? []);
   const markdownHeader = extractPfgInvoiceHeader(ocrMarkdown ?? "");
+  const pageIndicator = extractPfgPageIndicator(ocrMarkdown ?? "");
   const tableFallback = (): PageResult => ({
     ...empty,
     invoiceNumber: markdownHeader.invoiceNumber,
     invoiceDate: markdownHeader.invoiceDate,
+    expectedPageCount: pageIndicator?.totalPages ?? null,
     lines: tableParse?.lines ?? [],
     summary: extractInvoiceSummary(ocrMarkdown ?? ""),
     sourceItemRowCount: tableParse && tableParse.itemRowCount > 0 ? tableParse.itemRowCount : null,
@@ -459,6 +464,7 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
     lines: validatedLines,
     summary: resolvedSummary,
     sourceItemRowCount: tableParse && tableParse.itemRowCount > 0 ? tableParse.itemRowCount : null,
+    expectedPageCount: pageIndicator?.totalPages ?? null,
   };
 }
 
@@ -475,6 +481,7 @@ async function parseInvoiceImages(imageDataUrls: string[]): Promise<PageResult> 
     lines: [],
     summary: { subtotal: null, tax: null, total: null, shippedCount: null, sectionTotals: {} },
     sourceItemRowCount: 0,
+    expectedPageCount: null,
   };
 
   for (let i = 0; i < imageDataUrls.length; i++) {
@@ -497,6 +504,9 @@ async function parseInvoiceImages(imageDataUrls: string[]): Promise<PageResult> 
     if (master.summary.shippedCount === null && pageResult.summary.shippedCount !== null) master.summary.shippedCount = pageResult.summary.shippedCount;
     Object.assign(master.summary.sectionTotals, pageResult.summary.sectionTotals);
     if (pageResult.sourceItemRowCount !== null) master.sourceItemRowCount = (master.sourceItemRowCount ?? 0) + pageResult.sourceItemRowCount;
+    if (pageResult.expectedPageCount !== null) {
+      master.expectedPageCount = Math.max(master.expectedPageCount ?? 0, pageResult.expectedPageCount);
+    }
 
     // Push every line from this page into the master array
     master.lines.push(...pageResult.lines);
@@ -569,6 +579,9 @@ export const invoicesRouter = router({
       console.log(`[Invoice] OCR complete: ${parsed.lines.length} lines total`);
 
       const validation = validateAndNormalizePfgInvoice(parsed.lines, parsed.summary, parsed.sourceItemRowCount);
+      if (parsed.expectedPageCount !== null && input.images.length < parsed.expectedPageCount) {
+        validation.errors.push(`Invoice indicates ${parsed.expectedPageCount} pages, but only ${input.images.length} page${input.images.length === 1 ? " was" : "s were"} uploaded. Add the remaining page${parsed.expectedPageCount === input.images.length + 1 ? "" : "s"} before applying this receipt.`);
+      }
       const catalogItemNumbers = await getCatalogItemNumbers();
       if (catalogItemNumbers.length > 0) {
         for (const line of validation.lines) {

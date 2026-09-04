@@ -25,6 +25,11 @@ export interface InvoiceHeader {
   invoiceDate: string | null;
 }
 
+export interface PfgPageIndicator {
+  page: number;
+  totalPages: number;
+}
+
 /** Uses the first verified value for each document control, preserving section recaps. */
 export function mergeInvoiceSummaries(primary: InvoiceSummary, fallback: InvoiceSummary): InvoiceSummary {
   return {
@@ -129,6 +134,16 @@ export function normalizeInvoiceDate(value: string | null | undefined): string |
  * independent fallback because table reconstruction may bypass malformed LLM
  * JSON while still having a reliable OCR header.
  */
+export function extractPfgPageIndicator(markdown: string): PfgPageIndicator | null {
+  const source = markdown.replace(/\r/g, " ");
+  const match = source.match(/\bPAGE\s*[:#-]*\s*(\d{1,2})\s*(?:OF|\/|\|)\s*(\d{1,2})\b/i);
+  if (!match) return null;
+  const page = Number(match[1]);
+  const totalPages = Number(match[2]);
+  if (page < 1 || totalPages < page || totalPages > 50) return null;
+  return { page, totalPages };
+}
+
 export function extractPfgInvoiceHeader(markdown: string): InvoiceHeader {
   const source = markdown.replace(/\r/g, " ");
   const invoiceNumberPatterns = [

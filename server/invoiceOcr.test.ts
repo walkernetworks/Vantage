@@ -4,6 +4,7 @@ import {
   estimateDeskewDegrees,
   cleanPfgDescription,
   extractPfgInvoiceHeader,
+  extractPfgPageIndicator,
   findSingleDigitItemNumberCandidates,
   hasConsistentPfgDocumentControls,
   hasRequiredPfgControls,
@@ -270,6 +271,12 @@ describe("PFG invoice 6076192 regression", () => {
       CUSTOMER: BEIGNETS & BREW
     `);
     expect(header).toEqual({ invoiceNumber: "6084988", invoiceDate: "2026-08-17" });
+  });
+
+  it("detects printed PFG page counts so incomplete uploads can remain protected review drafts", () => {
+    expect(extractPfgPageIndicator("ROUTE 1C5 STOP 3 PAGE 1 / 3 DATE 8/31/26")).toEqual({ page: 1, totalPages: 3 });
+    expect(extractPfgPageIndicator("PAGE 2 OF 3")).toEqual({ page: 2, totalPages: 3 });
+    expect(extractPfgPageIndicator("PAGE 0 / 3")).toBeNull();
   });
 
   it("accepts ISO dates from manual review and rejects impossible invoice dates", () => {
