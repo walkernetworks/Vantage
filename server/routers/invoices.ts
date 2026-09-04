@@ -30,7 +30,7 @@ import {
   normalizeInvoiceDate,
   normalizeInvoiceSummaryPayload,
   parseNumericOcr,
-  reconstructPfgRowsFromHtml,
+  selectPfgItemTable,
   shouldSaveValidationDraft,
   validateAndNormalizePfgInvoice,
   type InvoiceLineDraft,
@@ -308,9 +308,7 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
     console.warn(`[Invoice OCR] page ${pageIndex + 1}: could not extract base64 from data URL, skipping Mistral OCR`);
   }
   const ocrMarkdown = ocrPage?.markdown ?? null;
-  const tableParse = ocrPage?.htmlTables
-    .map(reconstructPfgRowsFromHtml)
-    .sort((left, right) => right.itemRowCount - left.itemRowCount)[0] ?? null;
+  const tableParse = selectPfgItemTable(ocrPage?.htmlTables ?? []);
   const markdownHeader = extractPfgInvoiceHeader(ocrMarkdown ?? "");
   const tableFallback = (): PageResult => ({
     ...empty,
@@ -339,11 +337,19 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
           { role: "system", content: JSON_EXTRACTION_PROMPT },
           {
             role: "user",
-            content: `Here is the OCR-extracted text from invoice page ${pageIndex + 1}. Extract all product rows into the JSON format specified:\n\n${cleanedMarkdown}`,
+            content: tableParse
+              ? `Here is the OCR-extracted text from invoice page ${pageIndex + 1}. Extract all product rows into the JSON format specified:\n\n${cleanedMarkdown}`
+              : [
+                  {
+                    type: "text" as const,
+                    text: `OCR text did not yield a trustworthy physical product grid for invoice page ${pageIndex + 1}. Use this image to recover every product row into the JSON format specified. Cross-check the OCR text below, but trust the visual row alignment when they conflict. Do not extract category recaps, footer tables, signatures, or document controls as products.\n\nOCR text:\n${cleanedMarkdown}`,
+                  },
+                  { type: "image_url" as const, image_url: { url: dataUrl, detail: "high" as const } },
+                ] as MessageContent[],
           },
         ],
         response_format: { type: "json_object" },
-        max_tokens: 4096,
+        max_tokens: tableParse ? 4096 : 8192,
       });
     } else {
       // Fallback: GPT-4o vision (original approach)

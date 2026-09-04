@@ -39,6 +39,7 @@ export function mergeInvoiceSummaries(primary: InvoiceSummary, fallback: Invoice
 export interface PfgTableParseResult {
   lines: InvoiceLineDraft[];
   itemRowCount: number;
+  usableRowCount: number;
 }
 
 export interface ValidationResult {
@@ -239,6 +240,20 @@ function isCategoryHeader(cells: string[]): boolean {
   return text === text.toUpperCase() && /[A-Z]/.test(text) && text.length >= 4;
 }
 
+/** PFG recap and footer grids can follow the product grid in the same OCR table. */
+function isPfgGridTerminator(cells: string[]): boolean {
+  const text = cells.filter(Boolean).join(" ").replace(/\s+/g, " ").trim().toUpperCase();
+  return /\bCAT\s*#\b/.test(text)
+    || (/\bDESCRIPTION\b/.test(text) && /\bCOST\b/.test(text) && /\bTAX\b/.test(text))
+    || /\b(?:CUSTOMER|DRIVER)\s+SIGNATURE\b/.test(text)
+    || /\b(?:SUB\s*TOTAL|INVOICE\s+TOTAL|AMOUNT\s+DUE)\b/.test(text)
+    || /\bREASON\s+CODE\s+FOR\s+RETURN\b/.test(text);
+}
+
+function isUsablePfgProductRow(line: InvoiceLineDraft): boolean {
+  return Boolean(line.itemNumber && line.description && line.shippedQty !== null && (line.unitPrice !== null || line.extension !== null));
+}
+
 /**
  * Uses OCR's HTML table output, which preserves the physical table grid. Each
  * record is read from one <tr>; values from independent columns are never zipped
@@ -250,7 +265,7 @@ export function reconstructPfgRowsFromHtml(html: string): PfgTableParseResult {
     const combined = row.map(headerKey).join(" ");
     return combined.includes("item") && combined.includes("description") && (combined.includes("shipped") || combined.includes("ship"));
   });
-  if (headerRowIndex < 0) return { lines: [], itemRowCount: 0 };
+  if (headerRowIndex < 0) return { lines: [], itemRowCount: 0, usableRowCount: 0 };
 
   const headerRow = rows[headerRowIndex].map(headerKey);
   const itemIndex = columnIndex(headerRow, ["itemnumber", "itemno", "item"]);
@@ -261,13 +276,16 @@ export function reconstructPfgRowsFromHtml(html: string): PfgTableParseResult {
   const descriptionIndex = columnIndex(headerRow, ["description", "desc"]);
   const priceIndex = columnIndex(headerRow, ["unitprice", "price"]);
   const extensionIndex = columnIndex(headerRow, ["extension", "ext"]);
-  if (itemIndex < 0 || descriptionIndex < 0) return { lines: [], itemRowCount: 0 };
+  if (itemIndex < 0 || descriptionIndex < 0) return { lines: [], itemRowCount: 0, usableRowCount: 0 };
 
   let activeCategory: string | null = null;
   let itemRowCount = 0;
   const lines: InvoiceLineDraft[] = [];
 
   for (const cells of rows.slice(headerRowIndex + 1)) {
+    // Do not continue into the document recap or signature tables when OCR has
+    // flattened them into the product grid. Their numeric cells are not SKUs.
+    if (isPfgGridTerminator(cells)) break;
     const itemNumber = (cells[itemIndex] ?? "").replace(/\D/g, "");
     if (!ITEM_NUMBER.test(itemNumber)) {
       if (isCategoryHeader(cells)) activeCategory = cells.filter(Boolean).join(" ").trim();
@@ -286,7 +304,24 @@ export function reconstructPfgRowsFromHtml(html: string): PfgTableParseResult {
       category: activeCategory,
     });
   }
-  return { lines, itemRowCount };
+  return { lines, itemRowCount, usableRowCount: lines.filter(isUsablePfgProductRow).length };
+}
+
+/**
+ * Chooses the most trustworthy PFG product grid from a page's OCR tables. A
+ * numeric recap/footer table cannot outrank a product grid simply because it
+ * contains more number-shaped cells.
+ */
+export function selectPfgItemTable(htmlTables: string[]): PfgTableParseResult | null {
+  const candidates = htmlTables
+    .map(reconstructPfgRowsFromHtml)
+    .filter((candidate) => candidate.usableRowCount > 0);
+  if (candidates.length === 0) return null;
+  candidates.sort((left, right) => {
+    if (right.usableRowCount !== left.usableRowCount) return right.usableRowCount - left.usableRowCount;
+    return right.itemRowCount - left.itemRowCount;
+  });
+  return candidates[0];
 }
 
 function findMoney(markdown: string, pattern: RegExp): number | null {

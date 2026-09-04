@@ -603,3 +603,12 @@
 - [x] Date receipt stock events from the printed invoice date rather than the time of application or upload
 - [x] Re-date receipt stock events transactionally when an applied invoice header is corrected
 - [x] Preserve unknown historical values for manual review rather than inferring invoice dates without retained source media
+
+## Round 76 — PFG Invoice 6089153 Multi-Page OCR Recovery
+- [x] Inspect the supplied August 31 PFG invoice photos and production OCR logs
+- [x] Confirm that the rejected parse was caused by recap/footer table artifacts, not unreadable source photos
+- [x] Prevent recap, signature, and footer grids from producing inventory item rows
+- [x] Score all OCR table candidates by usable same-row product geometry instead of choosing the largest numeric table
+- [x] Add image-assisted structured extraction when OCR returns no viable physical product grid
+- [x] Preserve printed document controls as the required acceptance gate and retain incomplete receipts as review drafts
+- [x] Add regressions for recap/footer artifacts and competing OCR grid candidates

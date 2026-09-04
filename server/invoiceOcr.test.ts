@@ -13,6 +13,7 @@ import {
   parseInvoiceDate,
   parseNumericOcr,
   reconstructPfgRowsFromHtml,
+  selectPfgItemTable,
   validateAndNormalizePfgInvoice,
   type InvoiceLineDraft,
   type InvoiceSummary,
@@ -170,6 +171,39 @@ describe("PFG invoice 6076192 regression", () => {
       "NTRSBST CREAM HVY WHIPPING",
     ]);
     expect(result.lines.every((item) => item.category === "BEIGNETS & FOOD-DAIRY")).toBe(true);
+  });
+
+  it("stops before PFG recap and footer grids so their numeric cells never become product items", () => {
+    const html = `
+      <table>
+        <tr><th>Item Number</th><th>Ordered</th><th>Shipped</th><th>Pack</th><th>Size</th><th>Description</th><th>Unit Price</th><th>Extension</th></tr>
+        <tr><td>332560</td><td>3</td><td>3</td><td>1</td><td>3 GA</td><td>TILLAMK ICE CREAM VAN BEAN TUB</td><td>39.4300</td><td>118.29</td></tr>
+        <tr><td>534152</td><td>5</td><td>5</td><td>4</td><td>50 CT</td><td>ROYAL BOX TAKE OUT FOLDED #3 KRAFT</td><td>40.7500</td><td>203.75</td></tr>
+        <tr><td>981346</td><td>1</td><td>1</td><td>1</td><td>250 CT</td><td>BEI BREW BAG WHITE</td><td>68.8500</td><td>68.85</td></tr>
+        <tr><td>CAT #</td><td>DESCRIPTION</td><td>COST</td><td>TAX</td><td>TOTAL</td></tr>
+        <tr><td>99979</td><td>OTHER</td><td>25.54</td><td>0.00</td><td>25.54</td></tr>
+        <tr><td>14333056</td><td>TOTAL</td><td>3515.11</td><td>6.02</td><td>3521.13</td></tr>
+      </table>`;
+    const result = reconstructPfgRowsFromHtml(html);
+
+    expect(result.itemRowCount).toBe(3);
+    expect(result.usableRowCount).toBe(3);
+    expect(result.lines.map((line) => line.itemNumber)).toEqual(["332560", "534152", "981346"]);
+  });
+
+  it("selects the viable PFG product grid instead of a larger recap/footer table", () => {
+    const productGrid = `
+      <table><tr><th>Item Number</th><th>Ordered</th><th>Shipped</th><th>Pack</th><th>Size</th><th>Description</th><th>Price</th><th>Extension</th></tr>
+      <tr><td>332560</td><td>3</td><td>3</td><td>1</td><td>3 GA</td><td>TILLAMK ICE CREAM</td><td>39.43</td><td>118.29</td></tr>
+      <tr><td>534152</td><td>5</td><td>5</td><td>4</td><td>50 CT</td><td>ROYAL BOX</td><td>40.75</td><td>203.75</td></tr></table>`;
+    const recapGrid = `
+      <table><tr><th>Item Number</th><th>Ordered</th><th>Shipped</th><th>Pack</th><th>Size</th><th>Description</th><th>Price</th><th>Extension</th></tr>
+      <tr><td>99979</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><td>14333056</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr></table>`;
+    const selected = selectPfgItemTable([recapGrid, productGrid]);
+
+    expect(selected?.lines.map((line) => line.itemNumber)).toEqual(["332560", "534152"]);
+    expect(selected?.usableRowCount).toBe(2);
   });
 
   it("rejects a PFG section whose item extensions do not reconcile to the recap", () => {
