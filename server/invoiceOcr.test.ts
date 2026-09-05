@@ -146,6 +146,17 @@ describe("PFG invoice 6076192 regression", () => {
     expect(findSingleDigitItemNumberCandidates("1031689", ["1035689"])).toEqual(["1035689"]);
   });
 
+  it("recognizes PFG grids labeled CAT #", () => {
+    const html = `<table>
+      <tr><th>CAT #</th><th>Ordered</th><th>Shipped</th><th>Pack</th><th>Size</th><th>Description</th><th>Unit Price</th><th>Extension</th></tr>
+      <tr><td>821771</td><td>1</td><td>1</td><td>1</td><td>40 LB</td><td>DELMONTE BANANA</td><td>25.54</td><td>25.54</td></tr>
+    </table>`;
+    const result = reconstructPfgRowsFromHtml(html);
+    expect(result.itemRowCount).toBe(1);
+    expect(result.lines[0]?.itemNumber).toBe("821771");
+    expect(result.lines[0]?.extension).toBe(25.54);
+  });
+
   it("normalizes cent-level line extension drift before subtotal validation", () => {
     const lines = [
       line("534152", 5, 40.75, 203.74),

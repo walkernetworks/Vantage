@@ -299,12 +299,12 @@ export function reconstructPfgRowsFromHtml(html: string): PfgTableParseResult {
   const rows = extractHtmlRows(html);
   const headerRowIndex = rows.findIndex((row) => {
     const combined = row.map(headerKey).join(" ");
-    return combined.includes("item") && combined.includes("description") && (combined.includes("shipped") || combined.includes("ship"));
+    return (combined.includes("item") || combined.includes("cat")) && combined.includes("description") && (combined.includes("shipped") || combined.includes("ship"));
   });
   if (headerRowIndex < 0) return { lines: [], itemRowCount: 0, usableRowCount: 0 };
 
   const headerRow = rows[headerRowIndex].map(headerKey);
-  const itemIndex = columnIndex(headerRow, ["itemnumber", "itemno", "item"]);
+  const itemIndex = columnIndex(headerRow, ["itemnumber", "itemno", "catalog", "cat", "item"]);
   const orderedIndex = columnIndex(headerRow, ["ordered", "order"]);
   const shippedIndex = columnIndex(headerRow, ["shipped", "ship"]);
   const packIndex = columnIndex(headerRow, ["pack"]);
