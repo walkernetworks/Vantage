@@ -66,6 +66,10 @@ export interface DeskewResult {
 }
 
 const MONEY_TOLERANCE = 0.02;
+// A line extension is stored to cents. A one-cent-or-more discrepancy between
+// unit price × shipped quantity and the printed extension is not harmless
+// floating-point noise; normalize it before reconciling the document subtotal.
+const LINE_MONEY_TOLERANCE = 0.005;
 const ITEM_NUMBER = /^\d{5,8}$/;
 const MAX_AUTO_DESKEW_DEGREES = 5;
 const PFG_SECTIONS = [
@@ -435,7 +439,7 @@ export function validateAndNormalizePfgInvoice(
 
     if (line.unitPrice !== null && line.shippedQty !== null) {
       const calculatedExtension = roundMoney(line.unitPrice * line.shippedQty);
-      if (line.extension === null || Math.abs(calculatedExtension - line.extension) > MONEY_TOLERANCE) {
+      if (line.extension === null || Math.abs(calculatedExtension - line.extension) > LINE_MONEY_TOLERANCE) {
         const prior = line.extension;
         line.extension = calculatedExtension;
         corrections.push(`Item ${line.itemNumber ?? "unknown"}: extension ${prior ?? "missing"} corrected to ${calculatedExtension.toFixed(2)} from unit price × shipped.`);

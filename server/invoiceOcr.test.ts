@@ -146,6 +146,25 @@ describe("PFG invoice 6076192 regression", () => {
     expect(findSingleDigitItemNumberCandidates("1031689", ["1035689"])).toEqual(["1035689"]);
   });
 
+  it("normalizes cent-level line extension drift before subtotal validation", () => {
+    const lines = [
+      line("534152", 5, 40.75, 203.74),
+      line("265274", 1, 22.03, 22.01),
+    ];
+    const result = validateAndNormalizePfgInvoice(lines, {
+      subtotal: 225.78,
+      tax: 0,
+      total: 225.78,
+      shippedCount: 6,
+      sectionTotals: {},
+    }, 2);
+    expect(result.errors).toEqual([]);
+    expect(result.lines.map((item) => item.extension)).toEqual([203.75, 22.03]);
+    expect(result.lines.reduce((sum, item) => sum + (item.extension ?? 0), 0)).toBeCloseTo(225.78, 2);
+    expect(result.corrections.join(" ")).toContain("534152: extension 203.74 corrected to 203.75");
+    expect(result.corrections.join(" ")).toContain("265274: extension 22.01 corrected to 22.03");
+  });
+
   it("rejects the legacy drift pattern instead of returning 38 shifted rows", () => {
     const drifted = invoice6076192Lines().slice(0, 38);
     drifted[4] = { ...drifted[4], description: null, unitPrice: null, extension: null };
