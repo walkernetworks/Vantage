@@ -383,6 +383,51 @@ export function extractInvoiceSummary(markdown: string): InvoiceSummary {
 }
 
 /**
+ * Native PDF OCR often returns PFG controls in a separate HTML table rather
+ * than in the page markdown. Collect keyword-adjacent money candidates and
+ * select the only subtotal/tax/total triple that reconciles arithmetically.
+ */
+export function extractPfgPdfControlTotals(content: string): InvoiceSummary {
+  const base = extractInvoiceSummary(content);
+  const text = content.replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ");
+  const moneyAfter = (label: RegExp): number[] => {
+    const values: number[] = [];
+    const globalLabel = new RegExp(label.source, label.flags.includes("g") ? label.flags : `${label.flags}g`);
+    for (const match of text.matchAll(globalLabel)) {
+      const tail = text.slice((match.index ?? 0) + match[0].length, (match.index ?? 0) + match[0].length + 140);
+      const value = tail.match(/\$?\s*([\d,]+\.\d{2})/);
+      if (value) {
+        const parsed = parseNumericOcr(value[1]);
+        if (parsed !== null) values.push(parsed);
+      }
+    }
+    return values;
+  };
+  const subtotals = moneyAfter(/SUB\s*TOTAL/i);
+  const taxes = moneyAfter(/\bTAX\b/i);
+  const totals = moneyAfter(/INVOICE\s+TOTAL|\bTOTAL\b(?!\s*(?:ITEMS|QTY))/i);
+  let subtotal = base.subtotal;
+  let tax = base.tax;
+  let total = base.total;
+  for (const candidateSubtotal of subtotals) {
+    for (const candidateTax of taxes) {
+      for (const candidateTotal of totals) {
+        if (Math.abs(Math.round((candidateSubtotal + candidateTax - candidateTotal) * 100) / 100) <= MONEY_TOLERANCE) {
+          subtotal = candidateSubtotal;
+          tax = candidateTax;
+          total = candidateTotal;
+        }
+      }
+    }
+  }
+  const shipCandidates = Array.from(text.matchAll(/(?:TOTAL\s*\.*\s*:\s*|SHIPP?ED?(?:\s+(?:COUNT|QTY|QUANTITY))?\s*[:=]?\s*)(\d{1,4})\b/gi))
+    .map((match) => parseNumericOcr(match[1]))
+    .filter((value): value is number => value !== null);
+  const shippedCount = base.shippedCount ?? (shipCandidates.length > 0 ? Math.max(...shipCandidates) : null);
+  return { ...base, subtotal, tax, total, shippedCount };
+}
+
+/**
  * Enforces invoice arithmetic before rows can be persisted. A price × shipped
  * calculation may repair an OCR typo in extension; all other failures reject the
  * entire upload instead of silently applying shifted inventory.

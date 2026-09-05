@@ -25,6 +25,7 @@ import {
   extractPfgPageIndicator,
   corroboratePfgPageCount,
   extractInvoiceSummary,
+  extractPfgPdfControlTotals,
   findSingleDigitItemNumberCandidates,
   hasConsistentPfgDocumentControls,
   hasRequiredPfgControls,
@@ -580,7 +581,8 @@ async function parseInvoicePdf(base64Pdf: string): Promise<PageResult> {
       .map((table: any) => table?.html ?? table?.content ?? "")
       .filter((table: unknown): table is string => typeof table === "string" && table.includes("<table"));
     const tableParse = selectPfgItemTable(htmlTables);
-    const summary = extractInvoiceSummary(markdown);
+    const pdfContent = [markdown, ...htmlTables].join("\n");
+    const summary = extractPfgPdfControlTotals(pdfContent);
     const header = extractPfgInvoiceHeader(markdown);
     if (!master.invoiceNumber && header.invoiceNumber) master.invoiceNumber = header.invoiceNumber;
     if (!master.invoiceDate && header.invoiceDate) master.invoiceDate = header.invoiceDate;
