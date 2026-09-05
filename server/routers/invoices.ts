@@ -543,6 +543,63 @@ async function parseInvoiceImages(imageDataUrls: string[]): Promise<PageResult> 
   return master;
 }
 
+/**
+ * Parse a native PDF directly through Mistral OCR. Native PDF OCR preserves
+ * page boundaries and HTML table geometry, unlike repeated phone-image OCR.
+ */
+async function parseInvoicePdf(base64Pdf: string): Promise<PageResult> {
+  const master: PageResult = {
+    invoiceNumber: null,
+    invoiceDate: null,
+    totalAmount: null,
+    lines: [],
+    summary: { subtotal: null, tax: null, total: null, shippedCount: null, sectionTotals: {} },
+    sourceItemRowCount: 0,
+    expectedPageCount: null,
+    pageIndicator: null,
+  };
+  const apiKey = ENV.mistralApiKey;
+  if (!apiKey) throw new Error("MISTRAL_API_KEY is not set — cannot run PDF OCR");
+  const client = new Mistral({ apiKey });
+  const response = await client.ocr.process({
+    model: "mistral-ocr-latest",
+    document: {
+      type: "document_url",
+      documentUrl: `data:application/pdf;base64,${base64Pdf}`,
+    },
+    tableFormat: "html",
+    extractHeader: true,
+    extractFooter: true,
+    includeBlocks: true,
+  } as any);
+  const pages = Array.isArray(response.pages) ? response.pages : [];
+  for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
+    const page = pages[pageIndex] as any;
+    const markdown = typeof page?.markdown === "string" ? page.markdown : "";
+    const htmlTables = (page?.tables ?? [])
+      .map((table: any) => table?.html ?? table?.content ?? "")
+      .filter((table: unknown): table is string => typeof table === "string" && table.includes("<table"));
+    const tableParse = selectPfgItemTable(htmlTables);
+    const summary = extractInvoiceSummary(markdown);
+    const header = extractPfgInvoiceHeader(markdown);
+    if (!master.invoiceNumber && header.invoiceNumber) master.invoiceNumber = header.invoiceNumber;
+    if (!master.invoiceDate && header.invoiceDate) master.invoiceDate = header.invoiceDate;
+    if (master.totalAmount === null && summary.total !== null) master.totalAmount = summary.total;
+    if (master.summary.subtotal === null && summary.subtotal !== null) master.summary.subtotal = summary.subtotal;
+    if (master.summary.tax === null && summary.tax !== null) master.summary.tax = summary.tax;
+    if (master.summary.total === null && summary.total !== null) master.summary.total = summary.total;
+    if (master.summary.shippedCount === null && summary.shippedCount !== null) master.summary.shippedCount = summary.shippedCount;
+    Object.assign(master.summary.sectionTotals, summary.sectionTotals);
+    if (!tableParse || tableParse.itemRowCount === 0) continue;
+    master.sourceItemRowCount = (master.sourceItemRowCount ?? 0) + tableParse.itemRowCount;
+    master.lines.push(...tableParse.lines);
+    console.log(`[Invoice OCR] PDF page ${pageIndex + 1}: reconstructed ${tableParse.itemRowCount} PFG rows from HTML table geometry`);
+  }
+  if (master.sourceItemRowCount === 0) master.sourceItemRowCount = null;
+  console.log(`[Invoice OCR] PDF complete: ${master.lines.length} product rows from ${pages.length} PDF pages`);
+  return master;
+}
+
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 export const invoicesRouter = router({
@@ -559,12 +616,72 @@ export const invoicesRouter = router({
               filename: z.string().optional(),
             })
           )
-          .min(1)
-          .max(10),
+          .max(10)
+          .default([]),
+        pdfs: z
+          .array(
+            z.object({
+              base64: z.string(),
+              mimeType: z.literal("application/pdf"),
+              filename: z.string().optional(),
+            })
+          )
+          .max(1)
+          .default([]),
         notes: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
+      if (input.images.length === 0 && input.pdfs.length === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Add at least one invoice image or PDF." });
+      }
+      if (input.images.length > 0 && input.pdfs.length > 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Upload either invoice images or one PDF, not both." });
+      }
+      if (input.pdfs.length > 0) {
+        const parsed = await parseInvoicePdf(input.pdfs[0].base64);
+        const validation = validateAndNormalizePfgInvoice(parsed.lines, parsed.summary, parsed.sourceItemRowCount);
+        const catalogItemNumbers = await getCatalogItemNumbers();
+        if (catalogItemNumbers.length > 0) {
+          for (const line of validation.lines) {
+            if (!line.itemNumber || catalogItemNumbers.includes(line.itemNumber)) continue;
+            const candidates = findSingleDigitItemNumberCandidates(line.itemNumber, catalogItemNumbers);
+            if (candidates.length > 0) validation.errors.push(`Item ${line.itemNumber} does not match the vendor catalog and may be an OCR digit substitution; possible catalog key: ${candidates.join(", ")}.`);
+          }
+        }
+        const invoice = await createInvoice({
+          vendor: input.vendor,
+          imageKeys: [],
+          createdBy: ctx.user.id,
+          notes: input.notes ? `${input.notes}${validation.errors.length ? `\n\n[OCR validation hold]\n${validation.errors.join("\n")}` : ""}` : (validation.errors.length ? `[OCR validation hold]\n${validation.errors.join("\n")}` : undefined),
+        });
+        const pdfLines = validation.lines.map((line) => ({
+          itemNumber: line.itemNumber,
+          description: line.description,
+          pack: line.pack,
+          size: line.size,
+          orderedQty: line.orderedQty,
+          shippedQty: line.shippedQty ?? 0,
+          unitPrice: line.unitPrice,
+          extension: line.extension,
+          category: line.category,
+        }));
+        await saveInvoiceLines(invoice.id, pdfLines, {
+          invoiceNumber: parsed.invoiceNumber ?? undefined,
+          invoiceDate: parsed.invoiceDate ?? undefined,
+          totalAmount: parsed.totalAmount ?? parsed.summary.total ?? undefined,
+        });
+        return {
+          invoiceId: invoice.id,
+          invoiceNumber: parsed.invoiceNumber,
+          invoiceDate: parsed.invoiceDate,
+          totalAmount: parsed.totalAmount,
+          lineCount: pdfLines.length,
+          corrections: validation.corrections,
+          reviewRequired: validation.errors.length > 0,
+          validationErrors: validation.errors,
+        };
+      }
       // Normalize EXIF orientation, estimate table-rule skew, and deskew before
       // OCR. Photos beyond the supported correction range are rejected rather
       // than producing plausible-but-shifted inventory lines.

@@ -6,7 +6,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { isSupportedInvoiceImage, prepareInvoiceImageForUpload } from "@/lib/invoiceUpload";
+import { isSupportedInvoiceImage, isSupportedInvoicePdf, prepareInvoiceImageForUpload } from "@/lib/invoiceUpload";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -132,7 +132,7 @@ function formatCurrency(n: number | string | null | undefined) {
 // ─── Upload Dialog ────────────────────────────────────────────────────────────
 
 function UploadDialog({ open, onClose, onSuccess }: { open: boolean; onClose: () => void; onSuccess: (invoiceId: number) => void }) {
-  const [pages, setPages] = useState<{ file: File; preview: string }[]>([]);
+  const [pages, setPages] = useState<{ file: File; preview: string; kind: "image" | "pdf" }[]>([]);
   const [vendor, setVendor] = useState("PFG");
   const [uploading, setUploading] = useState(false);
   const [parsing, setParsing] = useState(false);
@@ -144,10 +144,17 @@ function UploadDialog({ open, onClose, onSuccess }: { open: boolean; onClose: ()
   const addFiles = useCallback((files: FileList | null) => {
     if (!files) return;
     Array.from(files).forEach((file) => {
+      if (isSupportedInvoicePdf(file)) {
+        setPages([{ file, preview: "", kind: "pdf" }]);
+        return;
+      }
       if (!isSupportedInvoiceImage(file)) return;
       const reader = new FileReader();
       reader.onload = (e) => {
-        setPages((prev) => [...prev, { file, preview: e.target?.result as string }]);
+        setPages((prev) => {
+          if (prev.some((page) => page.kind === "pdf")) return prev;
+          return [...prev, { file, preview: e.target?.result as string, kind: "image" }];
+        });
       };
       reader.readAsDataURL(file);
     });
@@ -166,33 +173,35 @@ function UploadDialog({ open, onClose, onSuccess }: { open: boolean; onClose: ()
     if (pages.length === 0) return;
     setUploading(true);
     try {
-      // Convert each file to base64
-      const images = await Promise.all(
-        pages.map(async ({ file }) => {
-          const preparedFile = await prepareInvoiceImageForUpload(file);
-          return new Promise<{ base64: string; mimeType: string; filename: string }>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-              const dataUrl = e.target?.result as string;
-              // Strip the data:image/...;base64, prefix
-              const base64 = dataUrl.split(",")[1];
-              if (!base64) {
-                reject(new Error(`Could not prepare ${file.name} for upload.`));
-                return;
-              }
-              resolve({ base64, mimeType: "image/jpeg", filename: preparedFile.name });
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(preparedFile);
-          });
-        })
-      );
+      const readBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          const base64 = dataUrl.split(",")[1];
+          if (!base64) reject(new Error(`Could not prepare ${file.name} for upload.`));
+          else resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const pdfPage = pages.find((page) => page.kind === "pdf");
+      let payload: { vendor: string; images: { base64: string; mimeType: string; filename: string }[]; pdfs: { base64: string; mimeType: "application/pdf"; filename: string }[] };
+      if (pdfPage) {
+        payload = { vendor, images: [], pdfs: [{ base64: await readBase64(pdfPage.file), mimeType: "application/pdf", filename: pdfPage.file.name }] };
+      } else {
+        const images = await Promise.all(
+          pages.map(async ({ file }) => {
+            const preparedFile = await prepareInvoiceImageForUpload(file);
+            return { base64: await readBase64(preparedFile), mimeType: "image/jpeg", filename: preparedFile.name };
+          })
+        );
+        payload = { vendor, images, pdfs: [] };
+      }
 
       setParsing(true);
       setUploading(false);
 
-      // Upload images and parse with AI in a single step (no S3)
-      const result = await uploadAndParseMutation.mutateAsync({ vendor, images });
+      const result = await uploadAndParseMutation.mutateAsync(payload);
       await utils.invoices.list.invalidate();
       const reviewDraft = result as typeof result & { reviewRequired?: boolean; validationErrors?: string[] };
       if (reviewDraft.reviewRequired) {
@@ -249,12 +258,12 @@ function UploadDialog({ open, onClose, onSuccess }: { open: boolean; onClose: ()
             onDragOver={(e) => e.preventDefault()}
           >
             <Upload size={32} className="mx-auto mb-2 text-muted-foreground" />
-            <p className="text-sm font-medium text-foreground">Tap to add invoice pages</p>
-            <p className="text-xs text-muted-foreground mt-1">One photo per page — supports JPG, PNG, WEBP</p>
+            <p className="text-sm font-medium text-foreground">Tap to add invoice pages or a PDF</p>
+            <p className="text-xs text-muted-foreground mt-1">Use one PDF for native multi-page OCR, or add JPG, PNG, and WEBP pages</p>
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/*,.pdf,application/pdf"
               multiple
               className="hidden"
               onChange={(e) => addFiles(e.target.files)}
@@ -266,7 +275,15 @@ function UploadDialog({ open, onClose, onSuccess }: { open: boolean; onClose: ()
             <div className="grid grid-cols-3 gap-2">
               {pages.map((p, idx) => (
                 <div key={idx} className="relative group rounded-lg overflow-hidden border border-border aspect-[3/4]">
-                  <img src={p.preview} alt={`Page ${idx + 1}`} className="w-full h-full object-cover" />
+                  {p.kind === "pdf" ? (
+                    <div className="w-full h-full flex flex-col items-center justify-center bg-muted px-3 text-center">
+                      <FileText size={32} className="text-primary mb-2" />
+                      <span className="text-xs font-medium break-all">{p.file.name}</span>
+                      <span className="text-[10px] text-muted-foreground mt-1">Native PDF OCR</span>
+                    </div>
+                  ) : (
+                    <img src={p.preview} alt={`Page ${idx + 1}`} className="w-full h-full object-cover" />
+                  )}
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <button
                       onClick={(e) => { e.stopPropagation(); removePage(idx); }}
@@ -276,7 +293,7 @@ function UploadDialog({ open, onClose, onSuccess }: { open: boolean; onClose: ()
                     </button>
                   </div>
                   <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded">
-                    Pg {idx + 1}
+                    {p.kind === "pdf" ? "PDF" : `Pg ${idx + 1}`}
                   </div>
                 </div>
               ))}
@@ -295,7 +312,7 @@ function UploadDialog({ open, onClose, onSuccess }: { open: boolean; onClose: ()
             <div className="flex items-center gap-3 p-3 bg-muted rounded-xl">
               <Spinner className="h-5 w-5 text-primary" />
               <p className="text-sm text-foreground">
-                {uploading ? "Uploading images…" : "Loading invoice…"}
+                {uploading ? "Uploading…" : "Parsing invoice…"}
               </p>
             </div>
           )}

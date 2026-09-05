@@ -5,6 +5,10 @@ export function isSupportedInvoiceImage(file: Pick<File, "type" | "name">): bool
   return file.type.startsWith("image/") || /\.(jpe?g|png|heic|heif|webp)$/i.test(file.name);
 }
 
+export function isSupportedInvoicePdf(file: Pick<File, "type" | "name">): boolean {
+  return file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+}
+
 export function getInvoiceUploadDimensions(width: number, height: number): { width: number; height: number } {
   const longestEdge = Math.max(width, height);
   if (longestEdge <= INVOICE_UPLOAD_MAX_EDGE) return { width, height };
