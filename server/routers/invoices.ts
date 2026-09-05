@@ -577,11 +577,12 @@ async function parseInvoicePdf(base64Pdf: string): Promise<PageResult> {
   for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
     const page = pages[pageIndex] as any;
     const markdown = typeof page?.markdown === "string" ? page.markdown : "";
-    const htmlTables = (page?.tables ?? [])
+    const tableContents = (page?.tables ?? [])
       .map((table: any) => table?.html ?? table?.content ?? "")
-      .filter((table: unknown): table is string => typeof table === "string" && table.includes("<table"));
+      .filter((table: unknown): table is string => typeof table === "string" && table.trim().length > 0);
+    const htmlTables = tableContents.filter((table) => table.includes("<table"));
     const tableParse = selectPfgItemTable(htmlTables);
-    const pdfContent = [markdown, ...htmlTables].join("\n");
+    const pdfContent = [markdown, ...tableContents].join("\n");
     const summary = extractPfgPdfControlTotals(pdfContent);
     const header = extractPfgInvoiceHeader(markdown);
     if (!master.invoiceNumber && header.invoiceNumber) master.invoiceNumber = header.invoiceNumber;
