@@ -423,9 +423,9 @@ export function extractPfgPdfControlTotals(content: string): InvoiceSummary {
   const shipCandidates = Array.from(text.matchAll(/(?:TOTAL\s*\.{2,}\s*:?\s*|SHIPP?ED?(?:\s+(?:COUNT|QTY|QUANTITY))?\s*[:=]?\s*)(\d{1,4})\b/gi))
     .map((match) => parseNumericOcr(match[1]))
     .filter((value): value is number => value !== null);
-  const explicitTotalShipCandidates = Array.from(text.matchAll(/TOTAL\s*\.{2,}\s*:?\s*(\d{1,4})\b/gi))
+  const explicitTotalShipCandidates = Array.from(text.matchAll(/\bTOTAL\b[^\d]{0,20}(\d{1,4})\b/gi))
     .map((match) => parseNumericOcr(match[1]))
-    .filter((value): value is number => value !== null);
+    .filter((value): value is number => value !== null && value <= 1000);
   const shippedCount = explicitTotalShipCandidates.length > 0
     ? Math.max(...explicitTotalShipCandidates)
     : (shipCandidates.length > 0 ? Math.max(...shipCandidates) : base.shippedCount);
