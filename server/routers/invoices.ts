@@ -23,6 +23,7 @@ import {
   deskewInvoiceForOcr,
   extractPfgInvoiceHeader,
   extractPfgPageIndicator,
+  corroboratePfgPageCount,
   extractInvoiceSummary,
   findSingleDigitItemNumberCandidates,
   hasConsistentPfgDocumentControls,
@@ -36,6 +37,7 @@ import {
   validateAndNormalizePfgInvoice,
   type InvoiceLineDraft,
   type InvoiceSummary,
+  type PfgPageIndicator,
 } from "../invoiceOcr";
 import {
   createInvoice,
@@ -144,6 +146,7 @@ interface PageResult {
   summary: InvoiceSummary;
   sourceItemRowCount: number | null;
   expectedPageCount: number | null;
+  pageIndicator: PfgPageIndicator | null;
 }
 
 interface OcrPage {
@@ -297,6 +300,7 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
     summary: { subtotal: null, tax: null, total: null, shippedCount: null, sectionTotals: {} },
     sourceItemRowCount: null,
     expectedPageCount: null,
+    pageIndicator: null,
   };
 
   // ── Extract base64 from data URL ──────────────────────────────────────────
@@ -322,6 +326,7 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
     lines: tableParse?.lines ?? [],
     summary: extractInvoiceSummary(ocrMarkdown ?? ""),
     sourceItemRowCount: tableParse && tableParse.itemRowCount > 0 ? tableParse.itemRowCount : null,
+    pageIndicator,
   });
   if (tableParse && tableParse.itemRowCount > 0) {
     console.log(`[Invoice OCR] page ${pageIndex + 1}: reconstructed ${tableParse.itemRowCount} PFG rows from HTML table geometry`);
@@ -465,6 +470,7 @@ async function parseSinglePage(dataUrl: string, pageIndex: number): Promise<Page
     summary: resolvedSummary,
     sourceItemRowCount: tableParse && tableParse.itemRowCount > 0 ? tableParse.itemRowCount : null,
     expectedPageCount: pageIndicator?.totalPages ?? null,
+    pageIndicator,
   };
 }
 
@@ -482,11 +488,14 @@ async function parseInvoiceImages(imageDataUrls: string[]): Promise<PageResult> 
     summary: { subtotal: null, tax: null, total: null, shippedCount: null, sectionTotals: {} },
     sourceItemRowCount: 0,
     expectedPageCount: null,
+    pageIndicator: null,
   };
+  const pageIndicators: Array<PfgPageIndicator | null> = [];
 
   for (let i = 0; i < imageDataUrls.length; i++) {
     console.log(`[Invoice OCR] processing page ${i + 1} of ${imageDataUrls.length} sequentially...`);
     const pageResult = await parseSinglePage(imageDataUrls[i], i);
+    pageIndicators.push(pageResult.pageIndicator);
 
     // Use header info from the first page that has it
     if (!master.invoiceNumber && pageResult.invoiceNumber) {
@@ -504,14 +513,15 @@ async function parseInvoiceImages(imageDataUrls: string[]): Promise<PageResult> 
     if (master.summary.shippedCount === null && pageResult.summary.shippedCount !== null) master.summary.shippedCount = pageResult.summary.shippedCount;
     Object.assign(master.summary.sectionTotals, pageResult.summary.sectionTotals);
     if (pageResult.sourceItemRowCount !== null) master.sourceItemRowCount = (master.sourceItemRowCount ?? 0) + pageResult.sourceItemRowCount;
-    if (pageResult.expectedPageCount !== null) {
-      master.expectedPageCount = Math.max(master.expectedPageCount ?? 0, pageResult.expectedPageCount);
-    }
-
     // Push every line from this page into the master array
     master.lines.push(...pageResult.lines);
     console.log(`[Invoice OCR] page ${i + 1} complete: ${pageResult.lines.length} lines extracted, master total: ${master.lines.length}`);
   }
+
+  // Trust a printed page count only when every uploaded page independently
+  // reports its expected ordinal and all pages agree on the same total. This
+  // prevents one noisy OCR header from blocking a complete upload.
+  master.expectedPageCount = corroboratePfgPageCount(pageIndicators, imageDataUrls.length);
 
   // Never use the first page-level total as the invoice total: PFG pages can
   // contain category recaps (for example $491.63 and 15 shipped) that look like

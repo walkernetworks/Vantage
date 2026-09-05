@@ -5,6 +5,7 @@ import {
   cleanPfgDescription,
   extractPfgInvoiceHeader,
   extractPfgPageIndicator,
+  corroboratePfgPageCount,
   findSingleDigitItemNumberCandidates,
   hasConsistentPfgDocumentControls,
   hasRequiredPfgControls,
@@ -277,6 +278,18 @@ describe("PFG invoice 6076192 regression", () => {
     expect(extractPfgPageIndicator("ROUTE 1C5 STOP 3 PAGE 1 / 3 DATE 8/31/26")).toEqual({ page: 1, totalPages: 3 });
     expect(extractPfgPageIndicator("PAGE 2 OF 3")).toEqual({ page: 2, totalPages: 3 });
     expect(extractPfgPageIndicator("PAGE 0 / 3")).toBeNull();
+  });
+
+  it("requires corroborated page ordinals before enforcing a missing-page hold", () => {
+    expect(corroboratePfgPageCount([{ page: 1, totalPages: 3 }, { page: 2, totalPages: 3 }], 2)).toBe(3);
+    expect(corroboratePfgPageCount([{ page: 1, totalPages: 3 }, null], 2)).toBeNull();
+    expect(corroboratePfgPageCount([{ page: 1, totalPages: 3 }, { page: 3, totalPages: 3 }], 2)).toBeNull();
+    expect(corroboratePfgPageCount([{ page: 1, totalPages: 3 }], 1)).toBe(3);
+  });
+
+  it("does not infer a multi-page document from ordinary PAGE 1 and PAGE 2 labels", () => {
+    expect(extractPfgPageIndicator("ROUTE 1C5 STOP 3 PAGE 1 DATE 8/31/26")).toBeNull();
+    expect(extractPfgPageIndicator("ROUTE 1C5 STOP 3 PAGE 2 DATE 8/31/26")).toBeNull();
   });
 
   it("accepts ISO dates from manual review and rejects impossible invoice dates", () => {

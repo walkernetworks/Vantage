@@ -144,6 +144,23 @@ export function extractPfgPageIndicator(markdown: string): PfgPageIndicator | nu
   return { page, totalPages };
 }
 
+/**
+ * Trust a printed page count only when every uploaded page independently reports
+ * its ordinal and all pages agree on the same total. A single OCR page-header
+ * hallucination must never block an otherwise complete upload.
+ */
+export function corroboratePfgPageCount(
+  indicators: Array<PfgPageIndicator | null>,
+  uploadedPageCount: number,
+): number | null {
+  if (uploadedPageCount < 1 || indicators.length !== uploadedPageCount) return null;
+  const first = indicators[0];
+  if (!first || first.page !== 1) return null;
+  if (!indicators.every((indicator, index) => indicator !== null && indicator.page === index + 1)) return null;
+  if (!indicators.every((indicator) => indicator?.totalPages === first.totalPages)) return null;
+  return first.totalPages;
+}
+
 export function extractPfgInvoiceHeader(markdown: string): InvoiceHeader {
   const source = markdown.replace(/\r/g, " ");
   const invoiceNumberPatterns = [

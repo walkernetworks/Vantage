@@ -612,3 +612,10 @@
 - [x] Add image-assisted structured extraction when OCR returns no viable physical product grid
 - [x] Preserve printed document controls as the required acceptance gate and retain incomplete receipts as review drafts
 - [x] Add regressions for recap/footer artifacts and competing OCR grid candidates
+
+## Round 77 — Correct Two-Page PFG Invoice Handling
+- [x] Correct the false interpretation of the supplied invoice as a three-page document; the source contains two pages and 26 product lines
+- [x] Require corroborated page ordinals across all uploaded pages before enforcing a missing-page hold
+- [x] Preserve the safety hold for genuine explicit multi-page indicators while allowing ordinary PAGE 1 / PAGE 2 labels
+- [x] Add regression coverage for false page-count evidence and explicit incomplete-page protection
+- [ ] Reprocess invoice 6089153 after deployment and reconcile all 26 lines to the printed subtotal before applying inventory
