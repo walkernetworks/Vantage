@@ -656,7 +656,7 @@ const countsRouter = router({
       if (unresolved.length > 0) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
-          message: `${unresolved.length} significant count decrease${unresolved.length === 1 ? " requires" : "s require"} confirmation before completing.`,
+          message: `${unresolved.length} significant count change${unresolved.length === 1 ? " requires" : "s require"} confirmation before completing.`,
         });
       }
       return completeCountSession(input.id);

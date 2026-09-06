@@ -7,7 +7,16 @@ describe("count-to-count anomaly detection", () => {
       { itemId: 1, itemName: "Example Item", previousQuantity: 24, currentQuantity: 2, unitLabel: "each" },
     ]);
     expect(anomalies).toEqual([
-      expect.objectContaining({ itemId: 1, difference: 22, decreasePercent: 92 }),
+      expect.objectContaining({ itemId: 1, direction: "decrease", difference: 22, changePercent: 92 }),
+    ]);
+  });
+
+  it("flags a material increase such as 12 to 20", () => {
+    const anomalies = detectCountAnomalies([
+      { itemId: 1, itemName: "Example Increase", previousQuantity: 12, currentQuantity: 20, unitLabel: "cases" },
+    ]);
+    expect(anomalies).toEqual([
+      expect.objectContaining({ itemId: 1, direction: "increase", difference: 8, changePercent: 67 }),
     ]);
   });
 

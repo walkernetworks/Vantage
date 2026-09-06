@@ -819,16 +819,16 @@ export default function CountSheet() {
       <AlertDialog open={showAnomalyConfirm} onOpenChange={setShowAnomalyConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirm significant count decreases</AlertDialogTitle>
+            <AlertDialogTitle>Confirm significant count changes</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3 text-sm">
-                <p>These items are at least 50% lower than the most recent completed count. Please confirm they are correct before completing this count.</p>
+                <p>These items changed by at least 50% from the most recent completed count. Please confirm each increase or decrease is correct before completing this count.</p>
                 <div className="max-h-56 overflow-y-auto rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
                   {countAnomalies.map((anomaly) => (
                     <div key={anomaly.itemId} className="flex items-center justify-between gap-3 py-1.5 border-b border-amber-200/70 last:border-0 dark:border-amber-800/70">
                       <span className="font-medium text-foreground">{anomaly.itemName}</span>
                       <span className="shrink-0 text-amber-800 dark:text-amber-200">
-                        {anomaly.previousQuantity} → {anomaly.currentQuantity} {anomaly.unitLabel} ({anomaly.decreasePercent}% lower)
+                        {anomaly.previousQuantity} → {anomaly.currentQuantity} {anomaly.unitLabel} ({anomaly.changePercent}% {anomaly.direction})
                       </span>
                     </div>
                   ))}

@@ -10,27 +10,29 @@ export type CountComparison = {
 };
 
 export type CountAnomaly = CountComparison & {
-  decreasePercent: number;
+  direction: "increase" | "decrease";
+  changePercent: number;
   difference: number;
 };
 
 /**
- * Flags material decreases, while avoiding noise from very small prior counts.
- * Example: 24 to 2 is an anomaly; 1 to 0 is not.
+ * Flags material increases or decreases, while avoiding noise from very small prior counts.
+ * Example: 24 to 2 and 12 to 20 are anomalies; 1 to 0 and 12 to 15 are not.
  */
 export function detectCountAnomalies(comparisons: CountComparison[]): CountAnomaly[] {
   return comparisons
     .filter((comparison) => {
       if (comparison.previousQuantity < MINIMUM_PRIOR_QUANTITY) return false;
-      if (comparison.currentQuantity >= comparison.previousQuantity) return false;
-      return comparison.currentQuantity <= comparison.previousQuantity * MATERIAL_DECREASE_RATIO;
+      const changeRatio = Math.abs(comparison.currentQuantity - comparison.previousQuantity) / comparison.previousQuantity;
+      return changeRatio >= MATERIAL_DECREASE_RATIO;
     })
     .map((comparison) => ({
       ...comparison,
-      difference: comparison.previousQuantity - comparison.currentQuantity,
-      decreasePercent: Math.round(
-        ((comparison.previousQuantity - comparison.currentQuantity) / comparison.previousQuantity) * 100
+      direction: comparison.currentQuantity >= comparison.previousQuantity ? "increase" : "decrease",
+      difference: Math.abs(comparison.previousQuantity - comparison.currentQuantity),
+      changePercent: Math.round(
+        (Math.abs(comparison.currentQuantity - comparison.previousQuantity) / comparison.previousQuantity) * 100
       ),
     }))
-    .sort((a, b) => b.decreasePercent - a.decreasePercent || a.itemName.localeCompare(b.itemName));
+    .sort((a, b) => b.changePercent - a.changePercent || a.itemName.localeCompare(b.itemName));
 }
