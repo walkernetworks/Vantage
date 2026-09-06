@@ -629,6 +629,27 @@ interface GenericParseResult {
   sourceItemRowCount?: number | null;
 }
 
+function extractDfaRows(markdown: string): InvoiceLineDraft[] {
+  const rows: InvoiceLineDraft[] = [];
+  for (const rawLine of markdown.replace(/<[^>]+>/g, " ").split("\n")) {
+    const cells = rawLine.split("|").map((cell) => cell.trim()).filter(Boolean);
+    if (cells.length >= 6 && /^\d{4,8}$/.test(cells[0])) {
+      const shippedQty = parseNumericOcr(cells[cells.length - 3]);
+      const unitPrice = parseNumericOcr(cells[cells.length - 2]);
+      const extension = parseNumericOcr(cells[cells.length - 1]);
+      if (shippedQty !== null && unitPrice !== null && extension !== null) {
+        rows.push({ itemNumber: cells[0], description: cells[1] ?? null, pack: cells[2] ?? null, size: null, orderedQty: shippedQty, shippedQty, unitPrice, extension, category: null });
+        continue;
+      }
+    }
+    const match = rawLine.match(/^\s*(\d{4,8})\s+(.+?)\s+[A-Za-z]{1,8}\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.\d{2,4})\s+([0-9,]+\.\d{2})\s*$/);
+    if (match) {
+      rows.push({ itemNumber: match[1], description: match[2].trim(), pack: null, size: null, orderedQty: parseNumericOcr(match[3]), shippedQty: parseNumericOcr(match[3]), unitPrice: parseNumericOcr(match[4]), extension: parseNumericOcr(match[5]), category: null });
+    }
+  }
+  return rows;
+}
+
 function extractGenericControls(markdown: string, vendor: string): InvoiceSummary {
   const empty: InvoiceSummary = { subtotal: null, tax: null, total: null, shippedCount: null, sectionTotals: {} };
   const text = markdown.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
@@ -695,6 +716,7 @@ async function parseGenericOcrText(markdown: string, vendor: string): Promise<Ge
     const cleaned = (typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent))
       .replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
     const parsed = normalizeGenericPayload(JSON.parse(cleaned));
+    if (vendor === "DFA" && parsed.lines.length === 0) parsed.lines = extractDfaRows(markdown);
     parsed.summary = mergeInvoiceSummaries(parsed.summary, extractGenericControls(markdown, vendor));
     return parsed;
   } catch (error) {
