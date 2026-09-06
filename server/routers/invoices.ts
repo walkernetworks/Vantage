@@ -619,7 +619,9 @@ Return only raw JSON:
   "lines": [{"itemNumber": string|null,"description": string|null,"pack": string|null,"size": string|null,"orderedQty": number|null,"shippedQty": number|null,"unitPrice": number|null,"extension": number|null,"category": string|null}]
 }
 
-Use the supplier's printed item identifier exactly as shown, including alphanumeric Webstaurant item numbers. For Savannah, use ITEM; for United, use ID; for DFA, use DFA/CUST ITEM; for Webstaurant, use Item Number. Use the merchandise quantity column, not tax/adjustment quantities. Use printed line totals and document controls; do not calculate missing controls. Never invent a row or pair an identifier with another row's description.`;
+Use the supplier's printed item identifier exactly as shown, including alphanumeric Webstaurant item numbers. For Savannah, use ITEM; for United, use ID; for DFA, use DFA/CUST ITEM; for Webstaurant, use Item Number. Use the merchandise quantity column, not tax/adjustment quantities. Use printed line totals and document controls; do not calculate missing controls. Never invent a row or pair an identifier with another row's description.
+
+Savannah-specific rule: a product may span multiple physical CASE/BTL rows with the ITEM and description printed only on the first row. Group repeated or continued rows for the same ITEM into one merchandise line. Convert delivered CASE/BTL to total cases using the printed pack when needed, and use the sum of the far-right NET amounts as extension. NET is the actual post-discount, tax-inclusive amount paid; do not use PRICE or GROSS as extension and do not extract LOCAL TAX as merchandise.`;
 
 interface GenericParseResult {
   invoiceNumber: string | null;
@@ -648,8 +650,9 @@ function extractGenericControls(markdown: string, vendor: string): InvoiceSummar
     const taxMatches = Array.from(text.matchAll(/\bLOCAL\s+TAX\s*\$?\s*([0-9,]+\.\d{2})/gi));
     const gross = grossMatches.length > 0 ? money(grossMatches[grossMatches.length - 1][1]) : null;
     const net = netMatches.length > 0 ? money(netMatches[netMatches.length - 1][1]) : null;
-    const tax = taxMatches.length > 0 ? money(taxMatches[taxMatches.length - 1][1]) : null;
-    return { ...empty, subtotal: net ?? gross, total: net ?? gross, tax };
+    // Savannah NET is already the payable, post-discount amount and includes
+    // local tax. Preserve it as both subtotal and total without adding tax again.
+    return { ...empty, subtotal: net ?? gross, total: net ?? gross, tax: null };
   }
   const subtotalMatches = Array.from(text.matchAll(/SUB[- ]?TOTAL\s*:?[ ]*\$?([0-9,]+\.\d{2})/gi));
   const totalMatches = Array.from(text.matchAll(/(?:^|\s)TOTAL\s*:?[ ]*\$?([0-9,]+\.\d{2})/gi));

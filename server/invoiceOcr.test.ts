@@ -165,7 +165,45 @@ describe("generic vendor invoice validation", () => {
     expect(result.lines.map((line) => line.extension)).toEqual([60, 78.75, 71.5, 71.5]);
     expect(result.lines.reduce((sum, line) => sum + (line.extension ?? 0), 0)).toBeCloseTo(281.75, 2);
     expect(result.lines.find((line) => line.itemNumber === "66555")?.unitPrice).toBe(60);
-    expect(result.corrections.join(" ")).toContain("printed PRICE was 10.45");
+    expect(result.corrections.join(" ")).toContain("printed price was 10.45");
+  });
+
+  it("preserves Savannah NET as the actual receipt cost after discounts and embedded local tax", () => {
+    const result = validateAndNormalizeVendorInvoice([
+      {
+        itemNumber: "26497",
+        description: "Mozart Chocolate Cream Liqueur",
+        pack: "6/750",
+        size: null,
+        orderedQty: 1,
+        shippedQty: 1,
+        unitPrice: 147.78,
+        extension: 143.97,
+        category: null,
+      },
+      {
+        itemNumber: "10282",
+        description: "Titos Handmade Vodka",
+        pack: "12/1L",
+        size: null,
+        orderedQty: 1,
+        shippedQty: 1,
+        unitPrice: 299.52,
+        extension: 277.2,
+        category: null,
+      },
+    ], {
+      subtotal: 421.17,
+      tax: null,
+      total: 421.17,
+      shippedCount: 2,
+      sectionTotals: {},
+    }, "Savannah Distributing");
+
+    expect(result.errors).toEqual([]);
+    expect(result.lines.map((line) => line.extension)).toEqual([143.97, 277.2]);
+    expect(result.lines.map((line) => line.unitPrice)).toEqual([143.97, 277.2]);
+    expect(result.lines.reduce((sum, line) => sum + (line.extension ?? 0), 0)).toBeCloseTo(421.17, 2);
   });
 
   it("accepts DFA-style merchandise rows and rejects a subtotal mismatch", () => {
