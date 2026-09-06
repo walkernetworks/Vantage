@@ -629,6 +629,28 @@ interface GenericParseResult {
   sourceItemRowCount?: number | null;
 }
 
+function extractGenericControls(markdown: string, vendor: string): InvoiceSummary {
+  const empty: InvoiceSummary = { subtotal: null, tax: null, total: null, shippedCount: null, sectionTotals: {} };
+  const text = markdown.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  const money = (value: string) => parseNumericOcr(value.replace(/[$,]/g, ""));
+  if (vendor === "United") {
+    const totalMatches = Array.from(text.matchAll(/\bTOTAL\s*\$?\s*([0-9,]+\.\d{2})/gi));
+    const total = totalMatches.length > 0 ? money(totalMatches[totalMatches.length - 1][1]) : null;
+    const quantityMatches = Array.from(text.matchAll(/TOTAL\s+CASES\s+([0-9]+(?:\.[0-9]+)?)/gi));
+    const shippedCount = quantityMatches.length > 0 ? parseNumericOcr(quantityMatches[quantityMatches.length - 1][1]) : null;
+    return { ...empty, subtotal: total, total, shippedCount };
+  }
+  const subtotalMatches = Array.from(text.matchAll(/SUB[- ]?TOTAL\s*:?[ ]*\$?([0-9,]+\.\d{2})/gi));
+  const totalMatches = Array.from(text.matchAll(/(?:^|\s)TOTAL\s*:?[ ]*\$?([0-9,]+\.\d{2})/gi));
+  const taxMatches = Array.from(text.matchAll(/(?:TAX|SALES TAX)\s*:?[ ]*\$?([0-9,]+\.\d{2})/gi));
+  return {
+    ...empty,
+    subtotal: subtotalMatches.length > 0 ? money(subtotalMatches[subtotalMatches.length - 1][1]) : null,
+    tax: taxMatches.length > 0 ? money(taxMatches[taxMatches.length - 1][1]) : null,
+    total: totalMatches.length > 0 ? money(totalMatches[totalMatches.length - 1][1]) : null,
+  };
+}
+
 function normalizeGenericPayload(payload: any): GenericParseResult {
   const lines = Array.isArray(payload?.lines) ? payload.lines.map((line: any): InvoiceLineDraft => ({
     itemNumber: line?.itemNumber == null ? null : String(line.itemNumber).trim(),
@@ -672,7 +694,9 @@ async function parseGenericOcrText(markdown: string, vendor: string): Promise<Ge
     if (!rawContent) return empty;
     const cleaned = (typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent))
       .replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
-    return normalizeGenericPayload(JSON.parse(cleaned));
+    const parsed = normalizeGenericPayload(JSON.parse(cleaned));
+    parsed.summary = mergeInvoiceSummaries(parsed.summary, extractGenericControls(markdown, vendor));
+    return parsed;
   } catch (error) {
     console.error(`[Invoice OCR] ${vendor} generic extraction failed:`, error);
     return empty;
