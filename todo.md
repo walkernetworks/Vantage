@@ -632,4 +632,4 @@
 - [x] Preserve United’s printed TOTAL column as the authoritative merchandise extension
 - [x] Derive stored United receipt unit cost from printed line total divided by shipped cases without weakening the document-total hold
 - [x] Add regression coverage for all four merchandise lines reconciling to $281.75 and four total cases
-- [ ] Deploy to production, replace the held draft, and confirm invoice 31243078 passes validation before any inventory application
+- [x] Deploy commit 677bfb3 to production, replace the held draft, and confirm invoice 31243078 passes validation with four matched lines totaling $281.75 while remaining unapplied
