@@ -702,6 +702,7 @@ function normalizeGenericPayload(payload: any): GenericParseResult {
 async function parseGenericOcrText(markdown: string, vendor: string): Promise<GenericParseResult> {
   const empty: GenericParseResult = { invoiceNumber: null, invoiceDate: null, totalAmount: null, lines: [], summary: { subtotal: null, tax: null, total: null, shippedCount: null, sectionTotals: {} } };
   if (!markdown.trim()) return empty;
+  const dfaFallbackRows = vendor === "DFA" ? extractDfaRows(markdown) : [];
   try {
     const response = await invokeLLM({
       messages: [
@@ -712,16 +713,16 @@ async function parseGenericOcrText(markdown: string, vendor: string): Promise<Ge
       max_tokens: 5000,
     });
     const rawContent = response.choices?.[0]?.message?.content;
-    if (!rawContent) return empty;
+    if (!rawContent) return { ...empty, lines: dfaFallbackRows, summary: extractGenericControls(markdown, vendor) };
     const cleaned = (typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent))
       .replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
     const parsed = normalizeGenericPayload(JSON.parse(cleaned));
-    if (vendor === "DFA" && parsed.lines.length === 0) parsed.lines = extractDfaRows(markdown);
+    if (vendor === "DFA" && dfaFallbackRows.length > 0 && (parsed.lines.length === 0 || parsed.lines.every((line) => line.extension === null || line.extension === 0))) parsed.lines = dfaFallbackRows;
     parsed.summary = mergeInvoiceSummaries(parsed.summary, extractGenericControls(markdown, vendor));
     return parsed;
   } catch (error) {
     console.error(`[Invoice OCR] ${vendor} generic extraction failed:`, error);
-    return empty;
+    return { ...empty, lines: dfaFallbackRows, summary: extractGenericControls(markdown, vendor) };
   }
 }
 
