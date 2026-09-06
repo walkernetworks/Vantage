@@ -661,6 +661,15 @@ function extractGenericControls(markdown: string, vendor: string): InvoiceSummar
     const shippedCount = quantityMatches.length > 0 ? parseNumericOcr(quantityMatches[quantityMatches.length - 1][1]) : null;
     return { ...empty, subtotal: total, total, shippedCount };
   }
+  if (vendor === "Savannah") {
+    const grossMatches = Array.from(text.matchAll(/\bGROSS\s*\$?\s*([0-9,]+\.\d{2})/gi));
+    const netMatches = Array.from(text.matchAll(/\bNET\s*\$?\s*([0-9,]+\.\d{2})/gi));
+    const taxMatches = Array.from(text.matchAll(/\bLOCAL\s+TAX\s*\$?\s*([0-9,]+\.\d{2})/gi));
+    const gross = grossMatches.length > 0 ? money(grossMatches[grossMatches.length - 1][1]) : null;
+    const net = netMatches.length > 0 ? money(netMatches[netMatches.length - 1][1]) : null;
+    const tax = taxMatches.length > 0 ? money(taxMatches[taxMatches.length - 1][1]) : null;
+    return { ...empty, subtotal: net ?? gross, total: net ?? gross, tax };
+  }
   const subtotalMatches = Array.from(text.matchAll(/SUB[- ]?TOTAL\s*:?[ ]*\$?([0-9,]+\.\d{2})/gi));
   const totalMatches = Array.from(text.matchAll(/(?:^|\s)TOTAL\s*:?[ ]*\$?([0-9,]+\.\d{2})/gi));
   const taxMatches = Array.from(text.matchAll(/(?:TAX|SALES TAX)\s*:?[ ]*\$?([0-9,]+\.\d{2})/gi));
