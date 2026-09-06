@@ -36,6 +36,7 @@ import {
   selectPfgItemTable,
   shouldSaveValidationDraft,
   validateAndNormalizePfgInvoice,
+  validateAndNormalizeVendorInvoice,
   type InvoiceLineDraft,
   type InvoiceSummary,
   type PfgPageIndicator,
@@ -603,6 +604,121 @@ async function parseInvoicePdf(base64Pdf: string): Promise<PageResult> {
   return master;
 }
 
+const GENERIC_VENDOR_PROMPT = `You are a careful invoice data extraction engine. The invoice supplier is {{VENDOR}}. Extract only merchandise/product rows from the supplied OCR text. Do not extract tax rows, adjustment rows, subtotals, shipping, payment, signatures, addresses, or footer metadata.
+
+Return only raw JSON:
+{
+  "invoiceNumber": string|null,
+  "invoiceDate": string|null,
+  "subtotal": number|null,
+  "tax": number|null,
+  "total": number|null,
+  "quantityTotal": number|null,
+  "lines": [{"itemNumber": string|null,"description": string|null,"pack": string|null,"size": string|null,"orderedQty": number|null,"shippedQty": number|null,"unitPrice": number|null,"extension": number|null,"category": string|null}]
+}
+
+Use the supplier's printed item identifier exactly as shown, including alphanumeric Webstaurant item numbers. For Savannah, use ITEM; for United, use ID; for DFA, use DFA/CUST ITEM; for Webstaurant, use Item Number. Use the merchandise quantity column, not tax/adjustment quantities. Use printed line totals and document controls; do not calculate missing controls. Never invent a row or pair an identifier with another row's description.`;
+
+interface GenericParseResult {
+  invoiceNumber: string | null;
+  invoiceDate: string | null;
+  totalAmount: number | null;
+  lines: InvoiceLineDraft[];
+  summary: InvoiceSummary;
+  expectedPageCount?: number | null;
+  sourceItemRowCount?: number | null;
+}
+
+function normalizeGenericPayload(payload: any): GenericParseResult {
+  const lines = Array.isArray(payload?.lines) ? payload.lines.map((line: any): InvoiceLineDraft => ({
+    itemNumber: line?.itemNumber == null ? null : String(line.itemNumber).trim(),
+    description: typeof line?.description === "string" ? line.description.trim() : null,
+    pack: line?.pack == null ? null : String(line.pack).trim(),
+    size: line?.size == null ? null : String(line.size).trim(),
+    orderedQty: parseNumericOcr(line?.orderedQty),
+    shippedQty: parseNumericOcr(line?.shippedQty),
+    unitPrice: parseNumericOcr(line?.unitPrice),
+    extension: parseNumericOcr(line?.extension),
+    category: typeof line?.category === "string" ? line.category.trim() : null,
+  })) : [];
+  const summary = normalizeInvoiceSummaryPayload({
+    subtotal: payload?.subtotal,
+    tax: payload?.tax,
+    total: payload?.total,
+    shippedCount: payload?.quantityTotal,
+  });
+  return {
+    invoiceNumber: typeof payload?.invoiceNumber === "string" ? payload.invoiceNumber.trim() : null,
+    invoiceDate: typeof payload?.invoiceDate === "string" ? normalizeInvoiceDate(payload.invoiceDate) : null,
+    totalAmount: parseNumericOcr(payload?.total),
+    lines,
+    summary,
+  };
+}
+
+async function parseGenericOcrText(markdown: string, vendor: string): Promise<GenericParseResult> {
+  const empty: GenericParseResult = { invoiceNumber: null, invoiceDate: null, totalAmount: null, lines: [], summary: { subtotal: null, tax: null, total: null, shippedCount: null, sectionTotals: {} } };
+  if (!markdown.trim()) return empty;
+  try {
+    const response = await invokeLLM({
+      messages: [
+        { role: "system", content: GENERIC_VENDOR_PROMPT.replace("{{VENDOR}}", vendor) },
+        { role: "user", content: `Extract this ${vendor} invoice exactly as instructed:\n\n${markdown}` },
+      ],
+      response_format: { type: "json_object" },
+      max_tokens: 5000,
+    });
+    const rawContent = response.choices?.[0]?.message?.content;
+    if (!rawContent) return empty;
+    const cleaned = (typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent))
+      .replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
+    return normalizeGenericPayload(JSON.parse(cleaned));
+  } catch (error) {
+    console.error(`[Invoice OCR] ${vendor} generic extraction failed:`, error);
+    return empty;
+  }
+}
+
+async function parseGenericInvoiceImages(imageDataUrls: string[], vendor: string): Promise<GenericParseResult> {
+  const master: GenericParseResult = { invoiceNumber: null, invoiceDate: null, totalAmount: null, lines: [], summary: { subtotal: null, tax: null, total: null, shippedCount: null, sectionTotals: {} } };
+  for (let index = 0; index < imageDataUrls.length; index += 1) {
+    const base64Match = imageDataUrls[index].match(/^data:[^;]+;base64,(.+)$/);
+    const ocrPage = base64Match ? await runMistralOcr(base64Match[1], index) : null;
+    const parsed = await parseGenericOcrText(ocrPage?.markdown ?? "", vendor);
+    if (!master.invoiceNumber && parsed.invoiceNumber) master.invoiceNumber = parsed.invoiceNumber;
+    if (!master.invoiceDate && parsed.invoiceDate) master.invoiceDate = parsed.invoiceDate;
+    if (master.totalAmount === null && parsed.totalAmount !== null) master.totalAmount = parsed.totalAmount;
+    master.summary = mergeInvoiceSummaries(master.summary, parsed.summary);
+    master.lines.push(...parsed.lines);
+  }
+  return master;
+}
+
+async function parseGenericInvoicePdf(base64Pdf: string, vendor: string): Promise<GenericParseResult> {
+  const apiKey = ENV.mistralApiKey;
+  if (!apiKey) throw new Error("MISTRAL_API_KEY is not set — cannot run PDF OCR");
+  const client = new Mistral({ apiKey });
+  const response = await client.ocr.process({
+    model: "mistral-ocr-latest",
+    document: { type: "document_url", documentUrl: `data:application/pdf;base64,${base64Pdf}` },
+    tableFormat: "html",
+    extractHeader: true,
+    extractFooter: true,
+    includeBlocks: true,
+  } as any);
+  const master: GenericParseResult = { invoiceNumber: null, invoiceDate: null, totalAmount: null, lines: [], summary: { subtotal: null, tax: null, total: null, shippedCount: null, sectionTotals: {} } };
+  for (const page of Array.isArray(response.pages) ? response.pages : []) {
+    const markdown = typeof page?.markdown === "string" ? page.markdown : "";
+    const parsed = await parseGenericOcrText(markdown, vendor);
+    if (!master.invoiceNumber && parsed.invoiceNumber) master.invoiceNumber = parsed.invoiceNumber;
+    if (!master.invoiceDate && parsed.invoiceDate) master.invoiceDate = parsed.invoiceDate;
+    if (master.totalAmount === null && parsed.totalAmount !== null) master.totalAmount = parsed.totalAmount;
+    master.summary = mergeInvoiceSummaries(master.summary, parsed.summary);
+    master.lines.push(...parsed.lines);
+  }
+  return master;
+}
+
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 export const invoicesRouter = router({
@@ -642,8 +758,12 @@ export const invoicesRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Upload either invoice images or one PDF, not both." });
       }
       if (input.pdfs.length > 0) {
-        const parsed = await parseInvoicePdf(input.pdfs[0].base64);
-        const validation = validateAndNormalizePfgInvoice(parsed.lines, parsed.summary, parsed.sourceItemRowCount);
+        const parsed = input.vendor === "PFG"
+          ? await parseInvoicePdf(input.pdfs[0].base64)
+          : await parseGenericInvoicePdf(input.pdfs[0].base64, input.vendor);
+        const validation = input.vendor === "PFG"
+          ? validateAndNormalizePfgInvoice(parsed.lines, parsed.summary, (parsed as PageResult).sourceItemRowCount)
+          : validateAndNormalizeVendorInvoice(parsed.lines, parsed.summary, input.vendor);
         const catalogItemNumbers = await getCatalogItemNumbers();
         if (catalogItemNumbers.length > 0) {
           for (const line of validation.lines) {
@@ -705,10 +825,14 @@ export const invoicesRouter = router({
       }
 
       console.log(`[Invoice] Starting OCR parse for ${imageDataUrls.length} page(s), vendor: ${input.vendor}`);
-      const parsed = await parseInvoiceImages(imageDataUrls);
+      const parsed = input.vendor === "PFG"
+        ? await parseInvoiceImages(imageDataUrls)
+        : await parseGenericInvoiceImages(imageDataUrls, input.vendor);
       console.log(`[Invoice] OCR complete: ${parsed.lines.length} lines total`);
 
-      const validation = validateAndNormalizePfgInvoice(parsed.lines, parsed.summary, parsed.sourceItemRowCount);
+      const validation = input.vendor === "PFG"
+        ? validateAndNormalizePfgInvoice(parsed.lines, parsed.summary, (parsed as PageResult).sourceItemRowCount)
+        : validateAndNormalizeVendorInvoice(parsed.lines, parsed.summary, input.vendor);
       if (parsed.expectedPageCount !== null && input.images.length < parsed.expectedPageCount) {
         validation.errors.push(`Invoice indicates ${parsed.expectedPageCount} pages, but only ${input.images.length} page${input.images.length === 1 ? " was" : "s were"} uploaded. Add the remaining page${parsed.expectedPageCount === input.images.length + 1 ? "" : "s"} before applying this receipt.`);
       }

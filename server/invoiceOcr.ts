@@ -437,6 +437,49 @@ export function extractPfgPdfControlTotals(content: string): InvoiceSummary {
  * calculation may repair an OCR typo in extension; all other failures reject the
  * entire upload instead of silently applying shifted inventory.
  */
+export function validateAndNormalizeVendorInvoice(
+  inputLines: InvoiceLineDraft[],
+  summary: InvoiceSummary,
+  vendor: string
+): ValidationResult {
+  const errors: string[] = [];
+  const corrections: string[] = [];
+  const lines = inputLines.map((line) => ({ ...line }));
+
+  for (const line of lines) {
+    if (!line.itemNumber) errors.push(`${vendor}: a merchandise row is missing an item number.`);
+    if (!line.description) errors.push(`Item ${line.itemNumber ?? "unknown"} has no description.`);
+    if (line.shippedQty === null || line.shippedQty < 0) errors.push(`Item ${line.itemNumber ?? "unknown"} has no valid quantity.`);
+    if (line.unitPrice === null || line.unitPrice < 0) errors.push(`Item ${line.itemNumber ?? "unknown"} has no valid unit price.`);
+    if (line.extension === null || line.extension < 0) errors.push(`Item ${line.itemNumber ?? "unknown"} has no valid line total.`);
+    if (line.unitPrice !== null && line.shippedQty !== null && line.unitPrice >= 0 && line.shippedQty >= 0) {
+      const calculatedExtension = roundMoney(line.unitPrice * line.shippedQty);
+      if (line.extension === null || Math.abs(calculatedExtension - line.extension) > LINE_MONEY_TOLERANCE) {
+        const prior = line.extension;
+        line.extension = calculatedExtension;
+        corrections.push(`Item ${line.itemNumber ?? "unknown"}: line total ${prior ?? "missing"} corrected to ${calculatedExtension.toFixed(2)} from unit price × quantity.`);
+      }
+    }
+  }
+
+  const extensionSum = roundMoney(lines.reduce((sum, line) => sum + (line.extension ?? 0), 0));
+  const quantitySum = lines.reduce((sum, line) => sum + (line.shippedQty ?? 0), 0);
+  if (summary.subtotal === null) errors.push(`Could not verify the printed ${vendor} subtotal.`);
+  if (summary.total === null) errors.push(`Could not verify the printed ${vendor} total.`);
+  if (summary.subtotal !== null && Math.abs(extensionSum - summary.subtotal) > MONEY_TOLERANCE) {
+    errors.push(`Extension sum ${extensionSum.toFixed(2)} does not match printed subtotal ${summary.subtotal.toFixed(2)}.`);
+  }
+  if (summary.tax !== null && summary.total !== null && summary.subtotal !== null
+    && Math.abs(roundMoney(summary.subtotal + summary.tax) - summary.total) > MONEY_TOLERANCE) {
+    errors.push(`Printed subtotal plus tax does not match printed total for ${vendor}.`);
+  }
+  if (summary.shippedCount !== null && Math.abs(quantitySum - summary.shippedCount) > 0.001) {
+    errors.push(`Quantity sum ${quantitySum} does not match printed quantity total ${summary.shippedCount}.`);
+  }
+
+  return { lines, errors: Array.from(new Set(errors)), corrections };
+}
+
 export function validateAndNormalizePfgInvoice(
   inputLines: InvoiceLineDraft[],
   summary: InvoiceSummary,

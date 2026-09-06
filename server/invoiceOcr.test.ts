@@ -17,6 +17,7 @@ import {
   reconstructPfgRowsFromHtml,
   selectPfgItemTable,
   validateAndNormalizePfgInvoice,
+  validateAndNormalizeVendorInvoice,
   type InvoiceLineDraft,
   type InvoiceSummary,
 } from "./invoiceOcr";
@@ -67,6 +68,32 @@ function invoice6076192Lines(): InvoiceLineDraft[] {
   lines.push(line("130000", 3, 6.14));
   return lines;
 }
+
+describe("generic vendor invoice validation", () => {
+  it("accepts DFA-style merchandise rows and rejects a subtotal mismatch", () => {
+    const result = validateAndNormalizeVendorInvoice([
+      {
+        itemNumber: "28586",
+        description: "GL HOMO",
+        pack: "GL",
+        size: null,
+        orderedQty: 32,
+        shippedQty: 32,
+        unitPrice: 4.624,
+        extension: 147.97,
+        category: null,
+      },
+    ], {
+      subtotal: 147.97,
+      tax: 0,
+      total: 147.97,
+      shippedCount: null,
+      sectionTotals: {},
+    }, "DFA");
+    expect(result.errors).toEqual([]);
+    expect(result.lines[0].extension).toBe(147.97);
+  });
+});
 
 describe("PFG invoice 6076192 regression", () => {
   it("saves a parse with validation errors as a review draft, but not an empty parse", () => {

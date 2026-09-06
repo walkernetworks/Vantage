@@ -240,8 +240,11 @@ function UploadDialog({ open, onClose, onSuccess }: { open: boolean; onClose: ()
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="PFG">Performance Foodservice (PFG)</SelectItem>
-                <SelectItem value="Webstaurant">Webstaurant</SelectItem>
-                <SelectItem value="Other">Other</SelectItem>
+                <SelectItem value="Savannah Distributing">Savannah Distributing</SelectItem>
+                <SelectItem value="United">United Distributors</SelectItem>
+                <SelectItem value="DFA">DFA / Mayfield Dairy</SelectItem>
+                <SelectItem value="Webstaurant">WebstaurantStore</SelectItem>
+                <SelectItem value="Other">Other / manual review</SelectItem>
               </SelectContent>
             </Select>
           </div>

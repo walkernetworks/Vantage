@@ -472,7 +472,7 @@ Example: {"name":4,"brand":5,"price":13,"packSize":6,"unitOfMeasure":7,"storageA
       const { invokeLLM } = await import("./_core/llm");
 
       const CANONICAL_CATEGORIES = ["Alcohol - 100","Alcohol - 130","Coffee","Bakery","Dairy","Dry Goods","Paper Goods","Produce","Protein","Syrups","Supplies","Other"];
-      const CANONICAL_VENDORS = ["PFG","Webstaurant","Savannah Distributing","United","Other"];
+      const CANONICAL_VENDORS = ["PFG","Webstaurant","Savannah Distributing","United","DFA","Other"];
       const CANONICAL_STORAGE = ["Dry Storage","Walk-In","Freezer","Bar","Other"];
 
       const systemPrompt = `You are a restaurant inventory assistant. You will receive a JSON array of inventory items parsed from a vendor CSV.
@@ -492,7 +492,9 @@ For each item, return ONLY the following fields — do NOT rewrite or invent nam
    - If you cannot parse it, return null.
 4. "category": Must be exactly one of: ${CANONICAL_CATEGORIES.join(", ")}. Map the raw category to the closest match based on the item name and any provided category hint.
 5. "vendor": Must be exactly one of: ${CANONICAL_VENDORS.join(", ")}. Map raw vendor names:
-   - "UNITED", "United Distributors" → "Savannah Distributing"
+   - "UNITED", "United Distributors" → "United"
+   - "SAVANNAH", "Savannah Distributing" → "Savannah Distributing"
+   - "DFA", "Mayfield Dairy", "DFA Dairy" → "DFA"
    - "PFG", "Performance Food Group" → "PFG"
    - "Webstaurant", "WebstaurantStore" → "Webstaurant"
    - If unknown, return "Other"
