@@ -661,7 +661,7 @@ function extractGenericControls(markdown: string, vendor: string): InvoiceSummar
     const shippedCount = quantityMatches.length > 0 ? parseNumericOcr(quantityMatches[quantityMatches.length - 1][1]) : null;
     return { ...empty, subtotal: total, total, shippedCount };
   }
-  if (vendor === "Savannah") {
+  if (vendor === "Savannah" || vendor === "Savannah Distributing") {
     const grossMatches = Array.from(text.matchAll(/\bGROSS\s*\$?\s*([0-9,]+\.\d{2})/gi));
     const netMatches = Array.from(text.matchAll(/\bNET\s*\$?\s*([0-9,]+\.\d{2})/gi));
     const taxMatches = Array.from(text.matchAll(/\bLOCAL\s+TAX\s*\$?\s*([0-9,]+\.\d{2})/gi));
