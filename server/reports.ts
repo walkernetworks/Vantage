@@ -280,6 +280,9 @@ function asDate(value: unknown): Date | null {
 
 /** Invoice dates are saved as OCR strings, so parse them without browser-dependent two-digit-year behavior. */
 function invoiceReceiptDate(value: unknown, fallback: unknown): Date | null {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 12, 0, 0, 0);
+  }
   const raw = typeof value === "string" ? value.trim() : "";
   const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (isoMatch) {
