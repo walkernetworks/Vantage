@@ -281,6 +281,15 @@ function asDate(value: unknown): Date | null {
 /** Invoice dates are saved as OCR strings, so parse them without browser-dependent two-digit-year behavior. */
 function invoiceReceiptDate(value: unknown, fallback: unknown): Date | null {
   const raw = typeof value === "string" ? value.trim() : "";
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    const year = Number(isoMatch[1]);
+    const month = Number(isoMatch[2]);
+    const day = Number(isoMatch[3]);
+    const parsed = new Date(year, month - 1, day, 12, 0, 0, 0);
+    if (parsed.getFullYear() === year && parsed.getMonth() === month - 1 && parsed.getDate() === day) return parsed;
+    return null;
+  }
   const match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
   if (match) {
     const month = Number(match[1]);
@@ -289,6 +298,7 @@ function invoiceReceiptDate(value: unknown, fallback: unknown): Date | null {
     const year = yearValue < 100 ? 2000 + yearValue : yearValue;
     const parsed = new Date(year, month - 1, day, 12, 0, 0, 0);
     if (parsed.getFullYear() === year && parsed.getMonth() === month - 1 && parsed.getDate() === day) return parsed;
+    return null;
   }
   return asDate(fallback);
 }
