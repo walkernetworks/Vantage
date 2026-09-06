@@ -626,3 +626,10 @@
 - [x] Recover DFA merchandise rows from physical HTML table cells while preserving document-total validation as the acceptance gate
 - [x] Add regression coverage for item 28586, quantity 32, unit price 4.624, extension/subtotal $147.97
 - [ ] Re-upload the failed DFA invoice after production deployment and confirm the recovered row reconciles before applying inventory
+
+## Round 79 — United Printed Line-Total Reconciliation
+- [x] Trace invoice 31243078’s $49.55 validation gap to the J. Roget row: printed PRICE $10.45 versus printed TOTAL $60.00
+- [x] Preserve United’s printed TOTAL column as the authoritative merchandise extension
+- [x] Derive stored United receipt unit cost from printed line total divided by shipped cases without weakening the document-total hold
+- [x] Add regression coverage for all four merchandise lines reconciling to $281.75 and four total cases
+- [ ] Deploy to production, replace the held draft, and confirm invoice 31243078 passes validation before any inventory application

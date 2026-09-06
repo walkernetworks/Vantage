@@ -107,6 +107,67 @@ describe("generic vendor invoice validation", () => {
     expect(result.errors).toEqual([]);
   });
 
+  it("preserves United printed line totals when PRICE is not the delivered case cost", () => {
+    const result = validateAndNormalizeVendorInvoice([
+      {
+        itemNumber: "66555",
+        description: "J ROGET BRUT NV 12/750",
+        pack: "12/750",
+        size: null,
+        orderedQty: 1,
+        shippedQty: 1,
+        unitPrice: 10.45,
+        extension: 60,
+        category: null,
+      },
+      {
+        itemNumber: "91388",
+        description: "SENORITA THC 10MG MANGO 6/4/12Z",
+        pack: "6/4/12Z",
+        size: null,
+        orderedQty: 1,
+        shippedQty: 1,
+        unitPrice: 78.75,
+        extension: 78.75,
+        category: null,
+      },
+      {
+        itemNumber: "91386",
+        description: "SENORITA THC 5MG LIME JALAPENO 6/4/12Z",
+        pack: "6/4/12Z",
+        size: null,
+        orderedQty: 1,
+        shippedQty: 1,
+        unitPrice: 71.5,
+        extension: 71.5,
+        category: null,
+      },
+      {
+        itemNumber: "91387",
+        description: "SENORITA THC 5MG MANGO 6/4/12Z",
+        pack: "6/4/12Z",
+        size: null,
+        orderedQty: 1,
+        shippedQty: 1,
+        unitPrice: 71.5,
+        extension: 71.5,
+        category: null,
+      },
+    ], {
+      subtotal: 281.75,
+      tax: null,
+      total: 281.75,
+      shippedCount: 4,
+      sectionTotals: {},
+    }, "United");
+
+    expect(result.errors).toEqual([]);
+    expect(result.lines.map((line) => line.extension)).toEqual([60, 78.75, 71.5, 71.5]);
+    expect(result.lines.reduce((sum, line) => sum + (line.extension ?? 0), 0)).toBeCloseTo(281.75, 2);
+    expect(result.lines.find((line) => line.itemNumber === "66555")?.unitPrice).toBe(60);
+    expect(result.corrections.join(" ")).toContain("printed PRICE was 10.45");
+  });
+
   it("accepts DFA-style merchandise rows and rejects a subtotal mismatch", () => {
     const result = validateAndNormalizeVendorInvoice([
       {

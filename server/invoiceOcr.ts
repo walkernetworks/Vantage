@@ -522,12 +522,25 @@ export function validateAndNormalizeVendorInvoice(
   const lines = inputLines.map((line) => ({ ...line }));
 
   for (const line of lines) {
+    // United's PRICE column is not always the delivered case cost. Wine rows can
+    // include bottle-level price, tax, discount, and NET values while TOTAL is
+    // the authoritative merchandise extension. Preserve that printed total and
+    // normalize the stored receipt unit cost from TOTAL ÷ shipped cases.
+    if (vendor === "United" && line.extension !== null && line.extension >= 0 && line.shippedQty !== null && line.shippedQty > 0) {
+      const receiptUnitPrice = roundMoney(line.extension / line.shippedQty);
+      if (line.unitPrice === null || Math.abs(line.unitPrice - receiptUnitPrice) > LINE_MONEY_TOLERANCE) {
+        const printedPrice = line.unitPrice;
+        line.unitPrice = receiptUnitPrice;
+        corrections.push(`Item ${line.itemNumber ?? "unknown"}: United receipt unit price ${receiptUnitPrice.toFixed(2)} derived from printed line total ÷ shipped cases; printed PRICE was ${printedPrice ?? "missing"}.`);
+      }
+    }
+
     if (!line.itemNumber) errors.push(`${vendor}: a merchandise row is missing an item number.`);
     if (!line.description) errors.push(`Item ${line.itemNumber ?? "unknown"} has no description.`);
     if (line.shippedQty === null || line.shippedQty < 0) errors.push(`Item ${line.itemNumber ?? "unknown"} has no valid quantity.`);
     if (line.unitPrice === null || line.unitPrice < 0) errors.push(`Item ${line.itemNumber ?? "unknown"} has no valid unit price.`);
     if (line.extension === null || line.extension < 0) errors.push(`Item ${line.itemNumber ?? "unknown"} has no valid line total.`);
-    if (line.unitPrice !== null && line.shippedQty !== null && line.unitPrice >= 0 && line.shippedQty >= 0) {
+    if (vendor !== "United" && line.unitPrice !== null && line.shippedQty !== null && line.unitPrice >= 0 && line.shippedQty >= 0) {
       const calculatedExtension = roundMoney(line.unitPrice * line.shippedQty);
       if (line.extension === null || Math.abs(calculatedExtension - line.extension) > LINE_MONEY_TOLERANCE) {
         const prior = line.extension;
