@@ -257,7 +257,7 @@ function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-function extractHtmlRows(html: string): string[][] {
+export function extractHtmlRows(html: string): string[][] {
   const rows: string[][] = [];
   const rowMatches = Array.from(html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi));
   for (const rowMatch of rowMatches) {
@@ -266,6 +266,81 @@ function extractHtmlRows(html: string): string[][] {
     for (const cellMatch of cellMatches) cells.push(decodeHtml(cellMatch[1]));
     if (cells.length > 0) rows.push(cells);
   }
+  return rows;
+}
+
+/**
+ * Mistral markdown can reference a detached table artifact such as tbl-0.html
+ * without inlining any merchandise cells. Keep the markdown controls and append
+ * every returned table so generic vendor parsing receives the physical rows.
+ */
+export function combineOcrPageContent(markdown: string, tableContents: string[]): string {
+  return [markdown, ...tableContents]
+    .filter((part) => typeof part === "string" && part.trim().length > 0)
+    .join("\n");
+}
+
+/**
+ * Recovers DFA merchandise rows from either Mistral HTML tables or pipe/plain
+ * OCR text. HTML extraction is positional by design: DFA/CUST ITEM and the
+ * description lead the row, while quantity, unit price, and extension are the
+ * final three cells. Document-level controls still validate every recovered row.
+ */
+export function extractDfaRowsFromOcr(content: string): InvoiceLineDraft[] {
+  const rows: InvoiceLineDraft[] = [];
+  const seen = new Set<string>();
+  const addRow = (line: InvoiceLineDraft) => {
+    const key = `${line.itemNumber}|${line.shippedQty}|${line.unitPrice}|${line.extension}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      rows.push(line);
+    }
+  };
+
+  for (const rawCells of extractHtmlRows(content)) {
+    const cells = rawCells.map((cell) => cell.trim()).filter(Boolean);
+    const itemIndex = cells.findIndex((cell) => /^\d{4,8}$/.test(cell.replace(/\D/g, "")));
+    if (itemIndex < 0) continue;
+    const merchandiseCells = cells.slice(itemIndex);
+    if (merchandiseCells.length < 6) continue;
+    const itemNumber = merchandiseCells[0].replace(/\D/g, "");
+    const shippedQty = parseNumericOcr(merchandiseCells[merchandiseCells.length - 3]);
+    const unitPrice = parseNumericOcr(merchandiseCells[merchandiseCells.length - 2]);
+    const extension = parseNumericOcr(merchandiseCells[merchandiseCells.length - 1]);
+    if (shippedQty === null || unitPrice === null || extension === null) continue;
+    addRow({
+      itemNumber,
+      description: merchandiseCells[1] ?? null,
+      pack: merchandiseCells.slice(2, -3).join(" ") || null,
+      size: null,
+      orderedQty: shippedQty,
+      shippedQty,
+      unitPrice,
+      extension,
+      category: null,
+    });
+  }
+
+  for (const rawLine of content.replace(/<[^>]+>/g, " ").split("\n")) {
+    const cells = rawLine.split("|").map((cell) => cell.trim()).filter(Boolean);
+    if (cells.length >= 6 && /^\d{4,8}$/.test(cells[0])) {
+      const shippedQty = parseNumericOcr(cells[cells.length - 3]);
+      const unitPrice = parseNumericOcr(cells[cells.length - 2]);
+      const extension = parseNumericOcr(cells[cells.length - 1]);
+      if (shippedQty !== null && unitPrice !== null && extension !== null) {
+        addRow({ itemNumber: cells[0], description: cells[1] ?? null, pack: cells.slice(2, -3).join(" ") || null, size: null, orderedQty: shippedQty, shippedQty, unitPrice, extension, category: null });
+        continue;
+      }
+    }
+    const match = rawLine.match(/^\s*(\d{4,8})\s+(.+?)\s+[A-Za-z]{1,8}\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.\d{2,4})\s+([0-9,]+\.\d{2})\s*$/);
+    if (match) {
+      const shippedQty = parseNumericOcr(match[3]);
+      const unitPrice = parseNumericOcr(match[4]);
+      const extension = parseNumericOcr(match[5]);
+      addRow({ itemNumber: match[1], description: match[2].trim(), pack: null, size: null, orderedQty: shippedQty, shippedQty, unitPrice, extension, category: null });
+    }
+  }
+
   return rows;
 }
 
@@ -393,7 +468,7 @@ export function extractPfgPdfControlTotals(content: string): InvoiceSummary {
   const moneyAfter = (label: RegExp): number[] => {
     const values: number[] = [];
     const globalLabel = new RegExp(label.source, label.flags.includes("g") ? label.flags : `${label.flags}g`);
-    for (const match of text.matchAll(globalLabel)) {
+    for (const match of Array.from(text.matchAll(globalLabel))) {
       const tail = text.slice((match.index ?? 0) + match[0].length, (match.index ?? 0) + match[0].length + 140);
       const value = tail.match(/\$?\s*([\d,]+\.\d{2})/);
       if (value) {

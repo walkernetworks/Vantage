@@ -20,7 +20,9 @@ import { invokeLLM } from "../_core/llm";
 import { ENV } from "../_core/env";
 import type { MessageContent } from "../_core/llm";
 import {
+  combineOcrPageContent,
   deskewInvoiceForOcr,
+  extractDfaRowsFromOcr,
   extractPfgInvoiceHeader,
   extractPfgPageIndicator,
   corroboratePfgPageCount,
@@ -578,10 +580,10 @@ async function parseInvoicePdf(base64Pdf: string): Promise<PageResult> {
   for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
     const page = pages[pageIndex] as any;
     const markdown = typeof page?.markdown === "string" ? page.markdown : "";
-    const tableContents = (page?.tables ?? [])
+    const tableContents: string[] = (page?.tables ?? [])
       .map((table: any) => table?.html ?? table?.content ?? "")
       .filter((table: unknown): table is string => typeof table === "string" && table.trim().length > 0);
-    const htmlTables = tableContents.filter((table) => table.includes("<table"));
+    const htmlTables = tableContents.filter((table: string) => table.includes("<table"));
     const tableParse = selectPfgItemTable(htmlTables);
     const pdfContent = [markdown, ...tableContents].join("\n");
     const summary = extractPfgPdfControlTotals(pdfContent);
@@ -627,27 +629,6 @@ interface GenericParseResult {
   summary: InvoiceSummary;
   expectedPageCount?: number | null;
   sourceItemRowCount?: number | null;
-}
-
-function extractDfaRows(markdown: string): InvoiceLineDraft[] {
-  const rows: InvoiceLineDraft[] = [];
-  for (const rawLine of markdown.replace(/<[^>]+>/g, " ").split("\n")) {
-    const cells = rawLine.split("|").map((cell) => cell.trim()).filter(Boolean);
-    if (cells.length >= 6 && /^\d{4,8}$/.test(cells[0])) {
-      const shippedQty = parseNumericOcr(cells[cells.length - 3]);
-      const unitPrice = parseNumericOcr(cells[cells.length - 2]);
-      const extension = parseNumericOcr(cells[cells.length - 1]);
-      if (shippedQty !== null && unitPrice !== null && extension !== null) {
-        rows.push({ itemNumber: cells[0], description: cells[1] ?? null, pack: cells[2] ?? null, size: null, orderedQty: shippedQty, shippedQty, unitPrice, extension, category: null });
-        continue;
-      }
-    }
-    const match = rawLine.match(/^\s*(\d{4,8})\s+(.+?)\s+[A-Za-z]{1,8}\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.\d{2,4})\s+([0-9,]+\.\d{2})\s*$/);
-    if (match) {
-      rows.push({ itemNumber: match[1], description: match[2].trim(), pack: null, size: null, orderedQty: parseNumericOcr(match[3]), shippedQty: parseNumericOcr(match[3]), unitPrice: parseNumericOcr(match[4]), extension: parseNumericOcr(match[5]), category: null });
-    }
-  }
-  return rows;
 }
 
 function extractGenericControls(markdown: string, vendor: string): InvoiceSummary {
@@ -711,7 +692,7 @@ function normalizeGenericPayload(payload: any): GenericParseResult {
 async function parseGenericOcrText(markdown: string, vendor: string): Promise<GenericParseResult> {
   const empty: GenericParseResult = { invoiceNumber: null, invoiceDate: null, totalAmount: null, lines: [], summary: { subtotal: null, tax: null, total: null, shippedCount: null, sectionTotals: {} } };
   if (!markdown.trim()) return empty;
-  const dfaFallbackRows = vendor === "DFA" ? extractDfaRows(markdown) : [];
+  const dfaFallbackRows = vendor === "DFA" ? extractDfaRowsFromOcr(markdown) : [];
   try {
     const response = await invokeLLM({
       messages: [
@@ -740,7 +721,8 @@ async function parseGenericInvoiceImages(imageDataUrls: string[], vendor: string
   for (let index = 0; index < imageDataUrls.length; index += 1) {
     const base64Match = imageDataUrls[index].match(/^data:[^;]+;base64,(.+)$/);
     const ocrPage = base64Match ? await runMistralOcr(base64Match[1], index) : null;
-    const parsed = await parseGenericOcrText(ocrPage?.markdown ?? "", vendor);
+    const ocrContent = combineOcrPageContent(ocrPage?.markdown ?? "", ocrPage?.htmlTables ?? []);
+    const parsed = await parseGenericOcrText(ocrContent, vendor);
     if (!master.invoiceNumber && parsed.invoiceNumber) master.invoiceNumber = parsed.invoiceNumber;
     if (!master.invoiceDate && parsed.invoiceDate) master.invoiceDate = parsed.invoiceDate;
     if (master.totalAmount === null && parsed.totalAmount !== null) master.totalAmount = parsed.totalAmount;
@@ -765,7 +747,10 @@ async function parseGenericInvoicePdf(base64Pdf: string, vendor: string): Promis
   const master: GenericParseResult = { invoiceNumber: null, invoiceDate: null, totalAmount: null, lines: [], summary: { subtotal: null, tax: null, total: null, shippedCount: null, sectionTotals: {} } };
   for (const page of Array.isArray(response.pages) ? response.pages : []) {
     const markdown = typeof page?.markdown === "string" ? page.markdown : "";
-    const parsed = await parseGenericOcrText(markdown, vendor);
+    const tableContents = (page?.tables ?? [])
+      .map((table: any) => table?.html ?? table?.content ?? "")
+      .filter((table: unknown): table is string => typeof table === "string" && table.trim().length > 0);
+    const parsed = await parseGenericOcrText(combineOcrPageContent(markdown, tableContents), vendor);
     if (!master.invoiceNumber && parsed.invoiceNumber) master.invoiceNumber = parsed.invoiceNumber;
     if (!master.invoiceDate && parsed.invoiceDate) master.invoiceDate = parsed.invoiceDate;
     if (master.totalAmount === null && parsed.totalAmount !== null) master.totalAmount = parsed.totalAmount;
@@ -889,7 +874,7 @@ export const invoicesRouter = router({
       const validation = input.vendor === "PFG"
         ? validateAndNormalizePfgInvoice(parsed.lines, parsed.summary, (parsed as PageResult).sourceItemRowCount)
         : validateAndNormalizeVendorInvoice(parsed.lines, parsed.summary, input.vendor);
-      if (parsed.expectedPageCount !== null && input.images.length < parsed.expectedPageCount) {
+      if (typeof parsed.expectedPageCount === "number" && input.images.length < parsed.expectedPageCount) {
         validation.errors.push(`Invoice indicates ${parsed.expectedPageCount} pages, but only ${input.images.length} page${input.images.length === 1 ? " was" : "s were"} uploaded. Add the remaining page${parsed.expectedPageCount === input.images.length + 1 ? "" : "s"} before applying this receipt.`);
       }
       const catalogItemNumbers = await getCatalogItemNumbers();
@@ -903,7 +888,7 @@ export const invoicesRouter = router({
         }
       }
       if (validation.errors.length > 0) {
-        console.error(`[Invoice OCR] rejected unsafe PFG parse: ${validation.errors.join(" | ")}`);
+        console.error(`[Invoice OCR] rejected unsafe ${input.vendor} parse: ${validation.errors.join(" | ")}`);
         // Preserve the parsed rows for manual correction rather than making a
         // user re-upload the invoice. The new invoice remains pending, so
         // stock cannot be applied until a reviewer explicitly marks it ready.

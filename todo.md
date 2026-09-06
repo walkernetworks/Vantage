@@ -619,3 +619,10 @@
 - [x] Preserve the safety hold for genuine explicit multi-page indicators while allowing ordinary PAGE 1 / PAGE 2 labels
 - [x] Add regression coverage for false page-count evidence and explicit incomplete-page protection
 - [ ] Reprocess invoice 6089153 after deployment and reconcile all 26 lines to the printed subtotal before applying inventory
+
+## Round 78 — DFA Detached Mistral Table Recovery
+- [x] Trace the latest production DFA upload failure from Render logs: OCR controls were present, but markdown exposed only a `tbl-0.html` reference and produced zero merchandise lines
+- [x] Include Mistral table HTML/content in generic image and native-PDF invoice parsing for DFA, United, Savannah, Webstaurant, and other vendors
+- [x] Recover DFA merchandise rows from physical HTML table cells while preserving document-total validation as the acceptance gate
+- [x] Add regression coverage for item 28586, quantity 32, unit price 4.624, extension/subtotal $147.97
+- [ ] Re-upload the failed DFA invoice after production deployment and confirm the recovered row reconciles before applying inventory

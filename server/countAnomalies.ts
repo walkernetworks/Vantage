@@ -28,7 +28,7 @@ export function detectCountAnomalies(comparisons: CountComparison[]): CountAnoma
     })
     .map((comparison) => ({
       ...comparison,
-      direction: comparison.currentQuantity >= comparison.previousQuantity ? "increase" : "decrease",
+      direction: (comparison.currentQuantity >= comparison.previousQuantity ? "increase" : "decrease") as "increase" | "decrease",
       difference: Math.abs(comparison.previousQuantity - comparison.currentQuantity),
       changePercent: Math.round(
         (Math.abs(comparison.currentQuantity - comparison.previousQuantity) / comparison.previousQuantity) * 100

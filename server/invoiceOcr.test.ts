@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   shouldSaveValidationDraft,
+  combineOcrPageContent,
   estimateDeskewDegrees,
+  extractDfaRowsFromOcr,
   cleanPfgDescription,
   extractPfgInvoiceHeader,
   extractPfgPageIndicator,
@@ -70,6 +72,41 @@ function invoice6076192Lines(): InvoiceLineDraft[] {
 }
 
 describe("generic vendor invoice validation", () => {
+  it("recovers DFA merchandise rows when Mistral markdown only links a detached HTML table", () => {
+    const markdown = `DATE:08/28/26 11:10:41\n[tbl-0.html](tbl-0.html)\nSub-Total: 147.97\nTotal: 147.97`;
+    const table = `<table>
+      <tr><th>DFA/CUST ITEM</th><th>DESCRIPTION</th><th>PACK</th><th>QTY</th><th>UNIT PRICE</th><th>EXTENSION</th></tr>
+      <tr><td>28586</td><td>GL HOMO</td><td>GL</td><td>32</td><td>4.624</td><td>147.97</td></tr>
+    </table>`;
+    const content = combineOcrPageContent(markdown, [table]);
+    const lines = extractDfaRowsFromOcr(content);
+
+    expect(content).toContain("Sub-Total: 147.97");
+    expect(content).toContain("<td>28586</td>");
+    expect(lines).toEqual([
+      {
+        itemNumber: "28586",
+        description: "GL HOMO",
+        pack: "GL",
+        size: null,
+        orderedQty: 32,
+        shippedQty: 32,
+        unitPrice: 4.624,
+        extension: 147.97,
+        category: null,
+      },
+    ]);
+
+    const result = validateAndNormalizeVendorInvoice(lines, {
+      subtotal: 147.97,
+      tax: 0,
+      total: 147.97,
+      shippedCount: null,
+      sectionTotals: {},
+    }, "DFA");
+    expect(result.errors).toEqual([]);
+  });
+
   it("accepts DFA-style merchandise rows and rejects a subtotal mismatch", () => {
     const result = validateAndNormalizeVendorInvoice([
       {
