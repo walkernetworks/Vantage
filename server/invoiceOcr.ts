@@ -520,7 +520,37 @@ export function validateAndNormalizeVendorInvoice(
   const errors: string[] = [];
   const corrections: string[] = [];
   const lines = inputLines.map((line) => ({ ...line }));
-  const preservesPrintedLineTotal = vendor === "United" || vendor === "Savannah" || vendor === "Savannah Distributing";
+  const isSavannah = vendor === "Savannah" || vendor === "Savannah Distributing";
+  const preservesPrintedLineTotal = vendor === "United" || isSavannah;
+
+  // Savannah prints delivered quantity as CASE/BTL. OCR may collapse 0/1 and
+  // 0/11 into 12 bottles for a 12-pack item; inventory is stored in cases.
+  // Convert only when every conversion is supported by the printed pack and the
+  // resulting sum exactly reconciles to the document's Total Cases control.
+  if (isSavannah && summary.shippedCount !== null) {
+    const currentQuantitySum = lines.reduce((sum, line) => sum + (line.shippedQty ?? 0), 0);
+    if (Math.abs(currentQuantitySum - summary.shippedCount) > 0.001) {
+      const proposedQuantities = lines.map((line) => {
+        const shippedQty = line.shippedQty;
+        if (shippedQty === null || shippedQty <= 1) return shippedQty;
+        const unitsPerCaseMatch = line.pack?.match(/^\s*(\d+(?:\.\d+)?)\s*[/xX]/);
+        const unitsPerCase = unitsPerCaseMatch ? Number(unitsPerCaseMatch[1]) : 0;
+        if (!Number.isFinite(unitsPerCase) || unitsPerCase <= 1) return shippedQty;
+        return Math.round((shippedQty / unitsPerCase) * 10000) / 10000;
+      });
+      const proposedQuantitySum = proposedQuantities.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+      if (Math.abs(proposedQuantitySum - summary.shippedCount) <= 0.001) {
+        for (let index = 0; index < lines.length; index += 1) {
+          const prior = lines[index].shippedQty;
+          const proposed = proposedQuantities[index];
+          if (prior !== null && proposed !== null && Math.abs(prior - proposed) > 0.0001) {
+            lines[index].shippedQty = proposed;
+            corrections.push(`Item ${lines[index].itemNumber ?? "unknown"}: Savannah bottle quantity ${prior} converted to ${proposed} cases using pack ${lines[index].pack}.`);
+          }
+        }
+      }
+    }
+  }
 
   for (const line of lines) {
     // United TOTAL and Savannah NET already include each supplier's pricing,

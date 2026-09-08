@@ -187,7 +187,7 @@ describe("generic vendor invoice validation", () => {
         pack: "12/1L",
         size: null,
         orderedQty: 1,
-        shippedQty: 1,
+        shippedQty: 12,
         unitPrice: 299.52,
         extension: 277.2,
         category: null,
@@ -201,9 +201,11 @@ describe("generic vendor invoice validation", () => {
     }, "Savannah Distributing");
 
     expect(result.errors).toEqual([]);
+    expect(result.lines.map((line) => line.shippedQty)).toEqual([1, 1]);
     expect(result.lines.map((line) => line.extension)).toEqual([143.97, 277.2]);
     expect(result.lines.map((line) => line.unitPrice)).toEqual([143.97, 277.2]);
     expect(result.lines.reduce((sum, line) => sum + (line.extension ?? 0), 0)).toBeCloseTo(421.17, 2);
+    expect(result.corrections.join(" ")).toContain("bottle quantity 12 converted to 1 cases");
   });
 
   it("accepts DFA-style merchandise rows and rejects a subtotal mismatch", () => {

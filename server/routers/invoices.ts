@@ -650,9 +650,11 @@ function extractGenericControls(markdown: string, vendor: string): InvoiceSummar
     const taxMatches = Array.from(text.matchAll(/\bLOCAL\s+TAX\s*\$?\s*([0-9,]+\.\d{2})/gi));
     const gross = grossMatches.length > 0 ? money(grossMatches[grossMatches.length - 1][1]) : null;
     const net = netMatches.length > 0 ? money(netMatches[netMatches.length - 1][1]) : null;
+    const quantityMatches = Array.from(text.matchAll(/TOTAL\s+CASES\s*:?\s*([0-9]+(?:\.[0-9]+)?)/gi));
+    const shippedCount = quantityMatches.length > 0 ? parseNumericOcr(quantityMatches[quantityMatches.length - 1][1]) : null;
     // Savannah NET is already the payable, post-discount amount and includes
     // local tax. Preserve it as both subtotal and total without adding tax again.
-    return { ...empty, subtotal: net ?? gross, total: net ?? gross, tax: null };
+    return { ...empty, subtotal: net ?? gross, total: net ?? gross, tax: null, shippedCount };
   }
   const subtotalMatches = Array.from(text.matchAll(/SUB[- ]?TOTAL\s*:?[ ]*\$?([0-9,]+\.\d{2})/gi));
   const totalMatches = Array.from(text.matchAll(/(?:^|\s)TOTAL\s*:?[ ]*\$?([0-9,]+\.\d{2})/gi));
