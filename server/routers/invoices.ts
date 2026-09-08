@@ -631,6 +631,20 @@ interface GenericParseResult {
   summary: InvoiceSummary;
   expectedPageCount?: number | null;
   sourceItemRowCount?: number | null;
+  repeatedSourceItemNumbers?: string[];
+}
+
+export function extractRepeatedSavannahItemNumbers(source: string): string[] {
+  const counts = new Map<string, number>();
+  for (const rowMatch of Array.from(source.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi))) {
+    const cells = Array.from(rowMatch[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi))
+      .map((cell: RegExpMatchArray) => cell[1].replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ").trim());
+    const itemNumber = cells.find((cell) => /^\d{4,}$/.test(cell));
+    if (itemNumber) counts.set(itemNumber, (counts.get(itemNumber) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .filter(([, count]) => count > 1)
+    .map(([itemNumber]) => itemNumber);
 }
 
 function extractGenericControls(markdown: string, vendor: string): InvoiceSummary {
@@ -728,11 +742,18 @@ async function parseGenericInvoiceImages(imageDataUrls: string[], vendor: string
     const ocrPage = base64Match ? await runMistralOcr(base64Match[1], index) : null;
     const ocrContent = combineOcrPageContent(ocrPage?.markdown ?? "", ocrPage?.htmlTables ?? []);
     const parsed = await parseGenericOcrText(ocrContent, vendor);
+    if (vendor === "Savannah" || vendor === "Savannah Distributing") {
+      parsed.repeatedSourceItemNumbers = extractRepeatedSavannahItemNumbers(ocrContent);
+    }
     if (!master.invoiceNumber && parsed.invoiceNumber) master.invoiceNumber = parsed.invoiceNumber;
     if (!master.invoiceDate && parsed.invoiceDate) master.invoiceDate = parsed.invoiceDate;
     if (master.totalAmount === null && parsed.totalAmount !== null) master.totalAmount = parsed.totalAmount;
     master.summary = mergeInvoiceSummaries(master.summary, parsed.summary);
     master.lines.push(...parsed.lines);
+    master.repeatedSourceItemNumbers = Array.from(new Set([
+      ...(master.repeatedSourceItemNumbers ?? []),
+      ...(parsed.repeatedSourceItemNumbers ?? []),
+    ]));
   }
   return master;
 }
@@ -755,12 +776,20 @@ async function parseGenericInvoicePdf(base64Pdf: string, vendor: string): Promis
     const tableContents = (page?.tables ?? [])
       .map((table: any) => table?.html ?? table?.content ?? "")
       .filter((table: unknown): table is string => typeof table === "string" && table.trim().length > 0);
-    const parsed = await parseGenericOcrText(combineOcrPageContent(markdown, tableContents), vendor);
+    const ocrContent = combineOcrPageContent(markdown, tableContents);
+    const parsed = await parseGenericOcrText(ocrContent, vendor);
+    if (vendor === "Savannah" || vendor === "Savannah Distributing") {
+      parsed.repeatedSourceItemNumbers = extractRepeatedSavannahItemNumbers(ocrContent);
+    }
     if (!master.invoiceNumber && parsed.invoiceNumber) master.invoiceNumber = parsed.invoiceNumber;
     if (!master.invoiceDate && parsed.invoiceDate) master.invoiceDate = parsed.invoiceDate;
     if (master.totalAmount === null && parsed.totalAmount !== null) master.totalAmount = parsed.totalAmount;
     master.summary = mergeInvoiceSummaries(master.summary, parsed.summary);
     master.lines.push(...parsed.lines);
+    master.repeatedSourceItemNumbers = Array.from(new Set([
+      ...(master.repeatedSourceItemNumbers ?? []),
+      ...(parsed.repeatedSourceItemNumbers ?? []),
+    ]));
   }
   return master;
 }
@@ -809,7 +838,7 @@ export const invoicesRouter = router({
           : await parseGenericInvoicePdf(input.pdfs[0].base64, input.vendor);
         const validation = input.vendor === "PFG"
           ? validateAndNormalizePfgInvoice(parsed.lines, parsed.summary, (parsed as PageResult).sourceItemRowCount)
-          : validateAndNormalizeVendorInvoice(parsed.lines, parsed.summary, input.vendor);
+          : validateAndNormalizeVendorInvoice(parsed.lines, parsed.summary, input.vendor, (parsed as GenericParseResult).repeatedSourceItemNumbers);
         const catalogItemNumbers = await getCatalogItemNumbers();
         if (catalogItemNumbers.length > 0) {
           for (const line of validation.lines) {

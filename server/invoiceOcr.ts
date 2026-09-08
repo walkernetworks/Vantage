@@ -515,7 +515,8 @@ export function extractPfgPdfControlTotals(content: string): InvoiceSummary {
 export function validateAndNormalizeVendorInvoice(
   inputLines: InvoiceLineDraft[],
   summary: InvoiceSummary,
-  vendor: string
+  vendor: string,
+  repeatedSourceItemNumbers: string[] = []
 ): ValidationResult {
   const errors: string[] = [];
   const corrections: string[] = [];
@@ -558,15 +559,23 @@ export function validateAndNormalizeVendorInvoice(
   // Recover it only when exactly one bottle-aggregated line exists and the
   // document's printed NET supplies a sub-dollar residual. Larger or ambiguous
   // differences remain validation holds.
-  if (isSavannah && summary.subtotal !== null && convertedSavannahLineIndices.length === 1) {
-    const extensionSum = roundMoney(lines.reduce((sum, line) => sum + (line.extension ?? 0), 0));
-    const netResidual = roundMoney(summary.subtotal - extensionSum);
-    if (Math.abs(netResidual) > MONEY_TOLERANCE && Math.abs(netResidual) <= 0.5) {
-      const index = convertedSavannahLineIndices[0];
-      const prior = lines[index].extension;
-      if (prior !== null && prior >= 0) {
-        lines[index].extension = roundMoney(prior + netResidual);
-        corrections.push(`Item ${lines[index].itemNumber ?? "unknown"}: Savannah document NET residual ${netResidual.toFixed(2)} restored to the bottle-aggregated line total.`);
+  if (isSavannah && summary.subtotal !== null) {
+    const sourceEvidenceIndices = lines
+      .map((line, index) => line.itemNumber && repeatedSourceItemNumbers.includes(line.itemNumber) ? index : -1)
+      .filter((index) => index >= 0);
+    const residualCandidates = sourceEvidenceIndices.length === 1
+      ? sourceEvidenceIndices
+      : convertedSavannahLineIndices;
+    if (residualCandidates.length === 1) {
+      const extensionSum = roundMoney(lines.reduce((sum, line) => sum + (line.extension ?? 0), 0));
+      const netResidual = roundMoney(summary.subtotal - extensionSum);
+      if (Math.abs(netResidual) > MONEY_TOLERANCE && Math.abs(netResidual) <= 0.5) {
+        const index = residualCandidates[0];
+        const prior = lines[index].extension;
+        if (prior !== null && prior >= 0) {
+          lines[index].extension = roundMoney(prior + netResidual);
+          corrections.push(`Item ${lines[index].itemNumber ?? "unknown"}: Savannah document NET residual ${netResidual.toFixed(2)} restored to the repeated source-table line total.`);
+        }
       }
     }
   }

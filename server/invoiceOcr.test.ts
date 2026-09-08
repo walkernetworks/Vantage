@@ -198,7 +198,7 @@ describe("generic vendor invoice validation", () => {
       total: 421.17,
       shippedCount: 2,
       sectionTotals: {},
-    }, "Savannah Distributing");
+    }, "Savannah Distributing", ["10282"]);
 
     expect(result.errors).toEqual([]);
     expect(result.lines.map((line) => line.shippedQty)).toEqual([1, 1]);
@@ -206,7 +206,7 @@ describe("generic vendor invoice validation", () => {
     expect(result.lines.map((line) => line.unitPrice)).toEqual([143.97, 277.2]);
     expect(result.lines.reduce((sum, line) => sum + (line.extension ?? 0), 0)).toBeCloseTo(421.17, 2);
     expect(result.corrections.join(" ")).toContain("bottle quantity 12 converted to 1 cases");
-    expect(result.corrections.join(" ")).toContain("document NET residual 0.22 restored");
+    expect(result.corrections.join(" ")).toContain("document NET residual 0.22 restored to the repeated source-table line total");
   });
 
   it("accepts DFA-style merchandise rows and rejects a subtotal mismatch", () => {
