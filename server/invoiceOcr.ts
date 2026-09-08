@@ -522,6 +522,7 @@ export function validateAndNormalizeVendorInvoice(
   const lines = inputLines.map((line) => ({ ...line }));
   const isSavannah = vendor === "Savannah" || vendor === "Savannah Distributing";
   const preservesPrintedLineTotal = vendor === "United" || isSavannah;
+  const convertedSavannahLineIndices: number[] = [];
 
   // Savannah prints delivered quantity as CASE/BTL. OCR may collapse 0/1 and
   // 0/11 into 12 bottles for a 12-pack item; inventory is stored in cases.
@@ -545,9 +546,27 @@ export function validateAndNormalizeVendorInvoice(
           const proposed = proposedQuantities[index];
           if (prior !== null && proposed !== null && Math.abs(prior - proposed) > 0.0001) {
             lines[index].shippedQty = proposed;
+            convertedSavannahLineIndices.push(index);
             corrections.push(`Item ${lines[index].itemNumber ?? "unknown"}: Savannah bottle quantity ${prior} converted to ${proposed} cases using pack ${lines[index].pack}.`);
           }
         }
+      }
+    }
+  }
+
+  // A split Savannah bottle row can lose only its small NET fragment during OCR.
+  // Recover it only when exactly one bottle-aggregated line exists and the
+  // document's printed NET supplies a sub-dollar residual. Larger or ambiguous
+  // differences remain validation holds.
+  if (isSavannah && summary.subtotal !== null && convertedSavannahLineIndices.length === 1) {
+    const extensionSum = roundMoney(lines.reduce((sum, line) => sum + (line.extension ?? 0), 0));
+    const netResidual = roundMoney(summary.subtotal - extensionSum);
+    if (Math.abs(netResidual) > MONEY_TOLERANCE && Math.abs(netResidual) <= 0.5) {
+      const index = convertedSavannahLineIndices[0];
+      const prior = lines[index].extension;
+      if (prior !== null && prior >= 0) {
+        lines[index].extension = roundMoney(prior + netResidual);
+        corrections.push(`Item ${lines[index].itemNumber ?? "unknown"}: Savannah document NET residual ${netResidual.toFixed(2)} restored to the bottle-aggregated line total.`);
       }
     }
   }

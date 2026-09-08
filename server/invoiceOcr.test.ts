@@ -189,7 +189,7 @@ describe("generic vendor invoice validation", () => {
         orderedQty: 1,
         shippedQty: 12,
         unitPrice: 299.52,
-        extension: 277.2,
+        extension: 276.98,
         category: null,
       },
     ], {
@@ -206,6 +206,7 @@ describe("generic vendor invoice validation", () => {
     expect(result.lines.map((line) => line.unitPrice)).toEqual([143.97, 277.2]);
     expect(result.lines.reduce((sum, line) => sum + (line.extension ?? 0), 0)).toBeCloseTo(421.17, 2);
     expect(result.corrections.join(" ")).toContain("bottle quantity 12 converted to 1 cases");
+    expect(result.corrections.join(" ")).toContain("document NET residual 0.22 restored");
   });
 
   it("accepts DFA-style merchandise rows and rejects a subtotal mismatch", () => {
