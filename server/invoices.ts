@@ -321,6 +321,23 @@ export async function updateInvoiceLine(
 ) {
   const db = await getDb();
   if (!db) return;
+
+  if (updates.shippedQty !== undefined) {
+    if (!Number.isFinite(updates.shippedQty) || updates.shippedQty < 0 || updates.shippedQty > 100000) {
+      throw new Error("Received quantity must be a finite number from 0 to 100,000.");
+    }
+    const [current] = await db
+      .select({ invoiceStatus: invoices.status })
+      .from(invoiceLines)
+      .innerJoin(invoices, eq(invoiceLines.invoiceId, invoices.id))
+      .where(eq(invoiceLines.id, lineId))
+      .limit(1);
+    if (!current) throw new Error("Invoice line not found");
+    if (current.invoiceStatus === "applied") {
+      throw new Error("Unapply the invoice before changing a received quantity.");
+    }
+  }
+
   const vals: Record<string, unknown> = {};
   if (updates.itemId !== undefined) {
     vals.itemId = updates.itemId;
@@ -328,7 +345,7 @@ export async function updateInvoiceLine(
       vals.matchStatus = updates.itemId ? "matched" : "unmatched";
     }
   }
-  if (updates.shippedQty !== undefined) vals.shippedQty = String(updates.shippedQty);
+  if (updates.shippedQty !== undefined) vals.shippedQty = String(Math.round(updates.shippedQty * 10000) / 10000);
   if (updates.matchStatus !== undefined) vals.matchStatus = updates.matchStatus;
   if (Object.keys(vals).length > 0) {
     await db.update(invoiceLines).set(vals).where(eq(invoiceLines.id, lineId));

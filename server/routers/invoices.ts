@@ -1041,7 +1041,7 @@ export const invoicesRouter = router({
       z.object({
         lineId: z.number(),
         itemId: z.number().nullable().optional(),
-        shippedQty: z.number().optional(),
+        shippedQty: z.number().finite().min(0).max(100000).optional(),
         matchStatus: z.enum(["matched", "unmatched", "skipped"]).optional(),
       })
     )

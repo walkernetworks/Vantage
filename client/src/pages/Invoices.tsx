@@ -355,6 +355,7 @@ function ReviewDialog({
   const [confirmApply, setConfirmApply] = useState(false);
   const [headerNumber, setHeaderNumber] = useState("");
   const [headerDate, setHeaderDate] = useState("");
+  const [editingQuantities, setEditingQuantities] = useState<Record<number, string>>({});
 
   useEffect(() => {
     if (!data?.invoice) return;
@@ -436,6 +437,27 @@ function ReviewDialog({
 
   const handleUnskip = (lineId: number) => {
     updateLineMutation.mutate({ lineId, matchStatus: "unmatched" });
+  };
+
+  const handleQuantityChange = (line: InvoiceLine, value: string) => {
+    setEditingQuantities((current) => ({ ...current, [line.id]: value }));
+  };
+
+  const saveQuantity = (line: InvoiceLine) => {
+    const rawValue = editingQuantities[line.id];
+    if (rawValue === undefined) return;
+    const quantity = Number(rawValue);
+    if (!Number.isFinite(quantity) || quantity < 0 || quantity > 100000) {
+      toast.error("Received quantity must be a number from 0 to 100,000.");
+      setEditingQuantities((current) => ({ ...current, [line.id]: String(line.shippedQty) }));
+      return;
+    }
+    updateLineMutation.mutate({ lineId: line.id, shippedQty: Math.round(quantity * 10000) / 10000 });
+    setEditingQuantities((current) => {
+      const next = { ...current };
+      delete next[line.id];
+      return next;
+    });
   };
 
   // A pending invoice is an OCR validation hold. It must be explicitly marked
@@ -570,8 +592,9 @@ function ReviewDialog({
               {/* Matched lines */}
               {matchedLines.length > 0 && (
                 <div>
-                  <h3 className="text-sm font-semibold text-green-600 dark:text-green-400 mb-2 flex items-center gap-1.5">
-                    <CheckCircle2 size={14} /> Matched Items
+                      <h3 className="text-sm font-semibold text-green-600 dark:text-green-400 mb-2 flex items-center gap-1.5">
+                        <CheckCircle2 size={14} /> Matched Items
+                        {invoice?.status !== "applied" && <span className="ml-auto text-xs font-normal text-muted-foreground">Edit received cases as needed</span>}
                     {notReceivedCount > 0 && (
                       <span className="ml-auto text-xs font-normal text-amber-600 dark:text-amber-400">
                         {notReceivedCount} marked not received
@@ -600,10 +623,34 @@ function ReviewDialog({
                           </p>
                           <p className="text-xs text-muted-foreground truncate">{line.description}</p>
                         </div>
-                        <div className="text-right shrink-0 mr-2">
-                          <p className={cn("text-sm font-semibold", line.notReceived ? "text-muted-foreground line-through" : "text-foreground")}>
-                            +{line.shippedQty}
-                          </p>
+                        <div className="text-right shrink-0 mr-2 flex items-center gap-2">
+                          {invoice?.status !== "applied" ? (
+                            <label className="flex items-center gap-1 text-xs text-muted-foreground" title="Edit received quantity in cases">
+                              <span className="sr-only">Received quantity in cases</span>
+                              <Input
+                                type="number"
+                                min="0"
+                                max="100000"
+                                step="0.0001"
+                                value={editingQuantities[line.id] ?? String(line.shippedQty)}
+                                onChange={(event) => handleQuantityChange(line, event.target.value)}
+                                onBlur={() => saveQuantity(line)}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter") {
+                                    event.currentTarget.blur();
+                                  }
+                                }}
+                                className="h-8 w-20 text-right text-sm font-semibold"
+                                aria-label={`Received quantity for ${line.itemName ?? line.description ?? "invoice line"} in cases`}
+                                disabled={updateLineMutation.isPending}
+                              />
+                              <span>cases</span>
+                            </label>
+                          ) : (
+                            <p className={cn("text-sm font-semibold", line.notReceived ? "text-muted-foreground line-through" : "text-foreground")}>
+                              +{line.shippedQty}
+                            </p>
+                          )}
                           <p className="text-xs text-muted-foreground">{formatCurrency(line.extension)}</p>
                         </div>
                         {invoice?.status !== "applied" && (
