@@ -1042,6 +1042,7 @@ export const invoicesRouter = router({
         lineId: z.number(),
         itemId: z.number().nullable().optional(),
         shippedQty: z.number().finite().min(0).max(100000).optional(),
+        unitPrice: z.number().finite().min(0).max(1000000).optional(),
         matchStatus: z.enum(["matched", "unmatched", "skipped"]).optional(),
       })
     )
@@ -1049,6 +1050,7 @@ export const invoicesRouter = router({
       await updateInvoiceLine(input.lineId, {
         itemId: input.itemId,
         shippedQty: input.shippedQty,
+        unitPrice: input.unitPrice,
         matchStatus: input.matchStatus,
       });
       return { success: true };

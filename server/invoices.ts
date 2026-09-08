@@ -316,25 +316,36 @@ export async function updateInvoiceLine(
   updates: {
     itemId?: number | null;
     shippedQty?: number;
+    unitPrice?: number;
     matchStatus?: "matched" | "unmatched" | "skipped";
   }
 ) {
   const db = await getDb();
   if (!db) return;
 
-  if (updates.shippedQty !== undefined) {
-    if (!Number.isFinite(updates.shippedQty) || updates.shippedQty < 0 || updates.shippedQty > 100000) {
-      throw new Error("Received quantity must be a finite number from 0 to 100,000.");
+  let currentLine: { invoiceStatus: string; shippedQty: string; unitPrice: string | null } | undefined;
+  if (updates.shippedQty !== undefined || updates.unitPrice !== undefined) {
+    if (updates.shippedQty !== undefined) {
+      if (!Number.isFinite(updates.shippedQty) || updates.shippedQty < 0 || updates.shippedQty > 100000) {
+        throw new Error("Received quantity must be a finite number from 0 to 100,000.");
+      }
+      if (Math.abs(updates.shippedQty * 10 - Math.round(updates.shippedQty * 10)) > 1e-9) {
+        throw new Error("Received quantity must use one decimal place or less.");
+      }
     }
-    const [current] = await db
-      .select({ invoiceStatus: invoices.status })
+    if (updates.unitPrice !== undefined && (!Number.isFinite(updates.unitPrice) || updates.unitPrice < 0 || updates.unitPrice > 1000000)) {
+      throw new Error("Unit price must be a finite number from 0 to 1,000,000.");
+    }
+    const [row] = await db
+      .select({ invoiceStatus: invoices.status, shippedQty: invoiceLines.shippedQty, unitPrice: invoiceLines.unitPrice })
       .from(invoiceLines)
       .innerJoin(invoices, eq(invoiceLines.invoiceId, invoices.id))
       .where(eq(invoiceLines.id, lineId))
       .limit(1);
-    if (!current) throw new Error("Invoice line not found");
-    if (current.invoiceStatus === "applied") {
-      throw new Error("Unapply the invoice before changing a received quantity.");
+    currentLine = row;
+    if (!currentLine) throw new Error("Invoice line not found");
+    if (currentLine.invoiceStatus === "applied") {
+      throw new Error("Unapply the invoice before changing quantity or price.");
     }
   }
 
@@ -345,7 +356,17 @@ export async function updateInvoiceLine(
       vals.matchStatus = updates.itemId ? "matched" : "unmatched";
     }
   }
-  if (updates.shippedQty !== undefined) vals.shippedQty = String(Math.round(updates.shippedQty * 10000) / 10000);
+  const nextQuantity = updates.shippedQty !== undefined
+    ? Math.round(updates.shippedQty * 10) / 10
+    : (currentLine ? Number(currentLine.shippedQty) : null);
+  const nextUnitPrice = updates.unitPrice !== undefined
+    ? Math.round(updates.unitPrice * 10000) / 10000
+    : (currentLine?.unitPrice == null ? null : Number(currentLine.unitPrice));
+  if (updates.shippedQty !== undefined) vals.shippedQty = String(nextQuantity);
+  if (updates.unitPrice !== undefined) vals.unitPrice = String(nextUnitPrice);
+  if (nextQuantity !== null && nextUnitPrice !== null && (updates.shippedQty !== undefined || updates.unitPrice !== undefined)) {
+    vals.extension = String(Math.round(nextQuantity * nextUnitPrice * 100) / 100);
+  }
   if (updates.matchStatus !== undefined) vals.matchStatus = updates.matchStatus;
   if (Object.keys(vals).length > 0) {
     await db.update(invoiceLines).set(vals).where(eq(invoiceLines.id, lineId));

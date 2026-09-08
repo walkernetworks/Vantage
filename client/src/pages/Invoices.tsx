@@ -356,6 +356,7 @@ function ReviewDialog({
   const [headerNumber, setHeaderNumber] = useState("");
   const [headerDate, setHeaderDate] = useState("");
   const [editingQuantities, setEditingQuantities] = useState<Record<number, string>>({});
+  const [editingPrices, setEditingPrices] = useState<Record<number, string>>({});
 
   useEffect(() => {
     if (!data?.invoice) return;
@@ -443,17 +444,38 @@ function ReviewDialog({
     setEditingQuantities((current) => ({ ...current, [line.id]: value }));
   };
 
+  const handlePriceChange = (line: InvoiceLine, value: string) => {
+    setEditingPrices((current) => ({ ...current, [line.id]: value }));
+  };
+
   const saveQuantity = (line: InvoiceLine) => {
     const rawValue = editingQuantities[line.id];
     if (rawValue === undefined) return;
     const quantity = Number(rawValue);
-    if (!Number.isFinite(quantity) || quantity < 0 || quantity > 100000) {
-      toast.error("Received quantity must be a number from 0 to 100,000.");
+    if (!Number.isFinite(quantity) || quantity < 0 || quantity > 100000 || Math.abs(quantity * 10 - Math.round(quantity * 10)) > 1e-9) {
+      toast.error("Received quantity must use one decimal place or less.");
       setEditingQuantities((current) => ({ ...current, [line.id]: String(line.shippedQty) }));
       return;
     }
-    updateLineMutation.mutate({ lineId: line.id, shippedQty: Math.round(quantity * 10000) / 10000 });
+    updateLineMutation.mutate({ lineId: line.id, shippedQty: Math.round(quantity * 10) / 10 });
     setEditingQuantities((current) => {
+      const next = { ...current };
+      delete next[line.id];
+      return next;
+    });
+  };
+
+  const savePrice = (line: InvoiceLine) => {
+    const rawValue = editingPrices[line.id];
+    if (rawValue === undefined) return;
+    const price = Number(rawValue);
+    if (!Number.isFinite(price) || price < 0 || price > 1000000) {
+      toast.error("Unit price must be a number from 0 to 1,000,000.");
+      setEditingPrices((current) => ({ ...current, [line.id]: line.unitPrice == null ? "" : String(line.unitPrice) }));
+      return;
+    }
+    updateLineMutation.mutate({ lineId: line.id, unitPrice: Math.round(price * 10000) / 10000 });
+    setEditingPrices((current) => {
       const next = { ...current };
       delete next[line.id];
       return next;
@@ -463,6 +485,13 @@ function ReviewDialog({
   // A pending invoice is an OCR validation hold. It must be explicitly marked
   // reviewed before inventory can be changed.
   const canApply = invoice?.status === "reviewed";
+  const matchedLineTotal = matchedLines.reduce((sum, line) => {
+    const quantity = editingQuantities[line.id] !== undefined ? Number(editingQuantities[line.id]) : line.shippedQty;
+    const price = editingPrices[line.id] !== undefined ? Number(editingPrices[line.id]) : Number(line.unitPrice ?? 0);
+    return sum + (Number.isFinite(quantity) && Number.isFinite(price) ? quantity * price : 0);
+  }, 0);
+  const roundedMatchedLineTotal = Math.round(matchedLineTotal * 100) / 100;
+  const printedInvoiceTotal = invoice?.totalAmount == null ? null : Number(invoice.totalAmount);
 
   return (
     <>
@@ -631,7 +660,7 @@ function ReviewDialog({
                                 type="number"
                                 min="0"
                                 max="100000"
-                                step="0.0001"
+                                step="0.1"
                                 value={editingQuantities[line.id] ?? String(line.shippedQty)}
                                 onChange={(event) => handleQuantityChange(line, event.target.value)}
                                 onBlur={() => saveQuantity(line)}
@@ -640,7 +669,8 @@ function ReviewDialog({
                                     event.currentTarget.blur();
                                   }
                                 }}
-                                className="h-8 w-20 text-right text-sm font-semibold"
+                                className="h-8 w-16 text-right text-sm font-semibold"
+                                inputMode="decimal"
                                 aria-label={`Received quantity for ${line.itemName ?? line.description ?? "invoice line"} in cases`}
                                 disabled={updateLineMutation.isPending}
                               />
@@ -651,7 +681,32 @@ function ReviewDialog({
                               +{line.shippedQty}
                             </p>
                           )}
-                          <p className="text-xs text-muted-foreground">{formatCurrency(line.extension)}</p>
+                          {invoice?.status !== "applied" ? (
+                            <label className="flex items-center gap-1 text-xs text-muted-foreground" title="Edit actual paid unit cost">
+                              <span className="sr-only">Unit price</span>
+                              <span>$</span>
+                              <Input
+                                type="number"
+                                min="0"
+                                max="1000000"
+                                step="0.01"
+                                value={editingPrices[line.id] ?? (line.unitPrice == null ? "" : String(line.unitPrice))}
+                                onChange={(event) => handlePriceChange(line, event.target.value)}
+                                onBlur={() => savePrice(line)}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter") {
+                                    event.currentTarget.blur();
+                                  }
+                                }}
+                                className="h-8 w-20 text-right text-sm"
+                                inputMode="decimal"
+                                aria-label={`Unit price for ${line.itemName ?? line.description ?? "invoice line"}`}
+                                disabled={updateLineMutation.isPending}
+                              />
+                            </label>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">Unit {formatCurrency(line.unitPrice)}</p>
+                          )}
                         </div>
                         {invoice?.status !== "applied" && (
                           <button
@@ -680,6 +735,20 @@ function ReviewDialog({
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {matchedLines.length > 0 && (
+                <div className="rounded-xl border border-border bg-muted/30 px-3 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-sm">
+                  <span className="font-medium text-foreground">Matched line total</span>
+                  <span className="font-semibold text-foreground">
+                    {formatCurrency(roundedMatchedLineTotal)}
+                    {printedInvoiceTotal != null && (
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">
+                        Printed invoice: {formatCurrency(printedInvoiceTotal)}
+                      </span>
+                    )}
+                  </span>
                 </div>
               )}
 
