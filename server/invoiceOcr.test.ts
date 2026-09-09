@@ -6,6 +6,7 @@ import {
   extractDfaRowsFromOcr,
   cleanPfgDescription,
   extractPfgInvoiceHeader,
+  extractVendorInvoiceHeader,
   extractPfgPageIndicator,
   corroboratePfgPageCount,
   findSingleDigitItemNumberCandidates,
@@ -72,6 +73,13 @@ function invoice6076192Lines(): InvoiceLineDraft[] {
 }
 
 describe("generic vendor invoice validation", () => {
+  it("maps Webstaurant Order Number and Date Ordered into invoice header fields", () => {
+    const header = extractVendorInvoiceHeader(
+      "WebstaurantStore Order Number 129024182 User ID 49510183 Date Ordered 8/1/2026 at 4:08 PM",
+      "Webstaurant"
+    );
+    expect(header).toEqual({ invoiceNumber: "129024182", invoiceDate: "2026-08-01" });
+  });
   it("recovers DFA merchandise rows when Mistral markdown only links a detached HTML table", () => {
     const markdown = `DATE:08/28/26 11:10:41\n[tbl-0.html](tbl-0.html)\nSub-Total: 147.97\nTotal: 147.97`;
     const table = `<table>

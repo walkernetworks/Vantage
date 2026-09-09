@@ -184,6 +184,17 @@ export function extractPfgInvoiceHeader(markdown: string): InvoiceHeader {
   return { invoiceNumber, invoiceDate: normalizeInvoiceDate(rawDate) };
 }
 
+/** Webstaurant labels its invoice identifier as Order Number and its date as Date Ordered. */
+export function extractVendorInvoiceHeader(source: string, vendor: string): InvoiceHeader {
+  if (vendor.toLowerCase().includes("webstaurant")) {
+    const normalized = source.replace(/\r/g, " ").replace(/\s+/g, " ");
+    const invoiceNumber = normalized.match(/\border\s+number\s*[:#-]?\s*(\d{6,12})\b/i)?.[1] ?? null;
+    const rawDate = normalized.match(/\bdate\s+ordered\s*[:#-]?\s*(\d{1,2}\s*[\/-]\s*\d{1,2}\s*[\/-]\s*\d{2,4})\b/i)?.[1] ?? null;
+    return { invoiceNumber, invoiceDate: normalizeInvoiceDate(rawDate) };
+  }
+  return { invoiceNumber: null, invoiceDate: null };
+}
+
 function columnIndex(headers: string[], candidates: string[]): number {
   return headers.findIndex((header) => candidates.some((candidate) => header.includes(candidate)));
 }

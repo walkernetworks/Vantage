@@ -24,6 +24,7 @@ import {
   deskewInvoiceForOcr,
   extractDfaRowsFromOcr,
   extractPfgInvoiceHeader,
+  extractVendorInvoiceHeader,
   extractPfgPageIndicator,
   corroboratePfgPageCount,
   extractInvoiceSummary,
@@ -742,6 +743,9 @@ async function parseGenericInvoiceImages(imageDataUrls: string[], vendor: string
     const ocrPage = base64Match ? await runMistralOcr(base64Match[1], index) : null;
     const ocrContent = combineOcrPageContent(ocrPage?.markdown ?? "", ocrPage?.htmlTables ?? []);
     const parsed = await parseGenericOcrText(ocrContent, vendor);
+    const headerFallback = extractVendorInvoiceHeader(ocrContent, vendor);
+    if (!parsed.invoiceNumber && headerFallback.invoiceNumber) parsed.invoiceNumber = headerFallback.invoiceNumber;
+    if (!parsed.invoiceDate && headerFallback.invoiceDate) parsed.invoiceDate = headerFallback.invoiceDate;
     if (vendor === "Savannah" || vendor === "Savannah Distributing") {
       parsed.repeatedSourceItemNumbers = extractRepeatedSavannahItemNumbers(ocrContent);
     }
@@ -778,6 +782,9 @@ async function parseGenericInvoicePdf(base64Pdf: string, vendor: string): Promis
       .filter((table: unknown): table is string => typeof table === "string" && table.trim().length > 0);
     const ocrContent = combineOcrPageContent(markdown, tableContents);
     const parsed = await parseGenericOcrText(ocrContent, vendor);
+    const headerFallback = extractVendorInvoiceHeader(ocrContent, vendor);
+    if (!parsed.invoiceNumber && headerFallback.invoiceNumber) parsed.invoiceNumber = headerFallback.invoiceNumber;
+    if (!parsed.invoiceDate && headerFallback.invoiceDate) parsed.invoiceDate = headerFallback.invoiceDate;
     if (vendor === "Savannah" || vendor === "Savannah Distributing") {
       parsed.repeatedSourceItemNumbers = extractRepeatedSavannahItemNumbers(ocrContent);
     }
