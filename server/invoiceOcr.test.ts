@@ -80,6 +80,14 @@ describe("generic vendor invoice validation", () => {
     );
     expect(header).toEqual({ invoiceNumber: "129024182", invoiceDate: "2026-08-01" });
   });
+
+  it("maps Fruitful Grind invoice number and written invoice date", () => {
+    const header = extractVendorInvoiceHeader(
+      "The Fruitful Grind Invoice Number: 12255 Invoice Date: September 5, 2026 Order Number: 12255",
+      "Fruitful Grind"
+    );
+    expect(header).toEqual({ invoiceNumber: "12255", invoiceDate: "2026-09-05" });
+  });
   it("recovers DFA merchandise rows when Mistral markdown only links a detached HTML table", () => {
     const markdown = `DATE:08/28/26 11:10:41\n[tbl-0.html](tbl-0.html)\nSub-Total: 147.97\nTotal: 147.97`;
     const table = `<table>

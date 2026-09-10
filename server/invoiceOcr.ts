@@ -118,9 +118,12 @@ export function parseInvoiceDate(value: string | null | undefined): Date | null 
   const trimmed = value.trim();
   const isoMatch = trimmed.match(/^([12]\d{3})-(\d{1,2})-(\d{1,2})$/);
   const slashMatch = trimmed.match(/\b(\d{1,2})\s*[\/-]\s*(\d{1,2})\s*[\/-]\s*(\d{2}|\d{4})\b/);
-  const year = isoMatch ? Number(isoMatch[1]) : slashMatch ? (slashMatch[3].length === 2 ? 2000 + Number(slashMatch[3]) : Number(slashMatch[3])) : NaN;
-  const month = isoMatch ? Number(isoMatch[2]) : slashMatch ? Number(slashMatch[1]) : NaN;
-  const day = isoMatch ? Number(isoMatch[3]) : slashMatch ? Number(slashMatch[2]) : NaN;
+  const namedMonthMatch = trimmed.match(/\b([A-Za-z]+)\s+(\d{1,2}),?\s+([12]\d{3})\b/);
+  const monthNames = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+  const namedMonth = namedMonthMatch ? monthNames.indexOf(namedMonthMatch[1].toLowerCase()) + 1 : NaN;
+  const year = isoMatch ? Number(isoMatch[1]) : slashMatch ? (slashMatch[3].length === 2 ? 2000 + Number(slashMatch[3]) : Number(slashMatch[3])) : namedMonthMatch ? Number(namedMonthMatch[3]) : NaN;
+  const month = isoMatch ? Number(isoMatch[2]) : slashMatch ? Number(slashMatch[1]) : namedMonth;
+  const day = isoMatch ? Number(isoMatch[3]) : slashMatch ? Number(slashMatch[2]) : namedMonthMatch ? Number(namedMonthMatch[2]) : NaN;
   if (year < 2000 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) return null;
   const parsed = new Date(Date.UTC(year, month - 1, day, 12));
   if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) return null;
@@ -186,10 +189,15 @@ export function extractPfgInvoiceHeader(markdown: string): InvoiceHeader {
 
 /** Webstaurant labels its invoice identifier as Order Number and its date as Date Ordered. */
 export function extractVendorInvoiceHeader(source: string, vendor: string): InvoiceHeader {
+  const normalized = source.replace(/\r/g, " ").replace(/\s+/g, " ");
   if (vendor.toLowerCase().includes("webstaurant")) {
-    const normalized = source.replace(/\r/g, " ").replace(/\s+/g, " ");
     const invoiceNumber = normalized.match(/\border\s+number\s*[:#-]?\s*(\d{6,12})\b/i)?.[1] ?? null;
     const rawDate = normalized.match(/\bdate\s+ordered\s*[:#-]?\s*(\d{1,2}\s*[\/-]\s*\d{1,2}\s*[\/-]\s*\d{2,4})\b/i)?.[1] ?? null;
+    return { invoiceNumber, invoiceDate: normalizeInvoiceDate(rawDate) };
+  }
+  if (vendor.toLowerCase().includes("fruitful grind")) {
+    const invoiceNumber = normalized.match(/\binvoice\s+number\s*[:#-]?\s*(\d{4,12})\b/i)?.[1] ?? null;
+    const rawDate = normalized.match(/\binvoice\s+date\s*[:#-]?\s*([A-Za-z]+\s+\d{1,2},?\s+\d{4})\b/i)?.[1] ?? null;
     return { invoiceNumber, invoiceDate: normalizeInvoiceDate(rawDate) };
   }
   return { invoiceNumber: null, invoiceDate: null };

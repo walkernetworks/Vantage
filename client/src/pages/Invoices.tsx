@@ -244,6 +244,7 @@ function UploadDialog({ open, onClose, onSuccess }: { open: boolean; onClose: ()
                 <SelectItem value="United">United Distributors</SelectItem>
                 <SelectItem value="DFA">DFA / Mayfield Dairy</SelectItem>
                 <SelectItem value="Webstaurant">WebstaurantStore</SelectItem>
+                <SelectItem value="Fruitful Grind">Fruitful Grind</SelectItem>
                 <SelectItem value="Other">Other / manual review</SelectItem>
               </SelectContent>
             </Select>
