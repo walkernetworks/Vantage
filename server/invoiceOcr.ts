@@ -169,7 +169,11 @@ export function corroboratePfgPageCount(
 }
 
 export function extractPfgInvoiceHeader(markdown: string): InvoiceHeader {
-  const source = markdown.replace(/\r/g, " ");
+  const source = markdown
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\r/g, " ")
+    .replace(/\s+/g, " ");
   const invoiceNumberPatterns = [
     /\b(?:invoice|inv)\s*(?:number|no\.?|#)?\s*[:#-]*\s*(\d{6,10})\b/i,
     /\binvoice\s*[:#-]\s*(\d{6,10})\b/i,
@@ -524,12 +528,11 @@ export function extractPfgPdfControlTotals(content: string): InvoiceSummary {
   const shipCandidates = Array.from(text.matchAll(/(?:TOTAL\s*\.{2,}\s*:?\s*|SHIPP?ED?(?:\s+(?:COUNT|QTY|QUANTITY))?\s*[:=]?\s*)(\d{1,4})\b/gi))
     .map((match) => parseNumericOcr(match[1]))
     .filter((value): value is number => value !== null);
-  const explicitTotalShipCandidates = Array.from(text.matchAll(/\bTOTAL\b[^\d]{0,20}(\d{1,4})\b/gi))
-    .map((match) => parseNumericOcr(match[1]))
-    .filter((value): value is number => value !== null && value <= 1000);
-  const shippedCount = explicitTotalShipCandidates.length > 0
-    ? Math.max(...explicitTotalShipCandidates)
-    : (shipCandidates.length > 0 ? Math.max(...shipCandidates) : base.shippedCount);
+  // Native PFG PDFs contain header metadata such as STOP 3 and PAGE 1 near
+  // the word TOTAL. Never interpret that metadata as the shipped control.
+  // Prefer an explicit SHIP/SHIPPED label and otherwise leave the control
+  // unknown rather than saving a false document quantity.
+  const shippedCount = shipCandidates.length > 0 ? Math.max(...shipCandidates) : base.shippedCount;
   return { ...base, subtotal, tax, total, shippedCount };
 }
 

@@ -73,9 +73,9 @@ function invoice6076192Lines(): InvoiceLineDraft[] {
 }
 
 describe("generic vendor invoice validation", () => {
-  it("maps PFG native PDF date and invoice-number header pairs", () => {
+  it("maps PFG native PDF date and invoice-number header pairs across HTML cells", () => {
     const header = extractPfgInvoiceHeader(
-      "PAGE DATE INVOICE NO.\n1C15 3 1 9/14/26 6093316"
+      "<table><tr><td>PAGE</td><td>DATE</td><td>INVOICE NO.</td></tr><tr><td>1C15</td><td>3</td><td>1</td><td>9/14/26</td><td>6093316</td></tr></table>"
     );
     expect(header).toEqual({ invoiceNumber: "6093316", invoiceDate: "2026-09-14" });
   });
