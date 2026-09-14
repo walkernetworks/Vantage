@@ -73,6 +73,13 @@ function invoice6076192Lines(): InvoiceLineDraft[] {
 }
 
 describe("generic vendor invoice validation", () => {
+  it("maps PFG native PDF date and invoice-number header pairs", () => {
+    const header = extractPfgInvoiceHeader(
+      "PAGE DATE INVOICE NO.\n1C15 3 1 9/14/26 6093316"
+    );
+    expect(header).toEqual({ invoiceNumber: "6093316", invoiceDate: "2026-09-14" });
+  });
+
   it("maps Webstaurant Order Number and Date Ordered into invoice header fields", () => {
     const header = extractVendorInvoiceHeader(
       "WebstaurantStore Order Number 129024182 User ID 49510183 Date Ordered 8/1/2026 at 4:08 PM",

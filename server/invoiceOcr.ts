@@ -178,12 +178,19 @@ export function extractPfgInvoiceHeader(markdown: string): InvoiceHeader {
     /\b(?:invoice|inv)\s*date\s*[:#-]*\s*(\d{1,2}\s*[\/-]\s*\d{1,2}\s*[\/-]\s*\d{2,4})\b/i,
     /\bdate\s*[:#-]*\s*(\d{1,2}\s*[\/-]\s*\d{1,2}\s*[\/-]\s*\d{2,4})\b/i,
   ];
-  const invoiceNumber = invoiceNumberPatterns
+  const explicitInvoiceNumber = invoiceNumberPatterns
     .map((pattern) => source.match(pattern)?.[1] ?? null)
     .find((value): value is string => Boolean(value)) ?? null;
-  const rawDate = invoiceDatePatterns
+  const explicitRawDate = invoiceDatePatterns
     .map((pattern) => source.match(pattern)?.[1] ?? null)
     .find((value): value is string => Boolean(value)) ?? null;
+  // PFG native PDFs commonly print the header as `DATE INVOICE NO.` and put
+  // `9/14/26 6093316` on the following line, without the words Invoice Date.
+  // Recover that adjacent pair only as a fallback so the printed document
+  // controls populate the persisted invoice header.
+  const dateNumberPair = source.match(/\b(\d{1,2}\s*[\/-]\s*\d{1,2}\s*[\/-]\s*(?:\d{2}|\d{4}))\s+(\d{6,10})\b/);
+  const invoiceNumber = explicitInvoiceNumber ?? dateNumberPair?.[2] ?? null;
+  const rawDate = explicitRawDate ?? dateNumberPair?.[1] ?? null;
   return { invoiceNumber, invoiceDate: normalizeInvoiceDate(rawDate) };
 }
 
