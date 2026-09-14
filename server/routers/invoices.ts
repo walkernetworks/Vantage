@@ -588,7 +588,7 @@ async function parseInvoicePdf(base64Pdf: string): Promise<PageResult> {
     const tableParse = selectPfgItemTable(htmlTables);
     const pdfContent = [markdown, ...tableContents].join("\n");
     const summary = extractPfgPdfControlTotals(pdfContent);
-    const header = extractPfgInvoiceHeader(markdown);
+    const header = extractPfgInvoiceHeader(pdfContent);
     if (!master.invoiceNumber && header.invoiceNumber) master.invoiceNumber = header.invoiceNumber;
     if (!master.invoiceDate && header.invoiceDate) master.invoiceDate = header.invoiceDate;
     if (master.totalAmount === null && summary.total !== null) master.totalAmount = summary.total;
