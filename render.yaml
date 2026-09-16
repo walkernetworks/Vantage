@@ -1,0 +1,41 @@
+# Render Blueprint — staging service
+#
+# Production service (vantage) is managed manually in the Render dashboard.
+#
+# To create the staging service:
+#   1. Render dashboard → New → Blueprint → connect walkernetworks/Vantage
+#   2. Render will read this file and create vantage-staging
+#   3. Open the vantage-staging service → Environment → set the vars marked sync:false below
+#
+# Staging workflow:
+#   - Merge feature branches → staging branch → verify here
+#   - Merge staging → main → auto-deploys to production
+services:
+  - type: web
+    name: vantage-staging
+    env: node
+    region: oregon
+    plan: starter
+    branch: staging
+    buildCommand: pnpm install --frozen-lockfile && pnpm build
+    preDeployCommand: pnpm db:push
+    startCommand: node dist/index.js
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        sync: false  # set in Render dashboard → point to beignets_brew_staging on TiDB
+      - key: JWT_SECRET
+        sync: false  # use a different secret from production
+      - key: RESEND_API_KEY
+        sync: false  # same key as prod is fine; emails still go through the same domain
+      - key: RESEND_FROM_EMAIL
+        value: "Beignets & Brew <noreply@getvantageapp.io>"
+      - key: OPENAI_API_KEY
+        sync: false  # needed for AI-assisted CSV import
+      - key: MISTRAL_API_KEY
+        sync: false  # optional; used for LLM enrichment fallback
