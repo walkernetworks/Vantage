@@ -379,6 +379,12 @@ export async function markInvoiceReviewed(invoiceId: number) {
   await db.update(invoices).set({ status: "reviewed" }).where(eq(invoices.id, invoiceId));
 }
 
+export async function skipInvoice(invoiceId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(invoices).set({ status: "skipped" }).where(eq(invoices.id, invoiceId));
+}
+
 export async function applyInvoiceToInventory(invoiceId: number, appliedBy?: number) {
   const db = await getDb();
   if (!db) return [];

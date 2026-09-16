@@ -1,0 +1,1 @@
+ALTER TABLE `invoices` MODIFY COLUMN `status` enum('pending','reviewed','applied','skipped') NOT NULL DEFAULT 'pending';

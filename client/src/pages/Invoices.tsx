@@ -53,7 +53,7 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type InvoiceStatus = "pending" | "reviewed" | "applied";
+type InvoiceStatus = "pending" | "reviewed" | "applied" | "skipped";
 
 interface InvoiceSummary {
   id: number;
@@ -93,6 +93,7 @@ function statusBadge(status: InvoiceStatus) {
     pending: { label: "Needs Review", variant: "outline" },
     reviewed: { label: "Reviewed", variant: "default" },
     applied: { label: "Applied", variant: "default" },
+    skipped: { label: "Skipped", variant: "secondary" },
   };
   const { label, variant } = map[status] ?? { label: status, variant: "secondary" };
   return (
@@ -909,15 +910,31 @@ export default function Invoices() {
     return id ? parseInt(id, 10) : null;
   });
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [showSkipped, setShowSkipped] = useState(false);
   const utils = trpc.useUtils();
 
-  const { data: invoices, isLoading } = trpc.invoices.list.useQuery();
+  const { data: invoicesRaw, isLoading } = trpc.invoices.list.useQuery();
+  const invoices = (invoicesRaw as unknown as InvoiceSummary[] | undefined)?.filter(
+    (inv) => showSkipped || inv.status !== "skipped"
+  );
+  const skippedCount = (invoicesRaw as unknown as InvoiceSummary[] | undefined)?.filter(
+    (inv) => inv.status === "skipped"
+  ).length ?? 0;
+
   const deleteMutation = trpc.invoices.delete.useMutation({
     onSuccess: () => {
       utils.invoices.list.invalidate();
       toast.success("Invoice deleted");
     },
     onError: (err) => toast.error(err.message ?? "Delete failed"),
+  });
+
+  const skipMutation = trpc.invoices.skip.useMutation({
+    onSuccess: () => {
+      utils.invoices.list.invalidate();
+      toast.success("Invoice skipped — not applied to inventory");
+    },
+    onError: (err) => toast.error(err.message ?? "Could not skip invoice"),
   });
 
   // Re-parse not available in direct-AI flow (images are not stored)
@@ -955,11 +972,22 @@ export default function Invoices() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {(invoices as unknown as InvoiceSummary[]).map((invoice) => (
+          {skippedCount > 0 && (
+            <button
+              onClick={() => setShowSkipped((s) => !s)}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {showSkipped ? "Hide" : "Show"} {skippedCount} skipped invoice{skippedCount !== 1 ? "s" : ""}
+            </button>
+          )}
+          {invoices!.map((invoice) => (
             <Card
               key={invoice.id}
-              className="cursor-pointer hover:border-primary/50 transition-colors"
-              onClick={() => setReviewInvoiceId(invoice.id)}
+              className={cn(
+                "cursor-pointer hover:border-primary/50 transition-colors",
+                invoice.status === "skipped" && "opacity-50"
+              )}
+              onClick={() => invoice.status !== "skipped" && setReviewInvoiceId(invoice.id)}
             >
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -975,25 +1003,25 @@ export default function Invoices() {
                       {invoice.invoiceDate ? formatInvoiceDate(invoice.invoiceDate) : "Invoice date required"}
                       {invoice.totalAmount != null && ` · ${formatCurrency(invoice.totalAmount)}`}
                     </p>
-                    {invoice.lineCount != null && (
+                    {invoice.lineCount != null && invoice.status !== "skipped" && (
                       <p className="text-xs text-muted-foreground mt-1">
                         {invoice.lineCount} items · {invoice.matchedCount ?? 0} matched
                       </p>
                     )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    {invoice.status === "pending" && (
+                    {(invoice.status === "pending" || invoice.status === "reviewed") && (
                       <Button
                         size="sm"
                         variant="outline"
-                        className="h-8 text-xs"
+                        className="h-8 text-xs text-muted-foreground"
                         onClick={(e) => {
                           e.stopPropagation();
-                          // Re-parse not available — delete and re-upload instead
+                          skipMutation.mutate({ invoiceId: invoice.id });
                         }}
-                        disabled={false}
+                        disabled={skipMutation.isPending}
                       >
-                        <RefreshCw size={12} className="mr-1" /> Parse
+                        Skip
                       </Button>
                     )}
                     <Button

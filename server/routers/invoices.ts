@@ -56,6 +56,7 @@ import {
   unapplyInvoice,
   toggleInvoiceLineNotReceived,
   deleteInvoice,
+  skipInvoice,
   getCatalogItemNumbers,
 } from "../invoices";
 
@@ -1095,6 +1096,13 @@ export const invoicesRouter = router({
     .input(z.object({ invoiceId: z.number() }))
     .mutation(async ({ input }) => {
       await deleteInvoice(input.invoiceId);
+      return { success: true };
+    }),
+
+  skip: protectedProcedure
+    .input(z.object({ invoiceId: z.number() }))
+    .mutation(async ({ input }) => {
+      await skipInvoice(input.invoiceId);
       return { success: true };
     }),
 });
