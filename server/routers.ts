@@ -8,6 +8,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { invoicesRouter } from "./routers/invoices";
 import { reportsRouter } from "./routers/reports";
+import { integrationsRouter } from "./routers/integrations";
 import {
   getUserByEmail,
   createLocalUser,
@@ -1224,5 +1225,6 @@ export const appRouter = router({
   dashboard: dashboardRouter,
     invoices: invoicesRouter,
   reports: reportsRouter,
+  integrations: integrationsRouter,
 });
 export type AppRouter = typeof appRouter;

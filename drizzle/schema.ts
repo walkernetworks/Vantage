@@ -355,3 +355,28 @@ export const importBatches = mysqlTable(
 
 export type ImportBatch = typeof importBatches.$inferSelect;
 export type InsertImportBatch = typeof importBatches.$inferInsert;
+
+// ─── Vendor Integrations ──────────────────────────────────────────────────────
+
+export const vendorIntegrations = mysqlTable("vendor_integrations", {
+  id: int("id").autoincrement().primaryKey(),
+  vendorName: varchar("vendorName", { length: 64 }).notNull(),
+  connectionType: varchar("connectionType", { length: 32 }).notNull().default("imap"),
+  email: varchar("email", { length: 320 }),
+  encryptedPassword: text("encryptedPassword"),
+  config: json("config").$type<{
+    imapHost?: string;
+    imapPort?: number;
+    shipToFilter?: string;
+    senderFilter?: string;
+  }>(),
+  isActive: boolean("isActive").default(true).notNull(),
+  lastSyncedAt: timestamp("lastSyncedAt"),
+  lastSyncStatus: varchar("lastSyncStatus", { length: 32 }),
+  lastSyncMessage: text("lastSyncMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type VendorIntegration = typeof vendorIntegrations.$inferSelect;
+export type InsertVendorIntegration = typeof vendorIntegrations.$inferInsert;

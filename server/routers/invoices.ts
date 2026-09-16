@@ -762,7 +762,7 @@ async function parseGenericInvoiceImages(imageDataUrls: string[], vendor: string
   return master;
 }
 
-async function parseGenericInvoicePdf(base64Pdf: string, vendor: string): Promise<GenericParseResult> {
+export async function parseGenericInvoicePdf(base64Pdf: string, vendor: string): Promise<GenericParseResult> {
   const apiKey = ENV.mistralApiKey;
   if (!apiKey) throw new Error("MISTRAL_API_KEY is not set — cannot run PDF OCR");
   const client = new Mistral({ apiKey });
