@@ -16,7 +16,7 @@ export interface SyncResult {
 async function processWebstaurantEmail(
   source: Buffer,
   shipToFilter: string | undefined,
-  userId: number,
+  userId: number | null,
 ): Promise<{ imported: number; skipped: number; error?: string }> {
   const parsed = await simpleParser(source);
 
@@ -81,7 +81,7 @@ async function processWebstaurantEmail(
 
 export async function syncVendorIntegration(
   integration: VendorIntegration,
-  userId: number,
+  userId: number | null,
 ): Promise<SyncResult> {
   if (!integration.email || !integration.encryptedPassword) {
     return { imported: 0, skipped: 0, errors: ["Integration is missing email or credentials"] };

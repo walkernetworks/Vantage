@@ -105,7 +105,7 @@ export async function parseInvoiceImages(imageUrls: string[]): Promise<ParsedInv
 export async function createInvoice(input: {
   vendor: string;
   imageKeys: string[];
-  createdBy: number;
+  createdBy: number | null;
   notes?: string;
 }) {
   const db = await getDb();
