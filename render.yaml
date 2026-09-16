@@ -18,6 +18,7 @@ services:
     plan: starter
     branch: staging
     buildCommand: pnpm install --frozen-lockfile && pnpm build
+    preDeployCommand: pnpm db:push
     startCommand: node dist/index.js
     healthCheckPath: /
     autoDeploy: true
