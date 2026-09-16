@@ -18,6 +18,8 @@ import {
   settingsStorageAreas,
   stockEvents,
   users,
+  vendorIntegrations,
+  type InsertVendorIntegration,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { invokeLLM } from "./_core/llm";
@@ -2335,4 +2337,47 @@ export async function markTokenUsed(tokenId: number) {
     .update(passwordResetTokens)
     .set({ usedAt: new Date() })
     .where(eq(passwordResetTokens.id, tokenId));
+}
+
+// ─── Vendor Integrations ──────────────────────────────────────────────────────
+
+export async function listVendorIntegrations() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(vendorIntegrations).orderBy(vendorIntegrations.vendorName);
+}
+
+export async function getVendorIntegration(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(vendorIntegrations).where(eq(vendorIntegrations.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function upsertVendorIntegration(
+  data: Omit<InsertVendorIntegration, "createdAt" | "updatedAt"> & { id?: number },
+) {
+  const db = await getDb();
+  if (!db) return;
+  if (data.id) {
+    const { id, ...rest } = data;
+    await db.update(vendorIntegrations).set(rest).where(eq(vendorIntegrations.id, id));
+  } else {
+    await db.insert(vendorIntegrations).values(data);
+  }
+}
+
+export async function deleteVendorIntegration(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(vendorIntegrations).where(eq(vendorIntegrations.id, id));
+}
+
+export async function updateVendorIntegrationSyncStatus(id: number, status: string, message: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(vendorIntegrations)
+    .set({ lastSyncedAt: new Date(), lastSyncStatus: status, lastSyncMessage: message })
+    .where(eq(vendorIntegrations.id, id));
 }

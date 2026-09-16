@@ -1,7 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Check, X, Tag, Truck, Warehouse } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, X, Tag, Truck, Warehouse, Mail, RefreshCw, Eye, EyeOff } from "lucide-react";
 import { createPortal } from "react-dom";
 
 // ─── Reusable editable list section ──────────────────────────────────────────
@@ -194,6 +194,359 @@ function SettingsSection({
   );
 }
 
+// ─── Vendor Integrations Section ─────────────────────────────────────────────
+
+type IntegrationRow = {
+  id: number;
+  vendorName: string;
+  connectionType: string;
+  email: string | null;
+  config: { imapHost?: string; imapPort?: number; shipToFilter?: string; senderFilter?: string } | null;
+  isActive: boolean;
+  lastSyncedAt: Date | null;
+  lastSyncStatus: string | null;
+  lastSyncMessage: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const BLANK_FORM = {
+  vendorName: "Webstaurant",
+  email: "",
+  password: "",
+  shipToFilter: "",
+  senderFilter: "",
+  imapHost: "",
+};
+
+function IntegrationModal({
+  integration,
+  onClose,
+}: {
+  integration: IntegrationRow | null;
+  onClose: () => void;
+}) {
+  const utils = trpc.useUtils();
+  const [form, setForm] = useState({
+    ...BLANK_FORM,
+    vendorName: integration?.vendorName ?? "Webstaurant",
+    email: integration?.email ?? "",
+    shipToFilter: integration?.config?.shipToFilter ?? "",
+    senderFilter: integration?.config?.senderFilter ?? "",
+    imapHost: integration?.config?.imapHost ?? "",
+  });
+  const [showPass, setShowPass] = useState(false);
+
+  const save = trpc.integrations.save.useMutation({
+    onSuccess: () => {
+      utils.integrations.list.invalidate();
+      toast.success(integration ? "Integration updated" : "Integration added");
+      onClose();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const payload: Record<string, unknown> = {
+      vendorName: form.vendorName,
+      email: form.email,
+      config: {
+        ...(form.shipToFilter ? { shipToFilter: form.shipToFilter } : {}),
+        ...(form.senderFilter ? { senderFilter: form.senderFilter } : {}),
+        ...(form.imapHost ? { imapHost: form.imapHost } : {}),
+      },
+    };
+    if (integration) payload.id = integration.id;
+    if (form.password) payload.password = form.password;
+    save.mutate(payload as Parameters<typeof save.mutate>[0]);
+  }
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.5)" }}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        className="bg-card border border-border rounded-2xl w-full max-w-md shadow-2xl"
+        onMouseDown={(e) => e.stopPropagation()}
+        style={{ animation: "modalIn 180ms cubic-bezier(0.23,1,0.32,1) both" }}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <h3 className="font-semibold text-foreground">{integration ? "Edit" : "Add"} Vendor Integration</h3>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground">
+            <X size={16} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Vendor</label>
+            <select
+              value={form.vendorName}
+              onChange={(e) => setForm((f) => ({ ...f, vendorName: e.target.value }))}
+              className="w-full h-11 px-3 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="Webstaurant">Webstaurant</option>
+              <option value="PFG" disabled>PFG (coming soon)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Gmail address</label>
+            <input
+              type="email"
+              required
+              value={form.email}
+              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+              placeholder="example@gmail.com"
+              className="w-full h-11 px-4 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              Gmail App Password {integration ? "(leave blank to keep existing)" : ""}
+            </label>
+            <div className="relative">
+              <input
+                type={showPass ? "text" : "password"}
+                required={!integration}
+                value={form.password}
+                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                placeholder={integration ? "••••••••••••••••" : "xxxx xxxx xxxx xxxx"}
+                className="w-full h-11 px-4 pr-12 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPass((s) => !s)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+              >
+                {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Generate at myaccount.google.com → Security → App Passwords
+            </p>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Ship-to address filter</label>
+            <input
+              type="text"
+              value={form.shipToFilter}
+              onChange={(e) => setForm((f) => ({ ...f, shipToFilter: e.target.value }))}
+              placeholder="316 City Circle"
+              className="w-full h-11 px-4 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Only import invoices whose email contains this text. Leave blank to import all.
+            </p>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Sender filter (optional)</label>
+            <input
+              type="text"
+              value={form.senderFilter}
+              onChange={(e) => setForm((f) => ({ ...f, senderFilter: e.target.value }))}
+              placeholder="@webstaurantstore.com"
+              className="w-full h-11 px-4 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </div>
+
+          <div className="flex gap-3 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 h-11 rounded-xl border border-border bg-background text-sm font-medium"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={save.isPending}
+              className="flex-1 h-11 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+            >
+              {save.isPending ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function VendorIntegrationsSection() {
+  const utils = trpc.useUtils();
+  const { data: integrations = [], isLoading } = trpc.integrations.list.useQuery();
+  const [modalIntegration, setModalIntegration] = useState<IntegrationRow | "new" | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [syncingId, setSyncingId] = useState<number | null>(null);
+
+  const deleteIntegration = trpc.integrations.delete.useMutation({
+    onSuccess: () => { utils.integrations.list.invalidate(); toast.success("Integration removed"); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const syncIntegration = trpc.integrations.sync.useMutation({
+    onSuccess: (result, vars) => {
+      utils.integrations.list.invalidate();
+      setSyncingId(null);
+      if (result.errors.length > 0 && result.imported === 0) {
+        toast.error(`Sync failed: ${result.errors[0]}`);
+      } else {
+        toast.success(`Synced: ${result.imported} imported, ${result.skipped} skipped`);
+      }
+    },
+    onError: (e) => { setSyncingId(null); toast.error(e.message); },
+  });
+
+  function handleSync(id: number) {
+    setSyncingId(id);
+    syncIntegration.mutate({ id });
+  }
+
+  const statusColor = (status: string | null) => {
+    if (status === "success") return "text-green-600 bg-green-50 dark:bg-green-950/30";
+    if (status === "error") return "text-destructive bg-destructive/10";
+    if (status === "partial") return "text-yellow-600 bg-yellow-50 dark:bg-yellow-950/30";
+    return "text-muted-foreground bg-muted/60";
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-2xl overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-muted/30">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
+            <Mail size={18} className="text-primary" />
+          </div>
+          <div>
+            <h2 className="font-semibold text-foreground">Vendor Integrations</h2>
+            <p className="text-xs text-muted-foreground">Automated invoice email sync</p>
+          </div>
+        </div>
+        <button
+          onClick={() => setModalIntegration("new")}
+          className="h-9 px-4 rounded-xl bg-primary text-primary-foreground text-sm font-medium flex items-center gap-2 active:scale-[0.97] transition-transform"
+        >
+          <Plus size={15} />
+          Add
+        </button>
+      </div>
+
+      <div className="divide-y divide-border">
+        {isLoading ? (
+          <div className="px-5 py-8 text-center text-muted-foreground text-sm">Loading…</div>
+        ) : integrations.length === 0 ? (
+          <div className="px-5 py-8 text-center text-muted-foreground text-sm">
+            No integrations configured yet
+          </div>
+        ) : (
+          integrations.map((row) => {
+            const r = row as IntegrationRow;
+            return (
+              <div key={r.id} className="px-5 py-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium text-foreground">{r.vendorName}</span>
+                      {r.config?.shipToFilter && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                          {r.config.shipToFilter}
+                        </span>
+                      )}
+                      {r.lastSyncStatus && (
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColor(r.lastSyncStatus)}`}>
+                          {r.lastSyncStatus}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">{r.email}</p>
+                    {r.lastSyncedAt && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Last synced {new Date(r.lastSyncedAt).toLocaleDateString()}{" "}
+                        {r.lastSyncMessage && `· ${r.lastSyncMessage}`}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => handleSync(r.id)}
+                      disabled={syncingId === r.id}
+                      title="Sync now"
+                      className="w-9 h-9 rounded-xl bg-muted/60 text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center justify-center active:scale-95 transition-all disabled:opacity-40"
+                    >
+                      <RefreshCw size={14} className={syncingId === r.id ? "animate-spin" : ""} />
+                    </button>
+                    <button
+                      onClick={() => setModalIntegration(r)}
+                      title="Edit"
+                      className="w-9 h-9 rounded-xl bg-muted/60 text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center justify-center active:scale-95 transition-all"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      onClick={() => setDeleteConfirmId(r.id)}
+                      title="Delete"
+                      className="w-9 h-9 rounded-xl bg-muted/60 text-muted-foreground hover:text-destructive hover:bg-destructive/10 flex items-center justify-center active:scale-95 transition-all"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {(modalIntegration === "new" || (modalIntegration && typeof modalIntegration === "object")) && (
+        <IntegrationModal
+          integration={modalIntegration === "new" ? null : modalIntegration as IntegrationRow}
+          onClose={() => setModalIntegration(null)}
+        />
+      )}
+
+      {deleteConfirmId !== null &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: "rgba(0,0,0,0.5)" }}
+            onMouseDown={(e) => { if (e.target === e.currentTarget) setDeleteConfirmId(null); }}
+          >
+            <div
+              className="bg-card border border-border rounded-2xl p-6 w-full max-w-sm shadow-2xl"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-semibold text-foreground mb-2">Remove integration?</h3>
+              <p className="text-sm text-muted-foreground mb-5">
+                The saved credentials will be permanently deleted.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setDeleteConfirmId(null)}
+                  className="flex-1 h-11 rounded-xl border border-border bg-background text-sm font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => { deleteIntegration.mutate({ id: deleteConfirmId! }); setDeleteConfirmId(null); }}
+                  className="flex-1 h-11 rounded-xl bg-destructive text-destructive-foreground text-sm font-medium"
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+    </div>
+  );
+}
+
 // ─── Main Settings Page ───────────────────────────────────────────────────────
 
 export default function Settings() {
@@ -285,6 +638,8 @@ export default function Settings() {
         onUpdate={(id, name) => updateStorage.mutate({ id, name })}
         onDelete={(id) => deleteStorage.mutate({ id })}
       />
+
+      <VendorIntegrationsSection />
     </div>
   );
 }

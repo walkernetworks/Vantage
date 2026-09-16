@@ -92,6 +92,13 @@
       "when": 1784844600775,
       "tag": "0012_open_slayback",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "5",
+      "when": 1789573482080,
+      "tag": "0013_vendor_integrations",
+      "breakpoints": true
     }
   ]
 }
