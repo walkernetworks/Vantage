@@ -13,6 +13,20 @@ export interface SyncResult {
   errors: string[];
 }
 
+// Pull invoice number from email subject: "Your WebstaurantStore Invoice #12345678"
+function extractEmailInvoiceNumber(subject: string | undefined): string | undefined {
+  if (!subject) return undefined;
+  const m = subject.match(/invoice\s*#?\s*(\d{5,})/i);
+  return m ? m[1] : undefined;
+}
+
+// Pull date from the email's Date header (most reliable source)
+function extractEmailDate(date: Date | undefined): string | undefined {
+  if (!date) return undefined;
+  // Format as YYYY-MM-DD
+  return date.toISOString().slice(0, 10);
+}
+
 async function processWebstaurantEmail(
   source: Buffer,
   shipToFilter: string | undefined,
@@ -27,6 +41,10 @@ async function processWebstaurantEmail(
       return { imported: 0, skipped: 1 };
     }
   }
+
+  // Email-level fallbacks for fields the PDF parser sometimes misses
+  const emailInvoiceNumber = extractEmailInvoiceNumber(parsed.subject);
+  const emailDate = extractEmailDate(parsed.date ?? undefined);
 
   const pdfs = (parsed.attachments ?? []).filter(
     (a) => a.contentType === "application/pdf" || a.filename?.toLowerCase().endsWith(".pdf"),
@@ -65,8 +83,8 @@ async function processWebstaurantEmail(
       }));
 
       await saveInvoiceLines(invoice.id, lines, {
-        invoiceNumber: result.invoiceNumber ?? undefined,
-        invoiceDate: result.invoiceDate ?? undefined,
+        invoiceNumber: result.invoiceNumber ?? emailInvoiceNumber,
+        invoiceDate: result.invoiceDate ?? emailDate,
         totalAmount: result.totalAmount ?? result.summary.total ?? undefined,
       });
 

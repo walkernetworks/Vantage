@@ -253,7 +253,7 @@ export const invoices = mysqlTable(
     totalAmount: decimal("totalAmount", { precision: 10, scale: 2 }),
     imageKeys: json("imageKeys").$type<string[]>().notNull().default([]),
     notes: text("notes"),
-    status: mysqlEnum("status", ["pending", "reviewed", "applied"]).notNull().default("pending"),
+    status: mysqlEnum("status", ["pending", "reviewed", "applied", "skipped"]).notNull().default("pending"),
     createdBy: int("createdBy").references(() => users.id),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
