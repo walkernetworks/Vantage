@@ -1,6 +1,10 @@
 import { defineConfig } from "vitest/config";
 import path from "path";
 
+// Pin the suite to UTC so date-sensitive specs behave the same on a
+// developer's machine as they do in CI and on Render.
+process.env.TZ = "UTC";
+
 const templateRoot = path.resolve(import.meta.dirname);
 
 export default defineConfig({
