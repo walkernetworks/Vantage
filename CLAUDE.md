@@ -347,9 +347,30 @@ The TypeScript schema (`drizzle/schema.ts`) and the live TiDB database must alwa
 
 ## 12. GitHub & Deployment
 
-- **Repository:** `walkernetworks/Vantage` (private), branch `main`
-- **Auto-deploy:** Render watches `main` and deploys on push
-- **Manual deploy:** Render dashboard → service → "Manual Deploy" → "Deploy latest commit"
-- **Push workflow:** After every feature, commit and push the changed files to `main`. Render will pick it up automatically within a few minutes.
+- **Repository:** `walkernetworks/Vantage` (private)
+- **`main` is production and is protected.** Direct pushes are rejected. Every
+  change reaches it through a pull request with the `verify` CI check passing.
+- **`staging` is the verification branch.** Deploys to
+  https://staging.getvantageapp.io for testing before production.
 
-After pushing, if the change is not live within 5 minutes, check the Render dashboard for a failed build log.
+### Push workflow
+
+**Never push to `main`, and never commit directly to `staging`.** After every feature:
+
+1. Branch off `staging`: `git switch -c feature/<name> origin/staging`
+2. Commit, push, and open a PR **against `staging`**
+3. CI (`.github/workflows/ci.yml`) runs typecheck, tests and build — it must pass
+4. Merge into `staging` → Render auto-deploys staging
+5. **Verify the change on staging.getvantageapp.io**
+6. Open a PR `staging` → `main`; merging it deploys to production
+
+### Deploys
+
+- **Staging:** Render service `vantage-staging` watches `staging`, auto-deploys
+  on commit. Pre-deploy runs `drizzle-kit push --force` against the *staging*
+  TiDB database, which can drop columns — keep that database disposable.
+- **Production:** Render service `vantage` watches `main`, configured manually
+  in the Render dashboard (not from `render.yaml`).
+- **Manual deploy:** Render dashboard → service → "Manual Deploy" → "Deploy latest commit"
+
+After merging, if the change is not live within 5 minutes, check the Render dashboard for a failed build log.
