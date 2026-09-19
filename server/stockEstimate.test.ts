@@ -9,14 +9,14 @@ describe("calculateCurrentStockEstimate", () => {
         lastCountQty: 5,
         totalReceived: 2,
         currentStockCases: 7,
-        lastCountDate: new Date("2026-08-08T23:12:22"),
+        lastCountDate: new Date("2026-08-08T23:12:22Z"),
       },
       {
         price: 4,
         lastCountQty: 3,
         totalReceived: 1,
         currentStockCases: 4,
-        lastCountDate: new Date("2026-08-08T23:12:22"),
+        lastCountDate: new Date("2026-08-08T23:12:22Z"),
       },
     ]);
 
